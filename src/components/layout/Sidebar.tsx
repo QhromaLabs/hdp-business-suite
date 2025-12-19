@@ -13,7 +13,6 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -41,12 +40,12 @@ const navItems: NavItem[] = [
 ];
 
 export default function Sidebar() {
-  const { user, logout } = useAuth();
+  const { profile, userRole, signOut } = useAuth();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
 
   const filteredNavItems = navItems.filter(
-    item => !item.roles || item.roles.includes(user?.role || '')
+    item => !item.roles || item.roles.includes(userRole || '')
   );
 
   const getRoleBadgeColor = (role: string) => {
@@ -112,25 +111,25 @@ export default function Sidebar() {
         )}>
           <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
             <span className="text-primary font-semibold">
-              {user?.name?.charAt(0) || 'U'}
+              {profile?.full_name?.charAt(0) || 'U'}
             </span>
           </div>
           {!collapsed && (
             <div className="flex-1 min-w-0 animate-fade-in">
               <p className="text-sidebar-foreground font-medium text-sm truncate">
-                {user?.name}
+                {profile?.full_name || 'User'}
               </p>
               <span className={cn(
                 "inline-block px-2 py-0.5 rounded text-[10px] font-medium uppercase mt-1",
-                getRoleBadgeColor(user?.role || '')
+                getRoleBadgeColor(userRole || '')
               )}>
-                {user?.role?.replace('_', ' ')}
+                {userRole?.replace('_', ' ') || 'loading...'}
               </span>
             </div>
           )}
         </div>
         <button
-          onClick={logout}
+          onClick={signOut}
           className={cn(
             "w-full mt-2 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sidebar-muted hover:text-destructive hover:bg-destructive/10 transition-all duration-200",
             collapsed && "justify-center"
