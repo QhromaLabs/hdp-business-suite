@@ -1,16 +1,14 @@
-import { useState } from 'react';
 import { 
   Factory,
   Package,
   Cog,
   TrendingUp,
-  Clock,
-  AlertTriangle,
   Plus,
   Play,
   Pause,
-  CheckCircle,
+  Loader2,
 } from 'lucide-react';
+import { useProductionRuns, useMachines, useRawMaterials } from '@/hooks/useManufacturing';
 import { cn } from '@/lib/utils';
 
 const formatCurrency = (amount: number) => {
@@ -21,78 +19,51 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-const productionLines = [
-  {
-    id: '1',
-    name: 'Detergent Line A',
-    status: 'running',
-    product: 'Industrial Detergent 20L',
-    output: 245,
-    target: 300,
-    efficiency: 82,
-  },
-  {
-    id: '2',
-    name: 'Cleaner Line B',
-    status: 'running',
-    product: 'Multipurpose Cleaner 5L',
-    output: 180,
-    target: 200,
-    efficiency: 90,
-  },
-  {
-    id: '3',
-    name: 'Polish Line C',
-    status: 'paused',
-    product: 'Floor Polish Premium',
-    output: 0,
-    target: 150,
-    efficiency: 0,
-  },
-];
-
-const rawMaterials = [
-  { name: 'Sodium Lauryl Sulfate', stock: 2500, unit: 'kg', reorderPoint: 500, status: 'good' },
-  { name: 'Glycerin', stock: 800, unit: 'L', reorderPoint: 200, status: 'good' },
-  { name: 'Citric Acid', stock: 150, unit: 'kg', reorderPoint: 200, status: 'low' },
-  { name: 'Fragrance Oil', stock: 45, unit: 'L', reorderPoint: 50, status: 'critical' },
-  { name: 'Dye Concentrate', stock: 25, unit: 'L', reorderPoint: 10, status: 'good' },
-];
-
-const machines = [
-  { name: 'Mixer Tank A', status: 'operational', lastMaintenance: '2024-01-10', depreciation: 85000 },
-  { name: 'Filling Machine 1', status: 'operational', lastMaintenance: '2024-01-15', depreciation: 120000 },
-  { name: 'Packaging Line', status: 'maintenance', lastMaintenance: '2024-01-20', depreciation: 95000 },
-  { name: 'Quality Control Unit', status: 'operational', lastMaintenance: '2024-01-18', depreciation: 45000 },
-];
-
 export default function Manufacturing() {
+  const { data: productionRuns = [], isLoading: runsLoading } = useProductionRuns();
+  const { data: machines = [], isLoading: machinesLoading } = useMachines();
+  const { data: rawMaterials = [], isLoading: materialsLoading } = useRawMaterials();
+
+  const isLoading = runsLoading || machinesLoading || materialsLoading;
+
+  const activeRuns = productionRuns.filter(r => r.status === 'in_progress');
+  const totalOutput = productionRuns.reduce((sum, r) => sum + (r.actual_quantity || 0), 0);
+  const totalDepreciation = machines.reduce((sum, m) => sum + (Number(m.purchase_cost) * (Number(m.depreciation_rate) / 100)), 0);
+
   const stats = [
     {
       title: "Today's Output",
-      value: '425 units',
+      value: `${totalOutput} units`,
       icon: Package,
       color: 'primary',
     },
     {
-      title: 'Active Lines',
-      value: '2 / 3',
+      title: 'Active Runs',
+      value: `${activeRuns.length} / ${productionRuns.length}`,
       icon: Factory,
       color: 'success',
     },
     {
-      title: 'Avg Efficiency',
-      value: '86%',
+      title: 'Raw Materials',
+      value: rawMaterials.length,
       icon: TrendingUp,
       color: 'warning',
     },
     {
       title: 'Machine Depreciation',
-      value: formatCurrency(345000),
+      value: formatCurrency(totalDepreciation),
       icon: Cog,
       color: 'destructive',
     },
   ];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -127,62 +98,75 @@ export default function Manufacturing() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Production Lines */}
+        {/* Production Runs */}
         <div className="bg-card rounded-xl border border-border p-6">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-foreground">Production Lines</h3>
+            <h3 className="text-lg font-semibold text-foreground">Production Runs</h3>
             <button className="btn-primary text-sm py-2">
               <Plus className="w-4 h-4" />
               New Batch
             </button>
           </div>
           <div className="space-y-4">
-            {productionLines.map((line) => (
-              <div key={line.id} className="p-4 bg-muted/30 rounded-xl">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      'w-3 h-3 rounded-full',
-                      line.status === 'running' && 'bg-success animate-pulse',
-                      line.status === 'paused' && 'bg-warning',
-                      line.status === 'stopped' && 'bg-destructive',
-                    )} />
-                    <div>
-                      <p className="font-medium text-foreground">{line.name}</p>
-                      <p className="text-sm text-muted-foreground">{line.product}</p>
+            {productionRuns.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground">
+                <Factory className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>No production runs yet</p>
+              </div>
+            ) : (
+              productionRuns.map((run) => {
+                const progress = run.planned_quantity > 0 
+                  ? Math.round((run.actual_quantity / run.planned_quantity) * 100) 
+                  : 0;
+                
+                return (
+                  <div key={run.id} className="p-4 bg-muted/30 rounded-xl">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          'w-3 h-3 rounded-full',
+                          run.status === 'in_progress' && 'bg-success animate-pulse',
+                          run.status === 'completed' && 'bg-primary',
+                          run.status === 'cancelled' && 'bg-destructive',
+                        )} />
+                        <div>
+                          <p className="font-medium text-foreground">{run.batch_number}</p>
+                          <p className="text-sm text-muted-foreground">{run.product?.name}</p>
+                        </div>
+                      </div>
+                      <button className={cn(
+                        'p-2 rounded-lg transition-colors',
+                        run.status === 'in_progress' 
+                          ? 'bg-warning/10 text-warning hover:bg-warning/20' 
+                          : 'bg-success/10 text-success hover:bg-success/20'
+                      )}>
+                        {run.status === 'in_progress' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Output: <span className="font-medium text-foreground">{run.actual_quantity}</span> / {run.planned_quantity}
+                      </span>
+                      <span className={cn(
+                        'font-semibold',
+                        progress >= 80 ? 'text-success' : progress >= 50 ? 'text-warning' : 'text-destructive'
+                      )}>
+                        {progress}%
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-muted rounded-full mt-2 overflow-hidden">
+                      <div
+                        className={cn(
+                          'h-full rounded-full transition-all',
+                          progress >= 80 ? 'bg-success' : progress >= 50 ? 'bg-warning' : 'bg-destructive'
+                        )}
+                        style={{ width: `${progress}%` }}
+                      />
                     </div>
                   </div>
-                  <button className={cn(
-                    'p-2 rounded-lg transition-colors',
-                    line.status === 'running' 
-                      ? 'bg-warning/10 text-warning hover:bg-warning/20' 
-                      : 'bg-success/10 text-success hover:bg-success/20'
-                  )}>
-                    {line.status === 'running' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </button>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    Output: <span className="font-medium text-foreground">{line.output}</span> / {line.target}
-                  </span>
-                  <span className={cn(
-                    'font-semibold',
-                    line.efficiency >= 80 ? 'text-success' : line.efficiency >= 50 ? 'text-warning' : 'text-destructive'
-                  )}>
-                    {line.efficiency}% efficiency
-                  </span>
-                </div>
-                <div className="w-full h-2 bg-muted rounded-full mt-2 overflow-hidden">
-                  <div
-                    className={cn(
-                      'h-full rounded-full transition-all',
-                      line.efficiency >= 80 ? 'bg-success' : line.efficiency >= 50 ? 'bg-warning' : 'bg-destructive'
-                    )}
-                    style={{ width: `${(line.output / line.target) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -196,40 +180,53 @@ export default function Manufacturing() {
             </button>
           </div>
           <div className="space-y-3">
-            {rawMaterials.map((material) => (
-              <div key={material.name} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className={cn(
-                    'w-2 h-8 rounded-full',
-                    material.status === 'good' && 'bg-success',
-                    material.status === 'low' && 'bg-warning',
-                    material.status === 'critical' && 'bg-destructive',
-                  )} />
-                  <div>
-                    <p className="font-medium text-foreground">{material.name}</p>
-                    <p className="text-xs text-muted-foreground">Reorder at: {material.reorderPoint} {material.unit}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className={cn(
-                    'font-bold',
-                    material.status === 'good' && 'text-foreground',
-                    material.status === 'low' && 'text-warning',
-                    material.status === 'critical' && 'text-destructive',
-                  )}>
-                    {material.stock} {material.unit}
-                  </p>
-                  {material.status !== 'good' && (
-                    <span className={cn(
-                      'text-xs px-2 py-0.5 rounded-full',
-                      material.status === 'low' ? 'badge-warning' : 'badge-destructive'
-                    )}>
-                      {material.status === 'low' ? 'Low Stock' : 'Critical'}
-                    </span>
-                  )}
-                </div>
+            {rawMaterials.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground">
+                <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>No raw materials added</p>
               </div>
-            ))}
+            ) : (
+              rawMaterials.map((material) => {
+                const isLow = Number(material.quantity_in_stock) <= Number(material.reorder_level);
+                const isCritical = Number(material.quantity_in_stock) <= Number(material.reorder_level) * 0.5;
+                const status = isCritical ? 'critical' : isLow ? 'low' : 'good';
+                
+                return (
+                  <div key={material.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        'w-2 h-8 rounded-full',
+                        status === 'good' && 'bg-success',
+                        status === 'low' && 'bg-warning',
+                        status === 'critical' && 'bg-destructive',
+                      )} />
+                      <div>
+                        <p className="font-medium text-foreground">{material.name}</p>
+                        <p className="text-xs text-muted-foreground">Reorder at: {material.reorder_level} {material.unit}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className={cn(
+                        'font-bold',
+                        status === 'good' && 'text-foreground',
+                        status === 'low' && 'text-warning',
+                        status === 'critical' && 'text-destructive',
+                      )}>
+                        {material.quantity_in_stock} {material.unit}
+                      </p>
+                      {status !== 'good' && (
+                        <span className={cn(
+                          'text-xs px-2 py-0.5 rounded-full',
+                          status === 'low' ? 'badge-warning' : 'badge-destructive'
+                        )}>
+                          {status === 'low' ? 'Low Stock' : 'Critical'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -239,34 +236,43 @@ export default function Manufacturing() {
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-foreground">Machines & Equipment</h3>
           <p className="text-sm text-muted-foreground">
-            Annual Depreciation (10%): <span className="font-semibold text-foreground">{formatCurrency(345000)}</span>
+            Annual Depreciation: <span className="font-semibold text-foreground">{formatCurrency(totalDepreciation)}</span>
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {machines.map((machine) => (
-            <div key={machine.name} className="p-4 bg-muted/30 rounded-xl">
-              <div className="flex items-center gap-2 mb-3">
-                <Cog className={cn(
-                  'w-5 h-5',
-                  machine.status === 'operational' ? 'text-success' : 'text-warning'
-                )} />
-                <span className={cn(
-                  'text-xs font-medium px-2 py-0.5 rounded-full',
-                  machine.status === 'operational' ? 'badge-success' : 'badge-warning'
-                )}>
-                  {machine.status}
-                </span>
+        {machines.length === 0 ? (
+          <div className="py-8 text-center text-muted-foreground">
+            <Cog className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>No machines added yet</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {machines.map((machine) => (
+              <div key={machine.id} className="p-4 bg-muted/30 rounded-xl">
+                <div className="flex items-center gap-2 mb-3">
+                  <Cog className={cn(
+                    'w-5 h-5',
+                    machine.status === 'operational' ? 'text-success' : 'text-warning'
+                  )} />
+                  <span className={cn(
+                    'text-xs font-medium px-2 py-0.5 rounded-full',
+                    machine.status === 'operational' ? 'badge-success' : 'badge-warning'
+                  )}>
+                    {machine.status}
+                  </span>
+                </div>
+                <p className="font-medium text-foreground">{machine.name}</p>
+                {machine.last_maintenance && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Last maintenance: {new Date(machine.last_maintenance).toLocaleDateString('en-KE')}
+                  </p>
+                )}
+                <p className="text-sm font-medium text-foreground mt-2">
+                  Value: {formatCurrency(Number(machine.current_value))}
+                </p>
               </div>
-              <p className="font-medium text-foreground">{machine.name}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Last maintenance: {new Date(machine.lastMaintenance).toLocaleDateString('en-KE')}
-              </p>
-              <p className="text-sm font-medium text-foreground mt-2">
-                Depreciation: {formatCurrency(machine.depreciation)}/yr
-              </p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

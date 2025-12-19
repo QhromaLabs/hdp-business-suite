@@ -8,7 +8,9 @@ import {
   FileText,
   ArrowUpRight,
   ArrowDownRight,
+  Loader2,
 } from 'lucide-react';
+import { useFinancialSummary, useExpensesByCategory, useBankTransactions } from '@/hooks/useAccounting';
 import { cn } from '@/lib/utils';
 
 const formatCurrency = (amount: number) => {
@@ -19,64 +21,51 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-const financialSummary = {
-  revenue: 4850000,
-  expenses: 2890000,
-  grossProfit: 1960000,
-  netProfit: 1450000,
-  cashBalance: 2340000,
-  receivables: 890000,
-  payables: 560000,
-};
-
-const recentTransactions = [
-  { id: 'TXN-001', description: 'Sales Revenue - Nakumatt', amount: 125000, type: 'credit', date: '2024-01-20' },
-  { id: 'TXN-002', description: 'Raw Material Purchase', amount: -85000, type: 'debit', date: '2024-01-20' },
-  { id: 'TXN-003', description: 'Utility Bills - KPLC', amount: -45000, type: 'debit', date: '2024-01-19' },
-  { id: 'TXN-004', description: 'Sales Revenue - Carrefour', amount: 245000, type: 'credit', date: '2024-01-19' },
-  { id: 'TXN-005', description: 'Staff Salaries', amount: -380000, type: 'debit', date: '2024-01-18' },
-  { id: 'TXN-006', description: 'Capital Investment', amount: 500000, type: 'credit', date: '2024-01-17' },
-];
-
-const expenseCategories = [
-  { name: 'Raw Materials', amount: 1200000, percentage: 42 },
-  { name: 'Salaries & Wages', amount: 850000, percentage: 29 },
-  { name: 'Utilities', amount: 280000, percentage: 10 },
-  { name: 'Manufacturing', amount: 320000, percentage: 11 },
-  { name: 'Other Expenses', amount: 240000, percentage: 8 },
-];
-
 export default function Accounting() {
+  const { data: financialSummary, isLoading: summaryLoading } = useFinancialSummary();
+  const { data: expenseCategories = [], isLoading: expensesLoading } = useExpensesByCategory();
+  const { data: transactions = [], isLoading: transactionsLoading } = useBankTransactions();
+
+  const isLoading = summaryLoading || expensesLoading || transactionsLoading;
+
   const stats = [
     {
       title: 'Total Revenue',
-      value: financialSummary.revenue,
+      value: financialSummary?.revenue || 0,
       change: 12.5,
       icon: DollarSign,
       color: 'primary',
     },
     {
       title: 'Net Profit',
-      value: financialSummary.netProfit,
+      value: financialSummary?.netProfit || 0,
       change: 8.2,
       icon: TrendingUp,
       color: 'success',
     },
     {
       title: 'Cash Balance',
-      value: financialSummary.cashBalance,
+      value: financialSummary?.cashBalance || 0,
       change: 5.1,
       icon: Wallet,
       color: 'warning',
     },
     {
       title: 'Receivables',
-      value: financialSummary.receivables,
+      value: financialSummary?.receivables || 0,
       change: -3.2,
       icon: CreditCard,
       color: 'destructive',
     },
   ];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -128,19 +117,19 @@ export default function Accounting() {
                 <ArrowUpRight className="w-5 h-5 text-success" />
                 <span className="font-medium text-foreground">Total Revenue</span>
               </div>
-              <span className="text-xl font-bold text-success">{formatCurrency(financialSummary.revenue)}</span>
+              <span className="text-xl font-bold text-success">{formatCurrency(financialSummary?.revenue || 0)}</span>
             </div>
             <div className="flex items-center justify-between p-4 bg-destructive/5 rounded-xl border border-destructive/20">
               <div className="flex items-center gap-3">
                 <ArrowDownRight className="w-5 h-5 text-destructive" />
                 <span className="font-medium text-foreground">Total Expenses</span>
               </div>
-              <span className="text-xl font-bold text-destructive">{formatCurrency(financialSummary.expenses)}</span>
+              <span className="text-xl font-bold text-destructive">{formatCurrency(financialSummary?.expenses || 0)}</span>
             </div>
             <div className="border-t border-border pt-4">
               <div className="flex items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/20">
                 <span className="font-semibold text-foreground">Gross Profit</span>
-                <span className="text-xl font-bold text-primary">{formatCurrency(financialSummary.grossProfit)}</span>
+                <span className="text-xl font-bold text-primary">{formatCurrency(financialSummary?.grossProfit || 0)}</span>
               </div>
             </div>
           </div>
@@ -148,22 +137,26 @@ export default function Accounting() {
           {/* Expense Breakdown */}
           <div className="mt-6">
             <h4 className="text-sm font-medium text-muted-foreground mb-4">Expense Breakdown</h4>
-            <div className="space-y-3">
-              {expenseCategories.map((category) => (
-                <div key={category.name} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-foreground">{category.name}</span>
-                    <span className="font-medium text-foreground">{formatCurrency(category.amount)}</span>
+            {expenseCategories.length === 0 ? (
+              <p className="text-muted-foreground text-center py-4">No expenses recorded</p>
+            ) : (
+              <div className="space-y-3">
+                {expenseCategories.map((category) => (
+                  <div key={category.name} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-foreground">{category.name}</span>
+                      <span className="font-medium text-foreground">{formatCurrency(category.amount)}</span>
+                    </div>
+                    <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all"
+                        style={{ width: `${category.percentage}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all"
-                      style={{ width: `${category.percentage}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -173,37 +166,44 @@ export default function Accounting() {
             <h3 className="text-lg font-semibold text-foreground">Recent Transactions</h3>
             <button className="text-sm text-primary hover:underline">View All</button>
           </div>
-          <div className="space-y-3">
-            {recentTransactions.map((txn) => (
-              <div key={txn.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className={cn(
-                    'w-8 h-8 rounded-full flex items-center justify-center',
-                    txn.type === 'credit' ? 'bg-success/10' : 'bg-destructive/10'
-                  )}>
-                    {txn.type === 'credit' 
-                      ? <ArrowUpRight className="w-4 h-4 text-success" />
-                      : <ArrowDownRight className="w-4 h-4 text-destructive" />
-                    }
+          {transactions.length === 0 ? (
+            <p className="text-muted-foreground text-center py-8">No transactions yet</p>
+          ) : (
+            <div className="space-y-3">
+              {transactions.map((txn) => {
+                const isCredit = txn.transaction_type === 'credit' || txn.transaction_type === 'deposit';
+                return (
+                  <div key={txn.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        'w-8 h-8 rounded-full flex items-center justify-center',
+                        isCredit ? 'bg-success/10' : 'bg-destructive/10'
+                      )}>
+                        {isCredit 
+                          ? <ArrowUpRight className="w-4 h-4 text-success" />
+                          : <ArrowDownRight className="w-4 h-4 text-destructive" />
+                        }
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground truncate max-w-[150px]">
+                          {txn.description || txn.transaction_type}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(txn.transaction_date).toLocaleDateString('en-KE')}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={cn(
+                      'font-semibold text-sm',
+                      isCredit ? 'text-success' : 'text-destructive'
+                    )}>
+                      {isCredit ? '+' : '-'}{formatCurrency(Number(txn.amount))}
+                    </span>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground truncate max-w-[150px]">
-                      {txn.description}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(txn.date).toLocaleDateString('en-KE')}
-                    </p>
-                  </div>
-                </div>
-                <span className={cn(
-                  'font-semibold text-sm',
-                  txn.type === 'credit' ? 'text-success' : 'text-destructive'
-                )}>
-                  {txn.type === 'credit' ? '+' : ''}{formatCurrency(txn.amount)}
-                </span>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

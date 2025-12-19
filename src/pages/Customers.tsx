@@ -2,8 +2,6 @@ import { useState } from 'react';
 import { 
   Search, 
   Plus, 
-  Filter, 
-  MoreHorizontal, 
   Phone, 
   Mail, 
   CreditCard,
@@ -13,9 +11,9 @@ import {
   Edit,
   Trash2,
   Eye,
+  Loader2,
 } from 'lucide-react';
-import { mockCustomers } from '@/data/mockCustomers';
-import { Customer } from '@/types';
+import { useCustomers, useDeleteCustomer, CustomerType } from '@/hooks/useCustomers';
 import { cn } from '@/lib/utils';
 
 const formatCurrency = (amount: number) => {
@@ -30,57 +28,67 @@ const customerTypes = [
   { value: 'all', label: 'All Customers' },
   { value: 'normal', label: 'Normal' },
   { value: 'consignment', label: 'Consignment' },
-  { value: 'marketplace', label: 'Marketplace' },
+  { value: 'credit', label: 'Credit' },
 ];
 
 export default function Customers() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
-  const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
+  
+  const { data: customers = [], isLoading } = useCustomers();
+  const deleteCustomer = useDeleteCustomer();
 
-  const filteredCustomers = mockCustomers.filter(customer => {
+  const filteredCustomers = customers.filter(customer => {
     const matchesSearch = 
       customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.phone.includes(searchQuery) ||
+      customer.phone?.includes(searchQuery) ||
       customer.email?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = selectedType === 'all' || customer.type === selectedType;
+    const matchesType = selectedType === 'all' || customer.customer_type === selectedType;
     return matchesSearch && matchesType;
   });
 
   const stats = [
     {
       title: 'Total Customers',
-      value: mockCustomers.length,
+      value: customers.length,
       icon: Users,
       color: 'primary',
     },
     {
       title: 'Credit Outstanding',
-      value: formatCurrency(mockCustomers.reduce((sum, c) => sum + c.creditBalance, 0)),
+      value: formatCurrency(customers.reduce((sum, c) => sum + Number(c.credit_balance || 0), 0)),
       icon: CreditCard,
       color: 'warning',
     },
     {
       title: 'Consignment Partners',
-      value: mockCustomers.filter(c => c.type === 'consignment').length,
+      value: customers.filter(c => c.customer_type === 'consignment').length,
       icon: Building,
       color: 'success',
     },
     {
-      title: 'Marketplace Sellers',
-      value: mockCustomers.filter(c => c.type === 'marketplace').length,
+      title: 'Marketplace',
+      value: customers.filter(c => c.customer_type === 'marketplace').length,
       icon: ShoppingBag,
       color: 'accent',
     },
   ];
 
-  const getTypeColor = (type: string) => {
+  const getTypeColor = (type: CustomerType) => {
     switch (type) {
       case 'consignment': return 'badge-warning';
       case 'marketplace': return 'badge-success';
       default: return 'bg-muted text-muted-foreground';
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -144,10 +152,7 @@ export default function Customers() {
             ))}
           </div>
         </div>
-        <button
-          onClick={() => setShowNewCustomerModal(true)}
-          className="btn-primary"
-        >
+        <button className="btn-primary">
           <Plus className="w-5 h-5" />
           Add Customer
         </button>
@@ -184,17 +189,19 @@ export default function Customers() {
                       <div>
                         <p className="font-medium text-foreground">{customer.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          Since {new Date(customer.createdAt).toLocaleDateString('en-KE', { month: 'short', year: 'numeric' })}
+                          Since {new Date(customer.created_at).toLocaleDateString('en-KE', { month: 'short', year: 'numeric' })}
                         </p>
                       </div>
                     </div>
                   </td>
                   <td className="py-4 px-6">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm text-foreground">
-                        <Phone className="w-4 h-4 text-muted-foreground" />
-                        {customer.phone}
-                      </div>
+                      {customer.phone && (
+                        <div className="flex items-center gap-2 text-sm text-foreground">
+                          <Phone className="w-4 h-4 text-muted-foreground" />
+                          {customer.phone}
+                        </div>
+                      )}
                       {customer.email && (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Mail className="w-4 h-4" />
@@ -204,21 +211,21 @@ export default function Customers() {
                     </div>
                   </td>
                   <td className="py-4 px-6">
-                    <span className={cn('text-xs font-medium px-2.5 py-1 rounded-full capitalize', getTypeColor(customer.type))}>
-                      {customer.type}
+                    <span className={cn('text-xs font-medium px-2.5 py-1 rounded-full capitalize', getTypeColor(customer.customer_type))}>
+                      {customer.customer_type}
                     </span>
                   </td>
                   <td className="py-4 px-6">
                     <span className="font-medium text-foreground">
-                      {formatCurrency(customer.creditLimit)}
+                      {formatCurrency(Number(customer.credit_limit || 0))}
                     </span>
                   </td>
                   <td className="py-4 px-6">
                     <span className={cn(
                       'font-semibold',
-                      customer.creditBalance > 0 ? 'text-warning' : 'text-success'
+                      Number(customer.credit_balance) > 0 ? 'text-warning' : 'text-success'
                     )}>
-                      {formatCurrency(customer.creditBalance)}
+                      {formatCurrency(Number(customer.credit_balance || 0))}
                     </span>
                   </td>
                   <td className="py-4 px-6">
@@ -229,7 +236,10 @@ export default function Customers() {
                       <button className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive">
+                      <button 
+                        onClick={() => deleteCustomer.mutate(customer.id)}
+                        className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
+                      >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -244,6 +254,7 @@ export default function Customers() {
           <div className="py-12 text-center">
             <Users className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
             <p className="text-muted-foreground">No customers found</p>
+            <p className="text-sm text-muted-foreground mt-1">Add your first customer to get started</p>
           </div>
         )}
       </div>

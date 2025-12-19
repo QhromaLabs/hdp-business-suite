@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { 
   Search, 
   Plus, 
-  Filter, 
   Package,
   AlertTriangle,
   TrendingUp,
@@ -10,11 +9,11 @@ import {
   Barcode,
   Edit,
   Eye,
-  MoreHorizontal,
   Download,
   Upload,
+  Loader2,
 } from 'lucide-react';
-import { mockProducts, categories } from '@/data/mockProducts';
+import { useInventory, useCategories } from '@/hooks/useProducts';
 import { cn } from '@/lib/utils';
 
 const formatCurrency = (amount: number) => {
@@ -30,28 +29,36 @@ export default function Inventory() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
 
-  const filteredProducts = mockProducts.filter(product => {
+  const { data: inventory = [], isLoading } = useInventory();
+  const { data: categories = [] } = useCategories();
+
+  const categoryNames = ['All', ...categories.map(c => c.name)];
+
+  const filteredProducts = inventory.filter(item => {
+    const variant = item.variant;
+    const product = variant?.product;
+    const categoryName = product?.category?.name;
+    
     const matchesSearch = 
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.barcode.includes(searchQuery);
-    const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
+      product?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      variant?.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      variant?.barcode?.includes(searchQuery);
+    const matchesCategory = selectedCategory === 'All' || categoryName === selectedCategory;
     const matchesStock = 
       stockFilter === 'all' ||
-      (stockFilter === 'low' && product.stock <= 50 && product.stock > 0) ||
-      (stockFilter === 'out' && product.stock === 0);
+      (stockFilter === 'low' && item.quantity <= 50 && item.quantity > 0) ||
+      (stockFilter === 'out' && item.quantity === 0);
     return matchesSearch && matchesCategory && matchesStock;
   });
 
-  const totalValue = mockProducts.reduce((sum, p) => sum + (p.cost * p.stock), 0);
-  const totalRetailValue = mockProducts.reduce((sum, p) => sum + (p.price * p.stock), 0);
-  const lowStockCount = mockProducts.filter(p => p.stock <= 50 && p.stock > 0).length;
-  const outOfStockCount = mockProducts.filter(p => p.stock === 0).length;
+  const totalValue = inventory.reduce((sum, i) => sum + (Number(i.variant?.cost_price || 0) * i.quantity), 0);
+  const lowStockCount = inventory.filter(i => i.quantity <= 50 && i.quantity > 0).length;
+  const outOfStockCount = inventory.filter(i => i.quantity === 0).length;
 
   const stats = [
     {
       title: 'Total Products',
-      value: mockProducts.length,
+      value: inventory.length,
       icon: Package,
       color: 'primary',
     },
@@ -74,6 +81,14 @@ export default function Inventory() {
       color: 'destructive',
     },
   ];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -125,7 +140,7 @@ export default function Inventory() {
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="input-field max-w-[160px]"
           >
-            {categories.map(cat => (
+            {categoryNames.map(cat => (
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
@@ -137,7 +152,7 @@ export default function Inventory() {
             ].map(filter => (
               <button
                 key={filter.value}
-                onClick={() => setStockFilter(filter.value as any)}
+                onClick={() => setStockFilter(filter.value as 'all' | 'low' | 'out')}
                 className={cn(
                   "px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
                   stockFilter === filter.value
@@ -183,78 +198,86 @@ export default function Inventory() {
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map((product, index) => (
-                <tr
-                  key={product.id}
-                  className="table-row animate-slide-up"
-                  style={{ animationDelay: `${index * 30}ms` }}
-                >
-                  <td className="py-4 px-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
-                        <span className="text-2xl">📦</span>
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">{product.name}</p>
-                        {product.variants && (
+              {filteredProducts.map((item, index) => {
+                const variant = item.variant;
+                const product = variant?.product;
+                const stock = item.quantity;
+                const cost = Number(variant?.cost_price || 0);
+                const price = Number(variant?.price || 0);
+                
+                return (
+                  <tr
+                    key={item.id}
+                    className="table-row animate-slide-up"
+                    style={{ animationDelay: `${index * 30}ms` }}
+                  >
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                          <span className="text-2xl">📦</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">{product?.name || 'Unknown'}</p>
                           <p className="text-xs text-muted-foreground">
-                            {product.variants.length} variants
+                            {variant?.variant_name}
                           </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="space-y-1">
+                        <p className="font-mono text-sm text-foreground">{variant?.sku}</p>
+                        {variant?.barcode && (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Barcode className="w-3 h-3" />
+                            {variant.barcode}
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6">
-                    <div className="space-y-1">
-                      <p className="font-mono text-sm text-foreground">{product.sku}</p>
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Barcode className="w-3 h-3" />
-                        {product.barcode}
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className="px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium">
+                        {product?.category?.name || 'Uncategorized'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <span className="text-muted-foreground">
+                        {formatCurrency(cost)}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(price)}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <span className={cn(
+                        'font-semibold',
+                        stock === 0 && 'text-destructive',
+                        stock > 0 && stock <= 50 && 'text-warning',
+                        stock > 50 && 'text-success'
+                      )}>
+                        {stock}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(cost * stock)}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="flex items-center justify-end gap-2">
+                        <button className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                          <Edit className="w-4 h-4" />
+                        </button>
                       </div>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6">
-                    <span className="px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium">
-                      {product.category}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <span className="text-muted-foreground">
-                      {formatCurrency(product.cost)}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <span className="font-medium text-foreground">
-                      {formatCurrency(product.price)}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <span className={cn(
-                      'font-semibold',
-                      product.stock === 0 && 'text-destructive',
-                      product.stock > 0 && product.stock <= 50 && 'text-warning',
-                      product.stock > 50 && 'text-success'
-                    )}>
-                      {product.stock}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <span className="font-medium text-foreground">
-                      {formatCurrency(product.cost * product.stock)}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6">
-                    <div className="flex items-center justify-end gap-2">
-                      <button className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-                        <Edit className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -263,6 +286,7 @@ export default function Inventory() {
           <div className="py-12 text-center">
             <Package className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
             <p className="text-muted-foreground">No products found</p>
+            <p className="text-sm text-muted-foreground mt-1">Add inventory to get started</p>
           </div>
         )}
       </div>

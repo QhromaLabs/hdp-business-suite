@@ -14,22 +14,39 @@ import {
   User,
   X,
   Check,
+  Loader2,
 } from 'lucide-react';
-import { mockProducts, categories } from '@/data/mockProducts';
-import { mockCustomers } from '@/data/mockCustomers';
-import { CartItem, PaymentMethod, Customer, Product } from '@/types';
+import { useInventory, useCategories } from '@/hooks/useProducts';
+import { useCustomers } from '@/hooks/useCustomers';
+import { useCreateSalesOrder } from '@/hooks/useSalesOrders';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { Database } from '@/integrations/supabase/types';
+
+type PaymentMethod = Database['public']['Enums']['payment_method'];
+
+interface CartItem {
+  variantId: string;
+  name: string;
+  sku: string;
+  price: number;
+  quantity: number;
+  discount: number;
+}
+
+interface CustomerData {
+  id: string;
+  name: string;
+  phone: string | null;
+  customer_type: string;
+  credit_balance: number;
+}
 
 const paymentMethods: { value: PaymentMethod; label: string; icon: React.ElementType }[] = [
   { value: 'cash', label: 'Cash', icon: Banknote },
   { value: 'credit', label: 'Credit', icon: CreditCard },
-  { value: 'till', label: 'M-Pesa Till', icon: Smartphone },
-  { value: 'nat', label: 'NAT Bank', icon: Building2 },
-  { value: 'equity', label: 'Equity', icon: Building2 },
-  { value: 'coop', label: 'Coop Bank', icon: Building2 },
-  { value: 'kcb_kt', label: 'KCB/KT', icon: Building2 },
-  { value: 'capital', label: 'Capital', icon: Wallet },
+  { value: 'till', label: 'M-Pesa', icon: Smartphone },
+  { value: 'nat', label: 'Bank', icon: Building2 },
 ];
 
 const formatCurrency = (amount: number) => {
@@ -45,49 +62,72 @@ export default function POS() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>('cash');
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
 
+  const { data: inventory = [], isLoading: inventoryLoading } = useInventory();
+  const { data: categories = [] } = useCategories();
+  const { data: customers = [] } = useCustomers();
+  const createOrder = useCreateSalesOrder();
+
+  const categoryNames = ['All', ...categories.map(c => c.name)];
+
   const filteredProducts = useMemo(() => {
-    return mockProducts.filter(product => {
+    return inventory.filter(item => {
+      const variant = item.variant;
+      const product = variant?.product;
+      const categoryName = product?.category?.name;
+      
       const matchesSearch = 
-        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.barcode.includes(searchQuery);
-      const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
-      return matchesSearch && matchesCategory;
+        product?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        variant?.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        variant?.barcode?.includes(searchQuery);
+      const matchesCategory = selectedCategory === 'All' || categoryName === selectedCategory;
+      const hasStock = item.quantity > 0;
+      return matchesSearch && matchesCategory && hasStock;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [inventory, searchQuery, selectedCategory]);
 
   const cartTotals = useMemo(() => {
-    const subtotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const discount = cart.reduce((sum, item) => sum + item.discount, 0);
-    const tax = (subtotal - discount) * 0.16; // 16% VAT
+    const tax = (subtotal - discount) * 0.16;
     const total = subtotal - discount + tax;
     return { subtotal, discount, tax, total };
   }, [cart]);
 
-  const addToCart = (product: Product) => {
+  const addToCart = (item: typeof inventory[0]) => {
+    const variant = item.variant;
+    const product = variant?.product;
+    if (!variant || !product) return;
+
     setCart(prev => {
-      const existing = prev.find(item => item.product.id === product.id);
+      const existing = prev.find(i => i.variantId === variant.id);
       if (existing) {
-        return prev.map(item =>
-          item.product.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
+        return prev.map(i =>
+          i.variantId === variant.id
+            ? { ...i, quantity: i.quantity + 1 }
+            : i
         );
       }
-      return [...prev, { product, quantity: 1, discount: 0 }];
+      return [...prev, {
+        variantId: variant.id,
+        name: `${product.name} - ${variant.variant_name}`,
+        sku: variant.sku,
+        price: Number(variant.price),
+        quantity: 1,
+        discount: 0,
+      }];
     });
     toast.success(`Added ${product.name}`, { duration: 1500 });
   };
 
-  const updateQuantity = (productId: string, delta: number) => {
+  const updateQuantity = (variantId: string, delta: number) => {
     setCart(prev => {
       return prev.map(item => {
-        if (item.product.id === productId) {
+        if (item.variantId === variantId) {
           const newQuantity = Math.max(0, item.quantity + delta);
           return { ...item, quantity: newQuantity };
         }
@@ -96,8 +136,8 @@ export default function POS() {
     });
   };
 
-  const removeFromCart = (productId: string) => {
-    setCart(prev => prev.filter(item => item.product.id !== productId));
+  const removeFromCart = (variantId: string) => {
+    setCart(prev => prev.filter(item => item.variantId !== variantId));
   };
 
   const clearCart = () => {
@@ -107,9 +147,9 @@ export default function POS() {
 
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const product = mockProducts.find(p => p.barcode === barcodeInput);
-    if (product) {
-      addToCart(product);
+    const item = inventory.find(i => i.variant?.barcode === barcodeInput);
+    if (item) {
+      addToCart(item);
       setBarcodeInput('');
     } else {
       toast.error('Product not found');
@@ -129,13 +169,33 @@ export default function POS() {
     setShowPaymentModal(true);
   };
 
-  const processPayment = () => {
-    toast.success('Sale completed successfully!', {
-      description: `Invoice #INV-${Date.now().toString().slice(-6)}`,
-    });
-    clearCart();
-    setShowPaymentModal(false);
+  const processPayment = async () => {
+    try {
+      await createOrder.mutateAsync({
+        customer_id: selectedCustomer?.id,
+        items: cart.map(item => ({
+          variant_id: item.variantId,
+          quantity: item.quantity,
+          unit_price: item.price,
+          discount: item.discount,
+        })),
+        payment_method: selectedPayment,
+        is_credit_sale: selectedPayment === 'credit',
+      });
+      clearCart();
+      setShowPaymentModal(false);
+    } catch (error) {
+      // Error handled by mutation
+    }
   };
+
+  if (inventoryLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-7rem)] flex gap-6 animate-fade-in">
@@ -167,7 +227,7 @@ export default function POS() {
           </div>
           
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
-            {categories.map(category => (
+            {categoryNames.map(category => (
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
@@ -186,36 +246,50 @@ export default function POS() {
 
         {/* Products Grid */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filteredProducts.map((product) => (
-              <button
-                key={product.id}
-                onClick={() => addToCart(product)}
-                className="pos-product-card text-left"
-              >
-                <div className="aspect-square rounded-lg bg-muted mb-3 flex items-center justify-center">
-                  <span className="text-3xl">📦</span>
-                </div>
-                <h3 className="font-medium text-foreground text-sm truncate">
-                  {product.name}
-                </h3>
-                <p className="text-xs text-muted-foreground font-mono mt-1">
-                  {product.sku}
-                </p>
-                <div className="flex items-center justify-between mt-2">
-                  <span className="font-bold text-foreground">
-                    {formatCurrency(product.price)}
-                  </span>
-                  <span className={cn(
-                    "text-xs px-2 py-0.5 rounded-full",
-                    product.stock > 50 ? "badge-success" : product.stock > 10 ? "badge-warning" : "badge-destructive"
-                  )}>
-                    {product.stock} in stock
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
+          {filteredProducts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+              <Receipt className="w-12 h-12 mb-3 opacity-50" />
+              <p>No products found</p>
+              <p className="text-sm mt-1">Add inventory to start selling</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {filteredProducts.map((item) => {
+                const variant = item.variant;
+                const product = variant?.product;
+                if (!variant || !product) return null;
+                
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => addToCart(item)}
+                    className="pos-product-card text-left"
+                  >
+                    <div className="aspect-square rounded-lg bg-muted mb-3 flex items-center justify-center">
+                      <span className="text-3xl">📦</span>
+                    </div>
+                    <h3 className="font-medium text-foreground text-sm truncate">
+                      {product.name}
+                    </h3>
+                    <p className="text-xs text-muted-foreground font-mono mt-1">
+                      {variant.sku}
+                    </p>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="font-bold text-foreground">
+                        {formatCurrency(Number(variant.price))}
+                      </span>
+                      <span className={cn(
+                        "text-xs px-2 py-0.5 rounded-full",
+                        item.quantity > 50 ? "badge-success" : item.quantity > 10 ? "badge-warning" : "badge-destructive"
+                      )}>
+                        {item.quantity} in stock
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -265,20 +339,20 @@ export default function POS() {
           ) : (
             cart.map((item) => (
               <div
-                key={item.product.id}
+                key={item.variantId}
                 className="bg-secondary/50 rounded-xl p-3"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <h4 className="font-medium text-foreground text-sm truncate">
-                      {item.product.name}
+                      {item.name}
                     </h4>
                     <p className="text-xs text-muted-foreground font-mono">
-                      {formatCurrency(item.product.price)} each
+                      {formatCurrency(item.price)} each
                     </p>
                   </div>
                   <button
-                    onClick={() => removeFromCart(item.product.id)}
+                    onClick={() => removeFromCart(item.variantId)}
                     className="text-muted-foreground hover:text-destructive transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -287,7 +361,7 @@ export default function POS() {
                 <div className="flex items-center justify-between mt-3">
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => updateQuantity(item.product.id, -1)}
+                      onClick={() => updateQuantity(item.variantId, -1)}
                       className="w-8 h-8 rounded-lg bg-background border border-border flex items-center justify-center hover:bg-muted transition-colors"
                     >
                       <Minus className="w-4 h-4" />
@@ -296,14 +370,14 @@ export default function POS() {
                       {item.quantity}
                     </span>
                     <button
-                      onClick={() => updateQuantity(item.product.id, 1)}
+                      onClick={() => updateQuantity(item.variantId, 1)}
                       className="w-8 h-8 rounded-lg bg-background border border-border flex items-center justify-center hover:bg-muted transition-colors"
                     >
                       <Plus className="w-4 h-4" />
                     </button>
                   </div>
                   <span className="font-bold text-foreground">
-                    {formatCurrency(item.product.price * item.quantity)}
+                    {formatCurrency(item.price * item.quantity)}
                   </span>
                 </div>
               </div>
@@ -315,7 +389,7 @@ export default function POS() {
         <div className="p-4 border-t border-border">
           <p className="text-sm font-medium text-foreground mb-3">Payment Method</p>
           <div className="grid grid-cols-4 gap-2">
-            {paymentMethods.slice(0, 4).map((method) => {
+            {paymentMethods.map((method) => {
               const Icon = method.icon;
               return (
                 <button
@@ -363,9 +437,9 @@ export default function POS() {
             <button
               onClick={handleCheckout}
               className="btn-primary flex-[2]"
-              disabled={cart.length === 0}
+              disabled={cart.length === 0 || createOrder.isPending}
             >
-              Checkout
+              {createOrder.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Checkout'}
             </button>
           </div>
         </div>
@@ -385,37 +459,47 @@ export default function POS() {
               </button>
             </div>
             <div className="p-4 overflow-y-auto max-h-96">
-              <div className="space-y-2">
-                {mockCustomers.map((customer) => (
-                  <button
-                    key={customer.id}
-                    onClick={() => {
-                      setSelectedCustomer(customer);
-                      setShowCustomerModal(false);
-                    }}
-                    className="w-full p-4 rounded-xl border border-border hover:border-primary/30 hover:bg-accent transition-all text-left"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-foreground">{customer.name}</p>
-                        <p className="text-sm text-muted-foreground">{customer.phone}</p>
+              {customers.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">No customers found</p>
+              ) : (
+                <div className="space-y-2">
+                  {customers.map((customer) => (
+                    <button
+                      key={customer.id}
+                      onClick={() => {
+                        setSelectedCustomer({
+                          id: customer.id,
+                          name: customer.name,
+                          phone: customer.phone,
+                          customer_type: customer.customer_type,
+                          credit_balance: Number(customer.credit_balance),
+                        });
+                        setShowCustomerModal(false);
+                      }}
+                      className="w-full p-4 rounded-xl border border-border hover:border-primary/30 hover:bg-accent transition-all text-left"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-foreground">{customer.name}</p>
+                          <p className="text-sm text-muted-foreground">{customer.phone}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className={cn(
+                            "text-xs px-2 py-0.5 rounded-full",
+                            customer.customer_type === 'consignment' ? 'badge-warning' : 
+                            customer.customer_type === 'marketplace' ? 'badge-success' : 'bg-muted text-muted-foreground'
+                          )}>
+                            {customer.customer_type}
+                          </span>
+                          <p className="text-sm font-medium text-foreground mt-1">
+                            Credit: {formatCurrency(Number(customer.credit_balance))}
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className={cn(
-                          "text-xs px-2 py-0.5 rounded-full",
-                          customer.type === 'consignment' ? 'badge-warning' : 
-                          customer.type === 'marketplace' ? 'badge-success' : 'bg-muted text-muted-foreground'
-                        )}>
-                          {customer.type}
-                        </span>
-                        <p className="text-sm font-medium text-foreground mt-1">
-                          Credit: {formatCurrency(customer.creditBalance)}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -437,7 +521,7 @@ export default function POS() {
                 Payment Method: {paymentMethods.find(m => m.value === selectedPayment)?.label}
               </p>
               {selectedCustomer && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground mt-1">
                   Customer: {selectedCustomer.name}
                 </p>
               )}
@@ -446,14 +530,16 @@ export default function POS() {
               <button
                 onClick={() => setShowPaymentModal(false)}
                 className="btn-secondary flex-1"
+                disabled={createOrder.isPending}
               >
                 Cancel
               </button>
               <button
                 onClick={processPayment}
                 className="btn-primary flex-1"
+                disabled={createOrder.isPending}
               >
-                Complete Sale
+                {createOrder.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
               </button>
             </div>
           </div>

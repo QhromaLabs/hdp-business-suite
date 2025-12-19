@@ -9,7 +9,9 @@ import {
   ArrowRight,
   DollarSign,
   Clock,
+  Loader2,
 } from 'lucide-react';
+import { useDashboardStats, useTodaysSales } from '@/hooks/useSalesOrders';
 import { cn } from '@/lib/utils';
 
 const formatCurrency = (amount: number) => {
@@ -21,55 +23,47 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-const stats = [
-  {
-    title: "Today's Sales",
-    value: 847500,
-    change: 12.5,
-    icon: DollarSign,
-    color: 'primary',
-  },
-  {
-    title: 'Orders Today',
-    value: 56,
-    change: 8.2,
-    icon: ShoppingCart,
-    color: 'success',
-  },
-  {
-    title: 'Pending Orders',
-    value: 12,
-    change: -5.1,
-    icon: Clock,
-    color: 'warning',
-  },
-  {
-    title: 'Low Stock Items',
-    value: 8,
-    change: 15.3,
-    icon: AlertTriangle,
-    color: 'destructive',
-  },
-];
-
-const recentSales = [
-  { id: 'INV-001', customer: 'Nakumatt Holdings', amount: 125000, time: '10 mins ago', status: 'completed' },
-  { id: 'INV-002', customer: 'Tuskys Supermarket', amount: 87500, time: '25 mins ago', status: 'completed' },
-  { id: 'INV-003', customer: 'Jumia Kenya', amount: 245000, time: '1 hour ago', status: 'pending' },
-  { id: 'INV-004', customer: 'Carrefour Kenya', amount: 156000, time: '2 hours ago', status: 'completed' },
-  { id: 'INV-005', customer: 'Quickmart Ltd', amount: 98000, time: '3 hours ago', status: 'completed' },
-];
-
-const topProducts = [
-  { name: 'Industrial Detergent 20L', sold: 145, revenue: 580000 },
-  { name: 'Multipurpose Cleaner 5L', sold: 230, revenue: 345000 },
-  { name: 'Floor Polish Premium', sold: 89, revenue: 267000 },
-  { name: 'Hand Sanitizer 1L', sold: 312, revenue: 234000 },
-  { name: 'Glass Cleaner 2L', sold: 156, revenue: 156000 },
-];
-
 export default function Dashboard() {
   const { profile } = useAuth();
+  const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
+  const { data: recentSales = [], isLoading: salesLoading } = useTodaysSales();
+
+  const isLoading = statsLoading || salesLoading;
+
+  const stats = [
+    {
+      title: "Today's Sales",
+      value: dashboardStats?.todaySales || 0,
+      change: 12.5,
+      icon: DollarSign,
+      color: 'primary',
+      isCurrency: true,
+    },
+    {
+      title: 'Orders Today',
+      value: dashboardStats?.todayOrders || 0,
+      change: 8.2,
+      icon: ShoppingCart,
+      color: 'success',
+      isCurrency: false,
+    },
+    {
+      title: 'Pending Orders',
+      value: dashboardStats?.pendingOrders || 0,
+      change: -5.1,
+      icon: Clock,
+      color: 'warning',
+      isCurrency: false,
+    },
+    {
+      title: 'Low Stock Items',
+      value: dashboardStats?.lowStockItems || 0,
+      change: 15.3,
+      icon: AlertTriangle,
+      color: 'destructive',
+      isCurrency: false,
+    },
+  ];
 
   const getColorClasses = (color: string) => {
     switch (color) {
@@ -80,6 +74,27 @@ export default function Dashboard() {
       default: return 'bg-muted text-muted-foreground';
     }
   };
+
+  const getTimeAgo = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} mins ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    return date.toLocaleDateString('en-KE');
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -95,8 +110,8 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="hidden md:block text-right">
-            <p className="text-3xl font-bold text-primary">{formatCurrency(2456000)}</p>
-            <p className="text-sidebar-muted text-sm">Monthly Revenue</p>
+            <p className="text-3xl font-bold text-primary">{formatCurrency(dashboardStats?.todaySales || 0)}</p>
+            <p className="text-sidebar-muted text-sm">Today's Revenue</p>
           </div>
         </div>
       </div>
@@ -127,7 +142,7 @@ export default function Dashboard() {
               </div>
               <div className="mt-4">
                 <p className="text-2xl font-bold text-foreground">
-                  {stat.title.includes('Sales') ? formatCurrency(stat.value) : stat.value.toLocaleString()}
+                  {stat.isCurrency ? formatCurrency(stat.value) : stat.value.toLocaleString()}
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">{stat.title}</p>
               </div>
@@ -142,71 +157,75 @@ export default function Dashboard() {
         <div className="lg:col-span-2 bg-card rounded-xl border border-border p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-foreground">Recent Sales</h3>
-            <button className="btn-ghost text-sm">
+            <button 
+              onClick={() => window.location.href = '/reports'}
+              className="btn-ghost text-sm"
+            >
               View All <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="space-y-4">
-            {recentSales.map((sale) => (
-              <div
-                key={sale.id}
-                className="flex items-center justify-between py-3 border-b border-border last:border-0"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                    <ShoppingCart className="w-5 h-5 text-muted-foreground" />
+          {recentSales.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No sales today yet</p>
+              <p className="text-sm mt-1">Start selling to see orders here</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {recentSales.slice(0, 5).map((sale) => (
+                <div
+                  key={sale.id}
+                  className="flex items-center justify-between py-3 border-b border-border last:border-0"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                      <ShoppingCart className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{sale.customer?.name || 'Walk-in Customer'}</p>
+                      <p className="text-sm text-muted-foreground">{sale.order_number} • {getTimeAgo(sale.created_at)}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-foreground">{sale.customer}</p>
-                    <p className="text-sm text-muted-foreground">{sale.id} • {sale.time}</p>
+                  <div className="text-right">
+                    <p className="font-semibold text-foreground">{formatCurrency(Number(sale.total_amount))}</p>
+                    <span className={cn(
+                      'text-xs font-medium px-2 py-0.5 rounded-full',
+                      sale.status === 'delivered' ? 'badge-success' : 
+                      sale.status === 'pending' ? 'badge-warning' : 'bg-muted text-muted-foreground'
+                    )}>
+                      {sale.status}
+                    </span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-semibold text-foreground">{formatCurrency(sale.amount)}</p>
-                  <span className={cn(
-                    'text-xs font-medium px-2 py-0.5 rounded-full',
-                    sale.status === 'completed' ? 'badge-success' : 'badge-warning'
-                  )}>
-                    {sale.status}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Top Products */}
+        {/* Quick Stats */}
         <div className="bg-card rounded-xl border border-border p-6">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-foreground">Top Products</h3>
-            <button className="btn-ghost text-sm">
-              View All <ArrowRight className="w-4 h-4" />
-            </button>
+            <h3 className="text-lg font-semibold text-foreground">Quick Stats</h3>
           </div>
           <div className="space-y-4">
-            {topProducts.map((product, index) => (
-              <div key={product.name} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">
-                      {index + 1}
-                    </span>
-                    <span className="text-sm font-medium text-foreground truncate max-w-[150px]">
-                      {product.name}
-                    </span>
-                  </div>
-                  <span className="text-sm font-semibold text-foreground">
-                    {formatCurrency(product.revenue)}
-                  </span>
-                </div>
-                <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all duration-500"
-                    style={{ width: `${(product.revenue / topProducts[0].revenue) * 100}%` }}
-                  />
-                </div>
+            <div className="p-4 bg-muted/30 rounded-xl">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Orders Today</span>
+                <span className="text-2xl font-bold text-foreground">{dashboardStats?.todayOrders || 0}</span>
               </div>
-            ))}
+            </div>
+            <div className="p-4 bg-muted/30 rounded-xl">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Pending Orders</span>
+                <span className="text-2xl font-bold text-warning">{dashboardStats?.pendingOrders || 0}</span>
+              </div>
+            </div>
+            <div className="p-4 bg-muted/30 rounded-xl">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Low Stock Items</span>
+                <span className="text-2xl font-bold text-destructive">{dashboardStats?.lowStockItems || 0}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
