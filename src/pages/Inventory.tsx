@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { 
-  Search, 
-  Plus, 
+import {
+  Search,
+  Plus,
   Package,
   AlertTriangle,
   TrendingUp,
@@ -11,10 +11,16 @@ import {
   Eye,
   Download,
   Upload,
-  Loader2,
+  Trash2,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { useInventory, useCategories } from '@/hooks/useProducts';
+import { useDeleteProducts } from '@/hooks/useDeleteProducts';
 import { cn } from '@/lib/utils';
+import { AddProductModal } from '@/components/inventory/AddProductModal';
+import { ProductDetailsModal } from '@/components/inventory/ProductDetailsModal';
+import { FilterBarSkeleton, PageHeaderSkeleton, StatsSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -28,9 +34,14 @@ export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [viewingProduct, setViewingProduct] = useState<any>(null);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
   const { data: inventory = [], isLoading } = useInventory();
   const { data: categories = [] } = useCategories();
+  const deleteProducts = useDeleteProducts();
 
   const categoryNames = ['All', ...categories.map(c => c.name)];
 
@@ -38,13 +49,13 @@ export default function Inventory() {
     const variant = item.variant;
     const product = variant?.product;
     const categoryName = product?.category?.name;
-    
-    const matchesSearch = 
+
+    const matchesSearch =
       product?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       variant?.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       variant?.barcode?.includes(searchQuery);
     const matchesCategory = selectedCategory === 'All' || categoryName === selectedCategory;
-    const matchesStock = 
+    const matchesStock =
       stockFilter === 'all' ||
       (stockFilter === 'low' && item.quantity <= 50 && item.quantity > 0) ||
       (stockFilter === 'out' && item.quantity === 0);
@@ -84,8 +95,11 @@ export default function Inventory() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="space-y-6 animate-fade-in">
+        <PageHeaderSkeleton actions={3} />
+        <StatsSkeleton />
+        <FilterBarSkeleton pills={3} />
+        <TableSkeleton rows={8} columns={8} />
       </div>
     );
   }
@@ -113,7 +127,7 @@ export default function Inventory() {
                   <Icon className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-foreground">{stat.value}</p>
+                  <p className="text-2xl font-semibold text-foreground">{stat.value}</p>
                   <p className="text-sm text-muted-foreground">{stat.title}</p>
                 </div>
               </div>
@@ -154,7 +168,7 @@ export default function Inventory() {
                 key={filter.value}
                 onClick={() => setStockFilter(filter.value as 'all' | 'low' | 'out')}
                 className={cn(
-                  "px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
+                  "px-4 py-2.5 rounded-lg text-sm transition-all",
                   stockFilter === filter.value
                     ? "bg-primary text-primary-foreground"
                     : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
@@ -174,12 +188,49 @@ export default function Inventory() {
             <Upload className="w-5 h-5" />
             Import
           </button>
-          <button className="btn-primary">
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="btn-primary"
+          >
             <Plus className="w-5 h-5" />
             Add Product
           </button>
         </div>
       </div>
+
+      {/* Bulk Action Toolbar */}
+      {selectedItems.size > 0 && (
+        <div className="bg-primary text-primary-foreground rounded-xl p-4 flex items-center justify-between animate-slide-up shadow-lg">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="w-5 h-5" />
+            <span className="font-medium">{selectedItems.size} item(s) selected</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSelectedItems(new Set())}
+              className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-sm font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (confirm(`Are you sure you want to permanently delete ${selectedItems.size} product(s)? This will also remove all associated transactions and sales records.`)) {
+                  const productIds = Array.from(selectedItems).map(id => {
+                    const item = inventory.find(i => i.id === id);
+                    return item?.variant?.product?.id;
+                  }).filter(Boolean) as string[];
+                  deleteProducts.mutate({ ids: productIds, hardDelete: true });
+                  setSelectedItems(new Set());
+                }
+              }}
+              className="px-4 py-2 bg-destructive hover:bg-destructive/90 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete Selected
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Products Table */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
@@ -187,14 +238,32 @@ export default function Inventory() {
           <table className="w-full">
             <thead>
               <tr className="bg-muted/50 border-b border-border">
-                <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Product</th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">SKU / Barcode</th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Category</th>
-                <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Cost</th>
-                <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Price</th>
-                <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Stock</th>
-                <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Value</th>
-                <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Actions</th>
+                <th className="text-left py-4 px-6">
+                  <button
+                    onClick={() => {
+                      if (selectedItems.size === filteredProducts.length) {
+                        setSelectedItems(new Set());
+                      } else {
+                        setSelectedItems(new Set(filteredProducts.map(item => item.id)));
+                      }
+                    }}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {selectedItems.size === filteredProducts.length && filteredProducts.length > 0 ? (
+                      <CheckSquare className="w-5 h-5" />
+                    ) : (
+                      <Square className="w-5 h-5" />
+                    )}
+                  </button>
+                </th>
+                <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">Product</th>
+                <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">SKU / Barcode</th>
+                <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">Category</th>
+                <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Cost</th>
+                <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Price</th>
+                <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Stock</th>
+                <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Value</th>
+                <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -204,7 +273,7 @@ export default function Inventory() {
                 const stock = item.quantity;
                 const cost = Number(variant?.cost_price || 0);
                 const price = Number(variant?.price || 0);
-                
+
                 return (
                   <tr
                     key={item.id}
@@ -212,10 +281,38 @@ export default function Inventory() {
                     style={{ animationDelay: `${index * 30}ms` }}
                   >
                     <td className="py-4 px-6">
+                      <button
+                        onClick={() => {
+                          const newSelected = new Set(selectedItems);
+                          if (newSelected.has(item.id)) {
+                            newSelected.delete(item.id);
+                          } else {
+                            newSelected.add(item.id);
+                          }
+                          setSelectedItems(newSelected);
+                        }}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {selectedItems.has(item.id) ? (
+                          <CheckSquare className="w-5 h-5 text-primary" />
+                        ) : (
+                          <Square className="w-5 h-5" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
-                          <span className="text-2xl">📦</span>
-                        </div>
+                        {product?.image_url ? (
+                          <img
+                            src={product.image_url}
+                            alt={product.name}
+                            className="w-12 h-12 rounded-lg object-cover border border-border"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
+                            <Package className="w-6 h-6" />
+                          </div>
+                        )}
                         <div>
                           <p className="font-medium text-foreground">{product?.name || 'Unknown'}</p>
                           <p className="text-xs text-muted-foreground">
@@ -246,13 +343,13 @@ export default function Inventory() {
                       </span>
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <span className="font-medium text-foreground">
+                      <span className="text-foreground">
                         {formatCurrency(price)}
                       </span>
                     </td>
                     <td className="py-4 px-6 text-right">
                       <span className={cn(
-                        'font-semibold',
+                        'font-medium',
                         stock === 0 && 'text-destructive',
                         stock > 0 && stock <= 50 && 'text-warning',
                         stock > 50 && 'text-success'
@@ -261,17 +358,36 @@ export default function Inventory() {
                       </span>
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <span className="font-medium text-foreground">
+                      <span className="text-foreground">
                         {formatCurrency(cost * stock)}
                       </span>
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                        <button
+                          onClick={() => setViewingProduct(item)}
+                          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                        <button
+                          onClick={() => {
+                            setEditingProduct(item);
+                            setIsAddModalOpen(true);
+                          }}
+                          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
                           <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm('Permanently delete this product? This will remove all history and cannot be undone.')) {
+                              const productId = item.variant?.product?.id;
+                              if (productId) {
+                                deleteProducts.mutate({ ids: [productId], hardDelete: true });
+                              }
+                            }
+                          }}
+                          className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive">
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -281,7 +397,7 @@ export default function Inventory() {
             </tbody>
           </table>
         </div>
-        
+
         {filteredProducts.length === 0 && (
           <div className="py-12 text-center">
             <Package className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
@@ -290,6 +406,20 @@ export default function Inventory() {
           </div>
         )}
       </div>
+
+      <AddProductModal
+        isOpen={isAddModalOpen}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setEditingProduct(null);
+        }}
+        productToEdit={editingProduct}
+      />
+      <ProductDetailsModal
+        isOpen={!!viewingProduct}
+        onClose={() => setViewingProduct(null)}
+        product={viewingProduct}
+      />
     </div>
   );
 }

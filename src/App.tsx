@@ -10,7 +10,8 @@ import Dashboard from "./pages/Dashboard";
 import POS from "./pages/POS";
 import Customers from "./pages/Customers";
 import Inventory from "./pages/Inventory";
-import Manufacturing from "./pages/Manufacturing";
+import Categories from "./pages/Categories";
+import Manufacturing from "@/pages/Manufacturing";
 import Accounting from "./pages/Accounting";
 import HR from "./pages/HR";
 import FieldSales from "./pages/FieldSales";
@@ -18,12 +19,14 @@ import Audit from "./pages/Audit";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import Profile from "./pages/Profile";
+import Orders from "./pages/Orders";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
-  
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-sidebar flex items-center justify-center">
@@ -31,11 +34,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/auth" replace />;
   }
-  
+
   return <>{children}</>;
 }
 
@@ -52,9 +55,9 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route 
-        path="/auth" 
-        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />} 
+      <Route
+        path="/auth"
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />}
       />
       <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
       <Route
@@ -69,6 +72,7 @@ function AppRoutes() {
         <Route path="pos" element={<POS />} />
         <Route path="customers" element={<Customers />} />
         <Route path="inventory" element={<Inventory />} />
+        <Route path="categories" element={<Categories />} />
         <Route path="manufacturing" element={<Manufacturing />} />
         <Route path="accounting" element={<Accounting />} />
         <Route path="hr" element={<HR />} />
@@ -76,6 +80,8 @@ function AppRoutes() {
         <Route path="audit" element={<Audit />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="profile" element={<Profile />} />
+        <Route path="orders" element={<Orders />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
@@ -87,7 +93,7 @@ const App = () => (
     <AuthProvider>
       <TooltipProvider>
         <Toaster />
-        <Sonner />
+        <Sonner position="top-center" />
         <BrowserRouter>
           <AppRoutes />
         </BrowserRouter>

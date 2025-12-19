@@ -5,6 +5,7 @@ import { Eye, EyeOff, Lock, Mail, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { z } from 'zod';
+import { AuthSkeleton } from '@/components/loading/PageSkeletons';
 
 const emailSchema = z.string().email('Please enter a valid email address');
 const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
@@ -109,11 +110,7 @@ export default function Auth() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-sidebar flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-      </div>
-    );
+    return <AuthSkeleton />;
   }
 
   return (

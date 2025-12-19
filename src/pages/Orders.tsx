@@ -1,0 +1,415 @@
+import { useState } from 'react';
+import { useSalesOrders, useOrderItems, SalesOrder } from '@/hooks/useSalesOrders';
+import {
+    Search,
+    Filter,
+    Eye,
+    Calendar,
+    User,
+    Package,
+    X,
+    ChevronRight,
+    Receipt,
+    Download,
+    Printer,
+    MoreVertical,
+    CheckCircle,
+    Navigation,
+    Loader2,
+    PackageCheck,
+    Truck,
+} from 'lucide-react';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { useUpdateSalesOrderStatus } from '@/hooks/useSalesOrders';
+
+export default function Orders() {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedStatus, setSelectedStatus] = useState<string>('all');
+    const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
+    const updateStatus = useUpdateSalesOrderStatus();
+
+    const { data: orders = [], isLoading } = useSalesOrders(
+        selectedStatus === 'all' ? undefined : selectedStatus as any
+    );
+
+    const filteredOrders = orders.filter(order =>
+        order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.customer?.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const statusColors = {
+        pending: 'bg-warning/10 text-warning border-warning/20',
+        approved: 'bg-primary/10 text-primary border-primary/20',
+        dispatched: 'bg-info/10 text-info border-info/20',
+        delivered: 'bg-success/10 text-success border-success/20',
+        cancelled: 'bg-destructive/10 text-destructive border-destructive/20',
+    };
+
+    const formatCurrency = (amount: number) => {
+        return new Intl.NumberFormat('en-KE', {
+            style: 'currency',
+            currency: 'KSh',
+        }).format(amount);
+    };
+
+    return (
+        <div className="p-6 space-y-6 animate-fade-in">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-black text-foreground tracking-tight">Orders History</h1>
+                    <p className="text-muted-foreground mt-1 text-sm font-medium">Track and manage all business sales</p>
+                </div>
+                <div className="flex items-center gap-2 bg-card p-1 rounded-xl border border-border/50 shadow-sm">
+                    {['all', 'pending', 'approved', 'dispatched'].map((status) => (
+                        <button
+                            key={status}
+                            onClick={() => setSelectedStatus(status)}
+                            className={cn(
+                                "px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+                                selectedStatus === status
+                                    ? "bg-primary text-primary-foreground shadow-lg scale-[1.02]"
+                                    : "text-muted-foreground hover:bg-muted"
+                            )}
+                        >
+                            {status}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Filters & Search */}
+            <div className="flex flex-col md:flex-row gap-4 items-center">
+                <div className="relative flex-1 w-full">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                        type="text"
+                        placeholder="Search by order # or customer..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-card border border-border/50 rounded-2xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm"
+                    />
+                </div>
+            </div>
+
+            {/* Orders List */}
+            <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto scrollbar-hide">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-muted/30 border-b border-border/50">
+                                <th className="px-6 py-4 text-[10px] font-black uppercase text-muted-foreground tracking-widest">Order Details</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase text-muted-foreground tracking-widest">Customer</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase text-muted-foreground tracking-widest">Date & Time</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase text-muted-foreground tracking-widest">Total Amount</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase text-muted-foreground tracking-widest text-center">Status</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase text-muted-foreground tracking-widest text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/30">
+                            {isLoading ? (
+                                Array.from({ length: 5 }).map((_, i) => (
+                                    <tr key={i} className="animate-pulse">
+                                        <td colSpan={6} className="px-6 py-8 bg-muted/5"></td>
+                                    </tr>
+                                ))
+                            ) : filteredOrders.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">No orders found matching your criteria.</td>
+                                </tr>
+                            ) : (
+                                filteredOrders.map((order) => (
+                                    <tr key={order.id} className="group hover:bg-accent/5 transition-colors">
+                                        <td className="px-6 py-5">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                                                    <Receipt className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-foreground text-sm tracking-tight">#{order.order_number}</p>
+                                                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tighter mt-0.5">{order.payment_method || 'CASH'}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <div className="flex items-center gap-2">
+                                                <User className="w-3.5 h-3.5 text-muted-foreground" />
+                                                <span className="text-sm font-semibold">{order.customer?.name || 'Walk-in Guest'}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-medium">{format(new Date(order.created_at), 'dd MMM, yyyy')}</span>
+                                                <span className="text-[10px] text-muted-foreground font-mono">{format(new Date(order.created_at), 'hh:mm a')}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <span className="text-sm font-black text-primary">{formatCurrency(Number(order.total_amount))}</span>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <div className="flex justify-center">
+                                                <span className={cn(
+                                                    "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border",
+                                                    statusColors[order.status as keyof typeof statusColors] || 'bg-muted text-muted-foreground border-border'
+                                                )}>
+                                                    {order.status}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-5 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                {order.status === 'pending' && (
+                                                    <button
+                                                        onClick={() => updateStatus.mutate({ id: order.id, status: 'approved' })}
+                                                        disabled={updateStatus.isPending}
+                                                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-success/10 text-success hover:bg-success hover:text-white transition-all shadow-sm border border-success/20 text-[10px] font-black uppercase tracking-widest"
+                                                        title="Release Order"
+                                                    >
+                                                        {updateStatus.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                                                        <span>Release</span>
+                                                    </button>
+                                                )}
+                                                {order.status === 'approved' && (
+                                                    <button
+                                                        onClick={() => updateStatus.mutate({ id: order.id, status: 'dispatched' })}
+                                                        disabled={updateStatus.isPending}
+                                                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all shadow-sm border border-primary/20 text-[10px] font-black uppercase tracking-widest"
+                                                        title="Dispatch Order"
+                                                    >
+                                                        {updateStatus.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
+                                                        <span>Dispatch</span>
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => setSelectedOrder(order)}
+                                                    className="p-2.5 rounded-xl bg-muted/50 hover:bg-primary hover:text-primary-foreground transition-all shadow-sm"
+                                                    title="View Details"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Order Details Modal */}
+            {selectedOrder && (
+                <OrderDetailsModal
+                    order={selectedOrder}
+                    onClose={() => setSelectedOrder(null)}
+                    formatCurrency={formatCurrency}
+                    updateStatus={updateStatus}
+                />
+            )}
+        </div>
+    );
+}
+
+function OrderDetailsModal({
+    order,
+    onClose,
+    formatCurrency,
+    updateStatus,
+}: {
+    order: SalesOrder;
+    onClose: () => void;
+    formatCurrency: (v: number) => string;
+    updateStatus: any;
+}) {
+    const { data: items = [], isLoading } = useOrderItems(order.id);
+
+    const handleApprove = () => updateStatus.mutate({ id: order.id, status: 'approved' });
+    const handleDispatch = () => updateStatus.mutate({ id: order.id, status: 'dispatched' });
+    const handleCancel = () => updateStatus.mutate({ id: order.id, status: 'cancelled' });
+
+    return (
+        <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-card w-full max-w-2xl rounded-3xl border border-border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-scale-in">
+                {/* Modal Header */}
+                <div className="p-6 border-b border-border/50 flex items-center justify-between bg-accent/5">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                            <Package className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black tracking-tight">Order #{order.order_number}</h3>
+                            <p className="text-xs text-muted-foreground font-medium">Placed on {format(new Date(order.created_at), 'MMMM dd, yyyy')}</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="w-10 h-10 rounded-full hover:bg-muted flex items-center justify-center transition-colors"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {/* Modal Content */}
+                <div className="p-6 flex-1 overflow-y-auto scrollbar-hide space-y-8">
+                    {/* Status Controls (Order Desk Tech) */}
+                    <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col md:flex-row items-center justify-between gap-4 animate-slide-up">
+                        <div className="flex items-center gap-4">
+                            <div className={cn(
+                                "w-12 h-12 rounded-2xl flex items-center justify-center border",
+                                order.status === 'pending' ? 'bg-warning/10 text-warning border-warning/20' :
+                                    order.status === 'approved' ? 'bg-primary/10 text-primary border-primary/20' :
+                                        'bg-success/10 text-success border-success/20'
+                            )}>
+                                {order.status === 'pending' ? <Clock className="w-6 h-6" /> :
+                                    order.status === 'approved' ? <PackageCheck className="w-6 h-6" /> :
+                                        <Truck className="w-6 h-6" />}
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest leading-none mb-1">Current Fulfillment State</p>
+                                <div className="flex items-center gap-2">
+                                    <h4 className="text-lg font-black uppercase tracking-tight text-foreground">{order.status}</h4>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-primary/40" />
+                                    <p className="text-xs text-muted-foreground font-medium">Updated just now</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full md:w-auto">
+                            {order.status === 'pending' && (
+                                <>
+                                    <button
+                                        onClick={handleApprove}
+                                        disabled={updateStatus.isPending}
+                                        className="flex-1 md:flex-none px-6 py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {updateStatus.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                        Release Order
+                                    </button>
+                                    <button
+                                        onClick={handleCancel}
+                                        disabled={updateStatus.isPending}
+                                        className="flex-1 md:flex-none px-6 py-3 bg-destructive/10 text-destructive rounded-xl font-bold text-sm hover:bg-destructive hover:text-white transition-all flex items-center justify-center gap-2"
+                                    >
+                                        Cancel
+                                    </button>
+                                </>
+                            )}
+                            {order.status === 'approved' && (
+                                <button
+                                    onClick={handleDispatch}
+                                    disabled={updateStatus.isPending}
+                                    className="w-full md:w-auto px-8 py-3 bg-info/10 text-info border border-info/20 rounded-xl font-bold text-sm hover:bg-info hover:text-white transition-all flex items-center justify-center gap-2"
+                                >
+                                    {updateStatus.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+                                    Dispatch Now
+                                </button>
+                            )}
+                            {(order.status === 'dispatched' || order.status === 'delivered') && (
+                                <div className="px-4 py-2 rounded-lg bg-success/10 text-success text-[10px] font-black uppercase tracking-widest border border-success/20">
+                                    Fulfillment Complete
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Customer & Info Cards */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 rounded-2xl bg-muted/30 border border-border/50">
+                            <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-3">Customer Information</p>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                                    <User className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-bold">{order.customer?.name || 'Walk-in Guest'}</p>
+                                    <p className="text-xs text-muted-foreground">{order.customer?.phone || 'No phone provided'}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-muted/30 border border-border/50">
+                            <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-3">Payment Details</p>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center text-success">
+                                    <Receipt className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-bold uppercase">{order.payment_method || 'Cash'}</p>
+                                    <p className="text-xs text-muted-foreground">{order.is_credit_sale ? 'Credit Sale' : 'Direct Payment'}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Items Table */}
+                    <div>
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-4">Items Summary</p>
+                        <div className="rounded-2xl border border-border/50 overflow-hidden bg-muted/10">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-muted/50 text-[10px] font-black uppercase text-muted-foreground tracking-widest border-b border-border/50">
+                                        <th className="px-4 py-3">Product</th>
+                                        <th className="px-4 py-3 text-center">Qty</th>
+                                        <th className="px-4 py-3 text-right">Price</th>
+                                        <th className="px-4 py-3 text-right">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/30 text-sm font-medium">
+                                    {isLoading ? (
+                                        Array.from({ length: 2 }).map((_, i) => (
+                                            <tr key={i} className="animate-pulse h-12 bg-muted/5"></tr>
+                                        ))
+                                    ) : items.map((item: any) => (
+                                        <tr key={item.id}>
+                                            <td className="px-4 py-3">
+                                                <p className="font-bold">{item.variant?.product?.name}</p>
+                                                <p className="text-[10px] text-muted-foreground">{item.variant?.variant_name} - {item.variant?.sku}</p>
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-muted-foreground">x{item.quantity}</td>
+                                            <td className="px-4 py-3 text-right">{formatCurrency(Number(item.unit_price))}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-primary">{formatCurrency(Number(item.total_price))}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Financial Summary */}
+                    <div className="flex flex-col items-end gap-2 pt-4">
+                        <div className="w-full max-w-[240px] space-y-2">
+                            <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                                <span>Subtotal</span>
+                                <span>{formatCurrency(Number(order.subtotal))}</span>
+                            </div>
+                            <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                                <span>Discount</span>
+                                <span className="text-destructive">-{formatCurrency(Number(order.discount_amount))}</span>
+                            </div>
+                            <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                                <span>VAT (16%)</span>
+                                <span>{formatCurrency(Number(order.tax_amount))}</span>
+                            </div>
+                            <div className="pt-2 border-t border-border mt-2 flex justify-between items-center text-lg">
+                                <span className="font-black text-foreground tracking-tight">Grand Total</span>
+                                <span className="font-black text-primary">{formatCurrency(Number(order.total_amount))}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-6 border-t border-border/50 bg-muted/10 flex gap-3">
+                    <button className="flex-1 py-3 bg-secondary text-secondary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-secondary/80 transition-all shadow-sm">
+                        <Download className="w-4 h-4" />
+                        Download PDF
+                    </button>
+                    <button className="flex-1 py-3 bg-primary text-primary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:scale-[1.01] transition-all shadow-lg">
+                        <Printer className="w-4 h-4" />
+                        Print Receipt
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}

@@ -15,6 +15,7 @@ const pageTitles: Record<string, string> = {
   '/audit': 'Audit & Compliance',
   '/reports': 'Reports & Analytics',
   '/settings': 'Settings',
+  '/profile': 'My Profile',
 };
 
 export default function MainLayout() {

@@ -30,7 +30,7 @@ export function useCustomers() {
         .select('*')
         .eq('is_active', true)
         .order('name');
-      
+
       if (error) throw error;
       return data as Customer[];
     },
@@ -39,7 +39,7 @@ export function useCustomers() {
 
 export function useCreateCustomer() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (customer: { name: string; email?: string; phone?: string; address?: string; customer_type: CustomerType; credit_limit?: number }) => {
       const { data, error } = await supabase
@@ -54,7 +54,7 @@ export function useCreateCustomer() {
         }])
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -68,16 +68,48 @@ export function useCreateCustomer() {
   });
 }
 
+export function useUpdateCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (customer: { id: string; name: string; email?: string; phone?: string; address?: string; customer_type: CustomerType; credit_limit?: number }) => {
+      const { data, error } = await supabase
+        .from('customers')
+        .update({
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          address: customer.address,
+          customer_type: customer.customer_type,
+          credit_limit: customer.credit_limit || 0,
+        })
+        .eq('id', customer.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      toast.success('Customer updated successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to update customer: ' + error.message);
+    },
+  });
+}
+
 export function useDeleteCustomer() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
         .from('customers')
         .update({ is_active: false })
         .eq('id', id);
-      
+
       if (error) throw error;
     },
     onSuccess: () => {

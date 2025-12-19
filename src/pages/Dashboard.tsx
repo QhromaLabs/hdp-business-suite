@@ -9,10 +9,19 @@ import {
   ArrowRight,
   DollarSign,
   Clock,
-  Loader2,
 } from 'lucide-react';
 import { useDashboardStats, useTodaysSales } from '@/hooks/useSalesOrders';
 import { cn } from '@/lib/utils';
+import { DashboardSkeleton } from '@/components/loading/PageSkeletons';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -80,7 +89,7 @@ export default function Dashboard() {
     const date = new Date(dateString);
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins} mins ago`;
     const diffHours = Math.floor(diffMins / 60);
@@ -89,11 +98,7 @@ export default function Dashboard() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (
@@ -121,7 +126,7 @@ export default function Dashboard() {
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           const isPositive = stat.change > 0;
-          
+
           return (
             <div
               key={stat.title}
@@ -153,79 +158,150 @@ export default function Dashboard() {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Sales */}
-        <div className="lg:col-span-2 bg-card rounded-xl border border-border p-6">
+        {/* Revenue Trend Chart */}
+        <div className="lg:col-span-2 bg-card rounded-xl border border-border p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-foreground">Recent Sales</h3>
-            <button 
-              onClick={() => window.location.href = '/reports'}
-              className="btn-ghost text-sm"
-            >
-              View All <ArrowRight className="w-4 h-4" />
-            </button>
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">Revenue Trend</h3>
+              <p className="text-sm text-muted-foreground">Sales performance over the last 7 days</p>
+            </div>
+            <div className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+              +12.5% vs last week
+            </div>
           </div>
-          {recentSales.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground">
-              <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>No sales today yet</p>
-              <p className="text-sm mt-1">Start selling to see orders here</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {recentSales.slice(0, 5).map((sale) => (
-                <div
-                  key={sale.id}
-                  className="flex items-center justify-between py-3 border-b border-border last:border-0"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                      <ShoppingCart className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">{sale.customer?.name || 'Walk-in Customer'}</p>
-                      <p className="text-sm text-muted-foreground">{sale.order_number} • {getTimeAgo(sale.created_at)}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-foreground">{formatCurrency(Number(sale.total_amount))}</p>
-                    <span className={cn(
-                      'text-xs font-medium px-2 py-0.5 rounded-full',
-                      sale.status === 'delivered' ? 'badge-success' : 
-                      sale.status === 'pending' ? 'badge-warning' : 'bg-muted text-muted-foreground'
-                    )}>
-                      {sale.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={dashboardStats?.chartData || []}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="date"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  tickFormatter={(str) => {
+                    const date = new Date(str);
+                    return date.toLocaleDateString('en-KE', { weekday: 'short' });
+                  }}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  tickFormatter={(value) => `KSh ${value / 1000}k`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--card))',
+                    borderColor: 'hsl(var(--border))',
+                    borderRadius: '12px',
+                    color: 'hsl(var(--foreground))'
+                  }}
+                  formatter={(value: number) => [formatCurrency(value), 'Revenue']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorRevenue)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        {/* Quick Stats */}
-        <div className="bg-card rounded-xl border border-border p-6">
+        {/* Low Stock & Alerts */}
+        <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-foreground">Quick Stats</h3>
+            <h3 className="text-lg font-semibold text-foreground">Critical Alerts</h3>
           </div>
           <div className="space-y-4">
-            <div className="p-4 bg-muted/30 rounded-xl">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Orders Today</span>
-                <span className="text-2xl font-bold text-foreground">{dashboardStats?.todayOrders || 0}</span>
+            {dashboardStats?.lowStockItems && dashboardStats.lowStockItems > 0 ? (
+              <div className="p-4 bg-destructive/5 border border-destructive/10 rounded-xl flex gap-3">
+                <AlertTriangle className="w-5 h-5 text-destructive shrink-0" />
+                <div>
+                  <p className="font-medium text-destructive">Low Stock Warning</p>
+                  <p className="text-sm text-destructive/80">{dashboardStats.lowStockItems} variants are below reorder level.</p>
+                </div>
+              </div>
+            ) : null}
+            <div className="p-4 bg-warning/5 border border-warning/10 rounded-xl flex gap-3">
+              <Clock className="w-5 h-5 text-warning shrink-0" />
+              <div>
+                <p className="font-medium text-warning">Pending Orders</p>
+                <p className="text-sm text-warning/80">{dashboardStats?.pendingOrders || 0} orders waiting for dispatch.</p>
               </div>
             </div>
-            <div className="p-4 bg-muted/30 rounded-xl">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Pending Orders</span>
-                <span className="text-2xl font-bold text-warning">{dashboardStats?.pendingOrders || 0}</span>
+            <div className="p-4 bg-muted/30 rounded-xl flex gap-3">
+              <Package className="w-5 h-5 text-muted-foreground shrink-0" />
+              <div>
+                <p className="font-medium text-foreground">Next Restock</p>
+                <p className="text-sm text-muted-foreground">Scheduled for Monday, Industrial Area.</p>
               </div>
             </div>
-            <div className="p-4 bg-muted/30 rounded-xl">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Low Stock Items</span>
-                <span className="text-2xl font-bold text-destructive">{dashboardStats?.lowStockItems || 0}</span>
-              </div>
-            </div>
+          </div>
+          <button
+            onClick={() => window.location.href = '/inventory'}
+            className="w-full mt-6 btn-secondary py-3 text-sm font-semibold"
+          >
+            Manage Inventory
+          </button>
+        </div>
+
+        {/* Recent Sales Table */}
+        <div className="lg:col-span-3 bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+          <div className="p-6 border-b border-border flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-foreground">Recent Sales Activity</h3>
+            <button
+              onClick={() => window.location.href = '/reports'}
+              className="text-primary text-sm font-semibold hover:underline"
+            >
+              Export Report
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-muted/50 text-muted-foreground text-sm">
+                  <th className="py-4 px-6 font-medium">Order #</th>
+                  <th className="py-4 px-6 font-medium">Customer</th>
+                  <th className="py-4 px-6 font-medium">Method</th>
+                  <th className="py-4 px-6 font-medium">Total</th>
+                  <th className="py-4 px-6 font-medium">Status</th>
+                  <th className="py-4 px-6 font-medium">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {recentSales.slice(0, 6).map((sale) => (
+                  <tr key={sale.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="py-4 px-6 font-mono text-sm uppercase">{sale.order_number}</td>
+                    <td className="py-4 px-6 font-medium">{sale.customer?.name || 'Walk-in'}</td>
+                    <td className="py-4 px-6">
+                      <span className="capitalize text-sm">{sale.payment_method?.toLowerCase() || 'cash'}</span>
+                    </td>
+                    <td className="py-4 px-6 font-bold">{formatCurrency(Number(sale.total_amount))}</td>
+                    <td className="py-4 px-6">
+                      <span className={cn(
+                        'px-2 py-1 rounded-lg text-xs font-semibold',
+                        sale.status === 'delivered' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
+                      )}>
+                        {sale.status}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-sm text-muted-foreground">
+                      {getTimeAgo(sale.created_at)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

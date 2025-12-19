@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { 
-  Search, 
-  Plus, 
-  Phone, 
-  Mail, 
+import {
+  Search,
+  Plus,
+  Phone,
+  Mail,
   CreditCard,
   Users,
   Building,
@@ -15,6 +15,9 @@ import {
 } from 'lucide-react';
 import { useCustomers, useDeleteCustomer, CustomerType } from '@/hooks/useCustomers';
 import { cn } from '@/lib/utils';
+import { AddCustomerModal } from '@/components/customers/AddCustomerModal';
+import { CustomerDetailsModal } from '@/components/customers/CustomerDetailsModal';
+import { CardGridSkeleton, FilterBarSkeleton, PageHeaderSkeleton, StatsSkeleton } from '@/components/loading/PageSkeletons';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -34,12 +37,15 @@ const customerTypes = [
 export default function Customers() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
-  
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<any>(null);
+  const [viewingCustomer, setViewingCustomer] = useState<any>(null);
+
   const { data: customers = [], isLoading } = useCustomers();
   const deleteCustomer = useDeleteCustomer();
 
   const filteredCustomers = customers.filter(customer => {
-    const matchesSearch = 
+    const matchesSearch =
       customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       customer.phone?.includes(searchQuery) ||
       customer.email?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -84,8 +90,11 @@ export default function Customers() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="space-y-6 animate-fade-in">
+        <PageHeaderSkeleton actions={1} />
+        <StatsSkeleton />
+        <FilterBarSkeleton pills={3} />
+        <CardGridSkeleton cards={6} />
       </div>
     );
   }
@@ -113,7 +122,7 @@ export default function Customers() {
                   <Icon className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-foreground">{stat.value}</p>
+                  <p className="text-2xl font-semibold text-foreground">{stat.value}</p>
                   <p className="text-sm text-muted-foreground">{stat.title}</p>
                 </div>
               </div>
@@ -152,7 +161,9 @@ export default function Customers() {
             ))}
           </div>
         </div>
-        <button className="btn-primary">
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="btn-primary">
           <Plus className="w-5 h-5" />
           Add Customer
         </button>
@@ -230,13 +241,20 @@ export default function Customers() {
                   </td>
                   <td className="py-4 px-6">
                     <div className="flex items-center justify-end gap-2">
-                      <button className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                      <button
+                        onClick={() => setViewingCustomer(customer)}
+                        className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
                         <Eye className="w-4 h-4" />
                       </button>
-                      <button className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                      <button
+                        onClick={() => {
+                          setEditingCustomer(customer);
+                          setIsAddModalOpen(true);
+                        }}
+                        className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button 
+                      <button
                         onClick={() => deleteCustomer.mutate(customer.id)}
                         className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
                       >
@@ -249,7 +267,7 @@ export default function Customers() {
             </tbody>
           </table>
         </div>
-        
+
         {filteredCustomers.length === 0 && (
           <div className="py-12 text-center">
             <Users className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
@@ -258,6 +276,19 @@ export default function Customers() {
           </div>
         )}
       </div>
+      <AddCustomerModal
+        isOpen={isAddModalOpen}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setEditingCustomer(null);
+        }}
+        customerToEdit={editingCustomer}
+      />
+      <CustomerDetailsModal
+        isOpen={!!viewingCustomer}
+        onClose={() => setViewingCustomer(null)}
+        customer={viewingCustomer}
+      />
     </div>
   );
 }
