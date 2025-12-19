@@ -5,7 +5,6 @@ import {
   ShoppingCart,
   Users,
   Package,
-  CreditCard,
   AlertTriangle,
   ArrowRight,
   DollarSign,
@@ -70,7 +69,7 @@ const topProducts = [
 ];
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { profile } = useAuth();
 
   const getColorClasses = (color: string) => {
     switch (color) {
@@ -89,7 +88,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold">
-              Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'}, {user?.name?.split(' ')[0]}!
+              Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'}, {profile?.full_name?.split(' ')[0] || 'User'}!
             </h2>
             <p className="text-sidebar-muted mt-1">
               Here's what's happening with your business today.
