@@ -9,23 +9,38 @@ import {
   Key,
   Palette,
   Database,
+  Receipt,
+  Copy,
 } from 'lucide-react';
-import { useUserRoles, useRemoveUserRole, ProfileWithRole } from '@/hooks/useSettings';
+import { useUserRoles, useRemoveUserRole, useUpsertUserRole, ProfileWithRole, AppRole } from '@/hooks/useSettings';
 import { ManageRoleModal } from '@/components/settings/ManageRoleModal';
 import { EditProfileModal } from '@/components/settings/EditProfileModal';
 import { CardGridSkeleton, FormCardSkeleton, PageHeaderSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
+import { Switch } from '@/components/ui/switch';
+import { useSettings } from '@/contexts/SettingsContext';
 
 export default function Settings() {
   const { data: profiles = [], isLoading } = useUserRoles();
   const removeRole = useRemoveUserRole();
+  const upsertRole = useUpsertUserRole();
+  const { taxEnabled, setTaxEnabled } = useSettings();
+  const deviceLink = typeof window !== 'undefined' ? `${window.location.origin}/device-id` : '/device-id';
   const [selectedProfile, setSelectedProfile] = useState<ProfileWithRole | null>(null);
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<AppRole | 'all'>('all');
   const [notificationPrefs, setNotificationPrefs] = useState({
     email: true,
     sms: false,
     push: true,
   });
+
+  const openDeviceModal = (profile?: ProfileWithRole | null) => {
+    const chosenProfile = profile || profiles[0] || null;
+    setSelectedProfile(chosenProfile);
+    setIsProfileModalOpen(true);
+  };
 
   const stats = [
     { label: 'Admins', value: profiles.filter(p => p.role === 'admin').length },
@@ -174,15 +189,47 @@ export default function Settings() {
               <h4 className="font-semibold text-foreground">Device Policies</h4>
             </div>
             <p className="text-sm text-muted-foreground">Restrict logins to registered device IDs to secure POS and field apps.</p>
+
+            <div className="p-4 rounded-lg border border-primary/20 bg-primary/5 space-y-2 text-sm">
+              <p className="font-semibold text-foreground">Step 1: Share this link to capture Device ID (no login needed)</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 rounded-md bg-card border border-border text-foreground text-xs break-all">{deviceLink}</code>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(deviceLink)}
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
+                >
+                  <Copy className="w-4 h-4" /> Copy
+                </button>
+              </div>
+              <p className="text-muted-foreground">Ask the user to open that link on the device/browser they will use, copy the Device ID shown, and send it to you. Paste it into Authorized Device ID for their profile, then save.</p>
+            </div>
+
             <button
               className="btn-secondary w-fit"
-              onClick={() => {
-                setSelectedProfile(profiles[0] || null);
-                setIsProfileModalOpen(true);
-              }}
+              onClick={() => openDeviceModal()}
             >
               Register Device
             </button>
+
+          </div>
+
+          <div className="pt-4 border-t border-border space-y-3">
+            <div className="flex items-center gap-2">
+              <Receipt className="w-5 h-5 text-primary" />
+              <h4 className="font-semibold text-foreground">Tax Settings</h4>
+            </div>
+            <div className="p-3 rounded-lg border border-border bg-muted/30 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium text-foreground">Turn tax on</p>
+                <p className="text-xs text-muted-foreground">When off, VAT is hidden and removed from new sales totals.</p>
+              </div>
+              <Switch
+                checked={taxEnabled}
+                onCheckedChange={(checked) => setTaxEnabled(checked)}
+                aria-label="Toggle VAT"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -191,7 +238,7 @@ export default function Settings() {
         <h3 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Register Device', icon: Smartphone },
+            { label: 'Register Device', icon: Smartphone, action: () => openDeviceModal() },
             { label: 'API Keys', icon: Key },
             { label: 'Theme', icon: Palette },
             { label: 'System Logs', icon: Database },
@@ -200,6 +247,7 @@ export default function Settings() {
             return (
               <button
                 key={action.label}
+                onClick={action.action}
                 className="p-4 bg-muted/30 rounded-xl flex flex-col items-center gap-2 hover:bg-muted/50 transition-colors"
               >
                 <ActionIcon className="w-6 h-6 text-primary" />

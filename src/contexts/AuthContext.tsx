@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { UserRole } from '@/types';
+import { getClientDeviceId } from '@/lib/device';
+import { toast } from 'sonner';
 
 interface Profile {
   id: string;
@@ -32,6 +34,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const clientDeviceId = typeof window !== 'undefined' ? getClientDeviceId() : 'unknown';
+
+  const enforceDeviceGuard = async (profileData: any) => {
+    if (!profileData?.device_id) return;
+    if (profileData.device_id === clientDeviceId) return;
+
+    toast.error('This device is not authorized for this account.');
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    setUserRole(null);
+  };
 
   const fetchUserProfile = async (userId: string) => {
     try {
@@ -47,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       setProfile(profileData);
+      await enforceDeviceGuard(profileData);
 
       // Fetch user role
       const { data: roleData, error: roleError } = await supabase

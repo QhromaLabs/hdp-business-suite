@@ -28,6 +28,8 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Database } from '@/integrations/supabase/types';
 import { POSSkeleton } from '@/components/loading/PageSkeletons';
+import { useSettings } from '@/contexts/SettingsContext';
+import { calculateTotals } from '@/lib/tax';
 
 type PaymentMethod = Database['public']['Enums']['payment_method'];
 
@@ -68,6 +70,7 @@ export default function POS() {
   const { data: categories = [] } = useCategories();
   const { data: customers = [] } = useCustomers();
   const createCustomer = useCreateCustomer();
+  const { taxEnabled, taxRate } = useSettings();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -113,10 +116,9 @@ export default function POS() {
   const cartTotals = useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const discount = cart.reduce((sum, item) => sum + item.discount, 0);
-    const tax = (subtotal - discount) * 0.16;
-    const total = subtotal - discount + tax;
+    const { tax, total } = calculateTotals(subtotal, discount, taxEnabled);
     return { subtotal, discount, tax, total };
-  }, [cart]);
+  }, [cart, taxEnabled]);
 
   const addToCart = (item: any, quantity = 1) => {
     const variant = item.variant;
@@ -527,10 +529,12 @@ export default function POS() {
               <span className="text-muted-foreground">Subtotal</span>
               <span className="font-semibold text-foreground">{formatCurrency(cartTotals.subtotal)}</span>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">VAT (16%)</span>
-              <span className="font-semibold text-foreground">{formatCurrency(cartTotals.tax)}</span>
-            </div>
+            {taxEnabled && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">VAT ({Math.round(taxRate * 100)}%)</span>
+                <span className="font-semibold text-foreground">{formatCurrency(cartTotals.tax)}</span>
+              </div>
+            )}
           </div>
         </div>
 

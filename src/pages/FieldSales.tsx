@@ -10,10 +10,12 @@ import {
   Phone,
   Navigation,
   Plus,
+  Notebook,
+  Calendar,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useEmployees, useAttendanceToday } from '@/hooks/useEmployees';
-import { useSalesOrders, useTodaysSales, useUpdateSalesOrderStatus } from '@/hooks/useSalesOrders';
+import { useSalesOrders, useTodaysSales, useUpdateSalesOrderStatus, useSalesFeedback } from '@/hooks/useSalesOrders';
 import { LogFieldNoteModal } from '@/components/field-sales/LogFieldNoteModal';
 import { CardGridSkeleton, PageHeaderSkeleton, StatsSkeleton } from '@/components/loading/PageSkeletons';
 
@@ -30,6 +32,7 @@ export default function FieldSales() {
   const { data: attendanceToday = [], isLoading: attendanceLoading } = useAttendanceToday();
   const { data: pendingOrders = [], isLoading: pendingLoading } = useSalesOrders('pending');
   const { data: todaysSales = [], isLoading: todayLoading } = useTodaysSales();
+  const { data: salesFeedback = [], isLoading: feedbackLoading } = useSalesFeedback();
   const updateStatus = useUpdateSalesOrderStatus();
 
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
@@ -86,7 +89,7 @@ export default function FieldSales() {
     },
   ];
 
-  const isLoading = repsLoading || attendanceLoading || pendingLoading || todayLoading;
+  const isLoading = repsLoading || attendanceLoading || pendingLoading || todayLoading || feedbackLoading;
 
   const handleApprove = (id: string) => updateStatus.mutate({ id, status: 'approved' });
   const handleDispatch = (id: string) => updateStatus.mutate({ id, status: 'dispatched' });
@@ -253,7 +256,7 @@ export default function FieldSales() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -398,6 +401,62 @@ export default function FieldSales() {
           <button className="w-full mt-6 py-4 bg-muted/30 rounded-2xl text-xs font-semibold uppercase text-muted-foreground hover:bg-primary/5 hover:text-primary transition-all tracking-wider">
             View Fulfillment Queue
           </button>
+        </div>
+
+        <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-xl font-bold text-foreground">Field Notes</h3>
+              <p className="text-xs text-muted-foreground">Latest logged visits & feedback</p>
+            </div>
+            <button
+              onClick={() => setIsNoteModalOpen(true)}
+              className="h-10 w-10 rounded-xl bg-secondary/60 hover:bg-primary hover:text-primary-foreground transition-all flex items-center justify-center"
+            >
+              <Notebook className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+            {salesFeedback.length === 0 ? (
+              <div className="py-10 text-center text-muted-foreground text-sm">No field notes yet.</div>
+            ) : (
+              salesFeedback.map((note, idx) => (
+                <div
+                  key={note.id}
+                  className="p-4 rounded-2xl bg-card border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up"
+                  style={{ animationDelay: `${idx * 30}ms` }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{note.sales_rep?.full_name || 'Sales Rep'}</p>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Notebook className="w-3 h-3" /> {note.feedback_type.replace('_', ' ')}
+                      </p>
+                      {note.customer?.name && (
+                        <p className="text-[11px] text-primary mt-1">Customer: {note.customer.name}</p>
+                      )}
+                    </div>
+                    <span className={cn(
+                      'text-[11px] px-2 py-1 rounded-full font-semibold',
+                      note.status === 'open' && 'bg-warning/10 text-warning',
+                      note.status === 'in_progress' && 'bg-primary/10 text-primary',
+                      note.status === 'closed' && 'bg-success/10 text-success'
+                    )}>
+                      {note.status?.replace('_', ' ') || 'open'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-3">{note.content}</p>
+                  <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {note.follow_up_date ? new Date(note.follow_up_date).toLocaleDateString() : 'No follow-up'}
+                    </span>
+                    <span>{new Date(note.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 

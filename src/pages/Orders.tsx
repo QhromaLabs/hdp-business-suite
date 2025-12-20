@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSalesOrders, useOrderItems, SalesOrder } from '@/hooks/useSalesOrders';
+import { useSalesOrders, useOrderItems, SalesOrder, useDeleteSalesOrder } from '@/hooks/useSalesOrders';
 import {
     Search,
     Filter,
@@ -18,16 +18,37 @@ import {
     Loader2,
     PackageCheck,
     Truck,
+    Clock,
+    FileText,
+    Trash2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useUpdateSalesOrderStatus } from '@/hooks/useSalesOrders';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useSettings } from '@/contexts/SettingsContext';
+import { calculateTotals } from '@/lib/tax';
+import { toast } from 'sonner';
 
 export default function Orders() {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedStatus, setSelectedStatus] = useState<string>('all');
     const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
+    const [orderToDelete, setOrderToDelete] = useState<SalesOrder | null>(null);
     const updateStatus = useUpdateSalesOrderStatus();
+    const deleteOrder = useDeleteSalesOrder();
+    const { taxEnabled } = useSettings();
 
     const { data: orders = [], isLoading } = useSalesOrders(
         selectedStatus === 'all' ? undefined : selectedStatus as any
@@ -37,6 +58,16 @@ export default function Orders() {
         order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.customer?.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    const getOrderTotals = (order: SalesOrder) => {
+        const subtotal = Number(order.subtotal) || 0;
+        const discount = Number(order.discount_amount) || 0;
+        const calculated = calculateTotals(subtotal, discount, taxEnabled);
+        const total = taxEnabled
+            ? (Number(order.total_amount) || calculated.total)
+            : calculated.total;
+        return { ...calculated, total };
+    };
 
     const statusColors = {
         pending: 'bg-warning/10 text-warning border-warning/20',
@@ -51,6 +82,16 @@ export default function Orders() {
             style: 'currency',
             currency: 'KSh',
         }).format(amount);
+    };
+
+    const handleDeleteOrder = async () => {
+        if (!orderToDelete) return;
+
+        try {
+            // Logic handled in dialog
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     return (
@@ -145,7 +186,7 @@ export default function Orders() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-5">
-                                            <span className="text-sm font-black text-primary">{formatCurrency(Number(order.total_amount))}</span>
+                                            <span className="text-sm font-black text-primary">{formatCurrency(getOrderTotals(order).total)}</span>
                                         </td>
                                         <td className="px-6 py-5">
                                             <div className="flex justify-center">
@@ -163,7 +204,7 @@ export default function Orders() {
                                                     <button
                                                         onClick={() => updateStatus.mutate({ id: order.id, status: 'approved' })}
                                                         disabled={updateStatus.isPending}
-                                                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-success/10 text-success hover:bg-success hover:text-white transition-all shadow-sm border border-success/20 text-[10px] font-black uppercase tracking-widest"
+                                                        className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-success/10 text-success hover:bg-success hover:text-white transition-all shadow-sm border border-success/20 text-[10px] font-black uppercase tracking-widest"
                                                         title="Release Order"
                                                     >
                                                         {updateStatus.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
@@ -174,13 +215,20 @@ export default function Orders() {
                                                     <button
                                                         onClick={() => updateStatus.mutate({ id: order.id, status: 'dispatched' })}
                                                         disabled={updateStatus.isPending}
-                                                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all shadow-sm border border-primary/20 text-[10px] font-black uppercase tracking-widest"
+                                                        className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all shadow-sm border border-primary/20 text-[10px] font-black uppercase tracking-widest"
                                                         title="Dispatch Order"
                                                     >
                                                         {updateStatus.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
                                                         <span>Dispatch</span>
                                                     </button>
                                                 )}
+                                                <button
+                                                    onClick={() => setOrderToDelete(order)}
+                                                    className="p-2.5 rounded-xl bg-muted/50 hover:bg-destructive hover:text-white transition-all shadow-sm"
+                                                    title="Delete Order"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
                                                 <button
                                                     onClick={() => setSelectedOrder(order)}
                                                     className="p-2.5 rounded-xl bg-muted/50 hover:bg-primary hover:text-primary-foreground transition-all shadow-sm"
@@ -207,7 +255,61 @@ export default function Orders() {
                     updateStatus={updateStatus}
                 />
             )}
+
+            {/* Delete Confirmation */}
+            {orderToDelete && (
+                <DeleteOrderDialog
+                    order={orderToDelete}
+                    onClose={() => setOrderToDelete(null)}
+                />
+            )}
         </div>
+    );
+}
+
+function DeleteOrderDialog({ order, onClose }: { order: SalesOrder; onClose: () => void }) {
+    const { data: items = [], isLoading } = useOrderItems(order.id);
+    const deleteOrder = useDeleteSalesOrder();
+
+    const handleConfirmDelete = async () => {
+        if (isLoading) return;
+
+        try {
+            await deleteOrder.mutateAsync({ orderId: order.id, items });
+            onClose();
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    return (
+        <AlertDialog open={true} onOpenChange={onClose}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This will permanently delete Order #{order.order_number}.
+                        {isLoading ? (
+                            <span className="block mt-2 text-primary font-bold">Loading items to restock...</span>
+                        ) : (
+                            <span className="block mt-2 font-medium text-foreground">
+                                {items.length} items will be returned to stock.
+                            </span>
+                        )}
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={handleConfirmDelete}
+                        disabled={isLoading || deleteOrder.isPending}
+                    >
+                        {deleteOrder.isPending ? 'Deleting...' : 'Delete & Restock'}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }
 
@@ -227,6 +329,91 @@ function OrderDetailsModal({
     const handleApprove = () => updateStatus.mutate({ id: order.id, status: 'approved' });
     const handleDispatch = () => updateStatus.mutate({ id: order.id, status: 'dispatched' });
     const handleCancel = () => updateStatus.mutate({ id: order.id, status: 'cancelled' });
+    const { taxEnabled, taxRate } = useSettings();
+    const subtotalAmount = Number(order.subtotal) || 0;
+    const discountAmount = Number(order.discount_amount) || 0;
+    const totals = calculateTotals(subtotalAmount, discountAmount, taxEnabled);
+    const displayedTax = taxEnabled ? Number(order.tax_amount) || totals.tax : totals.tax;
+    const displayedTotal = taxEnabled ? Number(order.total_amount) || totals.total : totals.total;
+
+    const generateDeliveryNote = (isDoublePrint = false) => {
+        try {
+            const doc = new jsPDF();
+
+            const ORANGE = '#F97316';
+            const PURPLE = '#8B5CF6';
+
+            const renderNote = (yOffset: number, titleSuffix: string) => {
+                // Header
+                doc.setFontSize(22);
+                doc.setTextColor(PURPLE);
+                doc.text('HDP BUSINESS SUITE', 105, yOffset + 20, { align: 'center' });
+
+                doc.setFontSize(16);
+                doc.setTextColor(ORANGE);
+                doc.text(`DELIVERY NOTE ${titleSuffix}`, 105, yOffset + 30, { align: 'center' });
+
+                // Info
+                doc.setFontSize(10);
+                doc.setTextColor(0, 0, 0); // Reset to black for text
+                doc.text(`Order Number: ${order.order_number}`, 20, yOffset + 45);
+                doc.text(`Date: ${format(new Date(order.created_at), 'dd/MM/yyyy HH:mm')}`, 20, yOffset + 50);
+                doc.text(`Customer: ${order.customer?.name || 'Walk-in Guest'}`, 20, yOffset + 55);
+                doc.text(`Phone: ${order.customer?.phone || 'N/A'}`, 20, yOffset + 60);
+
+                // Table
+                autoTable(doc, {
+                    startY: yOffset + 70,
+                    head: [['#', 'Item Description', 'Qty', 'Unit', 'Remarks']],
+                    body: items.map((item: any, index: number) => [
+                        index + 1,
+                        `${item.variant?.product?.name} (${item.variant?.variant_name})`,
+                        item.quantity,
+                        'Pcs',
+                        ''
+                    ]),
+                    theme: 'grid',
+                    headStyles: { fillColor: ORANGE, textColor: 255, fontStyle: 'bold' },
+                    styles: { fontSize: 9, cellPadding: 2 },
+                });
+
+                const finalY = (doc as any).lastAutoTable.finalY + 15;
+
+                // Signatures
+                doc.setDrawColor(0);
+                doc.text('---------------------------', 20, finalY + 10);
+                doc.text('Issued By', 20, finalY + 15);
+
+                doc.text('---------------------------', 140, finalY + 10);
+                doc.text('Received By/Stamp', 140, finalY + 15);
+
+                if (!isDoublePrint) {
+                    doc.setFontSize(8);
+                    doc.setTextColor(100);
+                    doc.text('Thank you for your business!', 105, finalY + 30, { align: 'center' });
+                }
+            };
+
+            if (isDoublePrint) {
+                renderNote(0, '(ORIGINAL)');
+                doc.setDrawColor(200);
+                doc.setLineDashPattern([2, 1], 0);
+                doc.line(10, 148, 200, 148);
+                doc.setDrawColor(0); // Reset draw color
+                doc.setLineDashPattern([], 0); // Reset dash
+                renderNote(148, '(COPY)');
+            } else {
+                renderNote(0, '');
+            }
+
+            const pdfBlob = doc.output('blob');
+            const url = URL.createObjectURL(pdfBlob);
+            window.open(url, '_blank');
+        } catch (error: any) {
+            console.error('PDF Generation Error:', error);
+            toast.error('Failed to generate PDF: ' + error.message);
+        }
+    };
 
     return (
         <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
@@ -252,7 +439,7 @@ function OrderDetailsModal({
 
                 {/* Modal Content */}
                 <div className="p-6 flex-1 overflow-y-auto scrollbar-hide space-y-8">
-                    {/* Status Controls (Order Desk Tech) */}
+                    {/* Status Controls */}
                     <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col md:flex-row items-center justify-between gap-4 animate-slide-up">
                         <div className="flex items-center gap-4">
                             <div className={cn(
@@ -380,19 +567,21 @@ function OrderDetailsModal({
                         <div className="w-full max-w-[240px] space-y-2">
                             <div className="flex justify-between text-xs text-muted-foreground font-medium">
                                 <span>Subtotal</span>
-                                <span>{formatCurrency(Number(order.subtotal))}</span>
+                                <span>{formatCurrency(subtotalAmount)}</span>
                             </div>
                             <div className="flex justify-between text-xs text-muted-foreground font-medium">
                                 <span>Discount</span>
-                                <span className="text-destructive">-{formatCurrency(Number(order.discount_amount))}</span>
+                                <span className="text-destructive">-{formatCurrency(discountAmount)}</span>
                             </div>
-                            <div className="flex justify-between text-xs text-muted-foreground font-medium">
-                                <span>VAT (16%)</span>
-                                <span>{formatCurrency(Number(order.tax_amount))}</span>
-                            </div>
+                            {taxEnabled && (
+                                <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                                    <span>VAT ({Math.round(taxRate * 100)}%)</span>
+                                    <span>{formatCurrency(displayedTax)}</span>
+                                </div>
+                            )}
                             <div className="pt-2 border-t border-border mt-2 flex justify-between items-center text-lg">
                                 <span className="font-black text-foreground tracking-tight">Grand Total</span>
-                                <span className="font-black text-primary">{formatCurrency(Number(order.total_amount))}</span>
+                                <span className="font-black text-primary">{formatCurrency(displayedTotal)}</span>
                             </div>
                         </div>
                     </div>
@@ -400,13 +589,19 @@ function OrderDetailsModal({
 
                 {/* Modal Footer */}
                 <div className="p-6 border-t border-border/50 bg-muted/10 flex gap-3">
-                    <button className="flex-1 py-3 bg-secondary text-secondary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-secondary/80 transition-all shadow-sm">
-                        <Download className="w-4 h-4" />
-                        Download PDF
+                    <button
+                        onClick={() => generateDeliveryNote(true)}
+                        className="flex-1 py-3 bg-secondary text-secondary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-secondary/80 transition-all shadow-sm"
+                    >
+                        <FileText className="w-4 h-4" />
+                        A4 Delivery Note
                     </button>
-                    <button className="flex-1 py-3 bg-primary text-primary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:scale-[1.01] transition-all shadow-lg">
+                    <button
+                        onClick={() => generateDeliveryNote(false)}
+                        className="flex-1 py-3 bg-primary text-primary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:scale-[1.01] transition-all shadow-lg"
+                    >
                         <Printer className="w-4 h-4" />
-                        Print Receipt
+                        Print Note
                     </button>
                 </div>
             </div>

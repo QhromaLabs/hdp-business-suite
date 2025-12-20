@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { SettingsProvider } from "./contexts/SettingsContext";
 import MainLayout from "./components/layout/MainLayout";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -11,6 +12,7 @@ import POS from "./pages/POS";
 import Customers from "./pages/Customers";
 import Inventory from "./pages/Inventory";
 import Categories from "./pages/Categories";
+import DeviceId from "./pages/DeviceId";
 import Manufacturing from "@/pages/Manufacturing";
 import Accounting from "./pages/Accounting";
 import HR from "./pages/HR";
@@ -59,6 +61,7 @@ function AppRoutes() {
         path="/auth"
         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />}
       />
+      <Route path="/device-id" element={<DeviceId />} />
       <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
       <Route
         path="/"
@@ -90,15 +93,17 @@ function AppRoutes() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner position="top-center" />
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </TooltipProvider>
-    </AuthProvider>
+    <SettingsProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner position="top-center" />
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </TooltipProvider>
+      </AuthProvider>
+    </SettingsProvider>
   </QueryClientProvider>
 );
 

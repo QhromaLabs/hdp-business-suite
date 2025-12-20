@@ -5,8 +5,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Loader2, User, Phone, Smartphone } from 'lucide-react';
+import { Loader2, User, Phone, Smartphone, Copy } from 'lucide-react';
 import { ProfileWithRole, useUpdateProfile } from '@/hooks/useSettings';
+import { getClientDeviceId } from '@/lib/device';
+import { toast } from 'sonner';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -19,14 +21,15 @@ export function EditProfileModal({ isOpen, onClose, profile }: EditProfileModalP
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [deviceId, setDeviceId] = useState('');
+  const thisDeviceId = typeof window !== 'undefined' ? getClientDeviceId() : 'unknown';
 
   useEffect(() => {
     if (isOpen && profile) {
       setFullName(profile.full_name || '');
       setPhone(profile.phone || '');
-      setDeviceId(profile.device_id || '');
+      setDeviceId(profile.device_id || thisDeviceId || '');
     }
-  }, [isOpen, profile]);
+  }, [isOpen, profile, thisDeviceId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +41,15 @@ export function EditProfileModal({ isOpen, onClose, profile }: EditProfileModalP
       device_id: deviceId,
     });
     onClose();
+  };
+
+  const copyDeviceId = async () => {
+    try {
+      await navigator.clipboard.writeText(thisDeviceId);
+      toast.success('Device ID copied');
+    } catch (e) {
+      toast.error('Could not copy device ID');
+    }
   };
 
   return (
@@ -84,6 +96,34 @@ export function EditProfileModal({ isOpen, onClose, profile }: EditProfileModalP
                 className="input-field pl-10"
                 placeholder="Device serial or UUID"
               />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="font-semibold text-foreground">This device ID</p>
+                <p className="text-muted-foreground">Use this value to authorize this browser or phone.</p>
+              </div>
+              <button
+                type="button"
+                onClick={copyDeviceId}
+                className="inline-flex items-center gap-1 text-primary text-xs font-semibold"
+              >
+                <Copy className="w-3 h-3" /> Copy
+              </button>
+            </div>
+            <div className="font-mono text-[11px] break-all text-foreground">{thisDeviceId}</div>
+            <div className="grid grid-cols-1 gap-2 text-muted-foreground">
+              <div>
+                <span className="font-semibold text-foreground">PC/Laptop:</span> Open Settings → Device Policies on this machine, copy the ID above, paste into Authorized Device ID, then Save.
+              </div>
+              <div>
+                <span className="font-semibold text-foreground">Mobile:</span> Log into this screen on the phone browser, copy the ID shown here, paste into Authorized Device ID, then Save.
+              </div>
+              <div>
+                <span className="font-semibold text-foreground">Login checks:</span> At sign-in we compare this stored ID with the device ID above. Mismatched devices are signed out and blocked.
+              </div>
             </div>
           </div>
 

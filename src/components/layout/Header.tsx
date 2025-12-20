@@ -1,8 +1,10 @@
-import { Bell, Search } from 'lucide-react';
+import { Bell, Search, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useNotifications } from '@/hooks/useNotifications';
+import { formatDistanceToNow } from 'date-fns';
 
 interface HeaderProps {
   title: string;
@@ -13,18 +15,17 @@ export default function Header({ title }: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isNotificationsClosing, setIsNotificationsClosing] = useState(false);
-  const [notifications, setNotifications] = useState([
-    { id: '1', title: 'Low Stock Alert', body: 'DRY-RICE-5K dropped below 50 units.', time: '2m ago', read: false, tone: 'warning' },
-    { id: '2', title: 'New Order', body: 'SO-1034 processed successfully.', time: '12m ago', read: false, tone: 'primary' },
-    { id: '3', title: 'Payment Received', body: 'KSh 45,000 via Bank for SO-1028.', time: '32m ago', read: true, tone: 'success' },
-  ]);
+
+  const {
+    notifications,
+    isLoading,
+    markAsRead,
+    markAllAsRead
+  } = useNotifications();
+
   const notifRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = notifications.filter(n => !n.read).length;
-
-  const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  };
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -100,45 +101,61 @@ export default function Header({ title }: HeaderProps) {
             >
               <div className="flex items-center justify-between mb-3">
                 <p className="text-sm font-semibold text-foreground">Notifications</p>
-                <Button variant="ghost" size="sm" onClick={markAllRead}>
-                  Mark all read
-                </Button>
+                <div className="flex items-center gap-2">
+                  {isLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => markAllAsRead.mutate()}
+                    disabled={notifications.length === 0 || markAllAsRead.isPending}
+                    className="text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary hover:bg-primary/5"
+                  >
+                    Mark all read
+                  </Button>
+                </div>
               </div>
               <div className="space-y-3 max-h-[50vh] overflow-y-auto scrollbar-thin">
                 {notifications.map((notif) => (
                   <div
                     key={notif.id}
                     className={cn(
-                      "p-3 rounded-xl border border-border/70 bg-card/80",
-                      !notif.read && "shadow-sm ring-1 ring-primary/10"
+                      "p-4 rounded-2xl border border-border/50 transition-all duration-300 relative overflow-hidden group",
+                      notif.read ? "bg-card/50 opacity-60" : "bg-card shadow-lg ring-1 ring-primary/5 border-primary/10"
                     )}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
+                    {!notif.read && (
+                      <div className="absolute top-0 left-0 w-1 h-full bg-primary animate-pulse" />
+                    )}
+                    <div className="flex items-start justify-between gap-3 relative z-10">
+                      <div className="space-y-1.5 flex-1">
                         <div className="flex items-center gap-2">
                           <span className={cn(
-                            "px-2 py-0.5 text-[11px] font-semibold rounded-full",
-                            notif.tone === 'warning' && "bg-warning/10 text-warning",
-                            notif.tone === 'success' && "bg-success/10 text-success",
-                            notif.tone === 'primary' && "bg-primary/10 text-primary"
+                            "px-2 py-0.5 text-[9px] font-black uppercase tracking-widest rounded-lg border",
+                            notif.tone === 'warning' && "bg-warning/10 text-warning border-warning/20",
+                            notif.tone === 'success' && "bg-success/10 text-success border-success/20",
+                            notif.tone === 'primary' && "bg-primary/10 text-primary border-primary/20",
+                            notif.tone === 'destructive' && "bg-destructive/10 text-destructive border-destructive/20",
+                            notif.tone === 'info' && "bg-info/10 text-info border-info/20"
                           )}>
                             {notif.title}
                           </span>
                           {!notif.read && (
-                            <span className="w-2 h-2 rounded-full bg-primary inline-block" />
+                            <span className="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(249,115,22,0.6)]" />
                           )}
                         </div>
-                        <p className="text-sm text-foreground">{notif.body}</p>
-                        <p className="text-xs text-muted-foreground">{notif.time}</p>
+                        <p className="text-sm font-medium text-foreground leading-tight">{notif.body}</p>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tight">
+                          {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })}
+                        </p>
                       </div>
                       {!notif.read && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n))}
+                        <button
+                          disabled={markAsRead.isPending}
+                          onClick={() => markAsRead.mutate(notif.id)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-lg hover:bg-primary/5 text-primary text-[10px] font-black uppercase tracking-widest"
                         >
-                          Mark read
-                        </Button>
+                          Mark Read
+                        </button>
                       )}
                     </div>
                   </div>
@@ -154,17 +171,17 @@ export default function Header({ title }: HeaderProps) {
         {/* Current Date/Time */}
         <div className="hidden lg:block text-right">
           <p className="text-sm font-medium text-foreground">
-            {new Date().toLocaleDateString('en-KE', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
+            {new Date().toLocaleDateString('en-KE', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
             })}
           </p>
           <p className="text-xs text-muted-foreground">
-            {new Date().toLocaleTimeString('en-KE', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
+            {new Date().toLocaleTimeString('en-KE', {
+              hour: '2-digit',
+              minute: '2-digit'
             })}
           </p>
         </div>

@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Database } from '@/integrations/supabase/types';
+import { calculateTotals } from '@/lib/tax';
+import { useSettings } from '@/contexts/SettingsContext';
 
 type OrderStatus = Database['public']['Enums']['order_status'];
 type PaymentMethod = Database['public']['Enums']['payment_method'];
@@ -42,6 +44,8 @@ export interface SalesFeedback {
   customer_id: string | null;
   sales_rep_id: string;
   created_at: string;
+  customer?: { name?: string | null };
+  sales_rep?: { full_name?: string | null };
 }
 
 export function useSalesOrders(status?: OrderStatus) {
@@ -145,6 +149,7 @@ export function useDashboardStats() {
 
 export function useCreateSalesOrder() {
   const queryClient = useQueryClient();
+  const { taxEnabled } = useSettings();
 
   return useMutation({
     mutationFn: async (order: {
@@ -156,8 +161,7 @@ export function useCreateSalesOrder() {
     }) => {
       const subtotal = order.items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
       const discount = order.items.reduce((sum, item) => sum + (item.discount || 0), 0);
-      const tax = (subtotal - discount) * 0.16;
-      const total = subtotal - discount + tax;
+      const { tax, total } = calculateTotals(subtotal, discount, taxEnabled);
 
       // Create order
       const { data: salesOrder, error: orderError } = await supabase
@@ -195,12 +199,29 @@ export function useCreateSalesOrder() {
 
       if (itemsError) throw itemsError;
 
+      // 3. Deduct stock from inventory
+      for (const item of items) {
+        const { data: invData } = await supabase
+          .from('inventory')
+          .select('quantity')
+          .eq('variant_id', item.variant_id)
+          .single();
+
+        if (invData) {
+          await supabase
+            .from('inventory')
+            .update({ quantity: (invData.quantity || 0) - item.quantity })
+            .eq('variant_id', item.variant_id);
+        }
+      }
+
       return salesOrder;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales_orders'] });
       queryClient.invalidateQueries({ queryKey: ['todays_sales'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
       toast.success('Sale completed successfully!');
     },
     onError: (error) => {
@@ -243,37 +264,110 @@ export function useUpdateSalesOrderStatus() {
   });
 }
 
+export function useDeleteSalesOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ orderId, items }: { orderId: string; items: any[] }) => {
+      // 1. Restock items
+      for (const item of items) {
+        const { data: invData } = await supabase
+          .from('inventory')
+          .select('quantity')
+          .eq('variant_id', item.variant_id)
+          .single();
+
+        if (invData) {
+          await supabase
+            .from('inventory')
+            .update({ quantity: (invData.quantity || 0) + item.quantity })
+            .eq('variant_id', item.variant_id);
+        }
+      }
+
+      // 2. Delete related payments first (Foreign Key constraint blocker)
+      console.log('Deleting payments for order:', orderId);
+      const { error: paymentsError } = await supabase
+        .from('payments')
+        .delete()
+        .eq('order_id', orderId);
+
+      if (paymentsError) {
+        console.error('Error deleting payments:', paymentsError);
+        throw paymentsError;
+      }
+
+      // 3. Delete order items
+      console.log('Deleting labels/items for order:', orderId);
+      const { error: itemsError } = await supabase
+        .from('sales_order_items')
+        .delete()
+        .eq('order_id', orderId);
+
+      if (itemsError) {
+        console.error('Error deleting items:', itemsError);
+        throw itemsError;
+      }
+
+      // 4. Delete order row
+      console.log('Deleting order row:', orderId);
+      const { error } = await supabase
+        .from('sales_orders')
+        .delete()
+        .eq('id', orderId);
+
+      if (error) {
+        console.error('Error deleting order:', error);
+        throw error;
+      }
+      
+      console.log('Deletion successful');
+      return { orderId };
+    },
+    onSuccess: (_data, variables) => {
+      const orderId = variables?.orderId;
+
+      // Optimistically remove from cached lists so UI updates immediately
+      queryClient.setQueriesData({ queryKey: ['sales_orders'] }, (existing: any) => {
+        if (!Array.isArray(existing)) return existing;
+        return existing.filter(order => order.id !== orderId);
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['sales_orders'] });
+      queryClient.invalidateQueries({ queryKey: ['todays_sales'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['order_items', orderId] });
+      toast.success('Order deleted and stock returned');
+    },
+    onError: (error) => {
+      toast.error('Failed to delete order: ' + error.message);
+    },
+  });
+}
+
 export function useCreateSalesFeedback() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (payload: {
-      content: string;
-      feedback_type: string;
-      status?: string;
-      follow_up_date?: string | null;
-      customer_id?: string | null;
-      sales_rep_id: string;
+      content: string,
+      feedback_type: string,
+      customer_id?: string,
+      follow_up_date?: string
     }) => {
       const { data, error } = await supabase
         .from('sales_feedback')
-        .insert({
-          content: payload.content,
-          feedback_type: payload.feedback_type,
-          status: payload.status || 'open',
-          follow_up_date: payload.follow_up_date || null,
-          customer_id: payload.customer_id || null,
-          sales_rep_id: payload.sales_rep_id,
-        })
+        .insert(payload)
         .select()
         .single();
-
+      
       if (error) throw error;
-      return data as SalesFeedback;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales_feedback'] });
-      toast.success('Field note logged');
+      toast.success('Feedback logged');
     },
     onError: (error) => {
       toast.error('Failed to log feedback: ' + error.message);
@@ -281,18 +375,36 @@ export function useCreateSalesFeedback() {
   });
 }
 
+export function useSalesFeedback() {
+  return useQuery({
+    queryKey: ['sales_feedback'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sales_feedback')
+        .select('*, customer:customers(name), sales_rep:employees(full_name)')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      return data as SalesFeedback[];
+    },
+  });
+}
+
 export function useOrderItems(orderId: string) {
   return useQuery({
-    queryKey: ['sales_order_items', orderId],
+    queryKey: ['order_items', orderId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sales_order_items')
         .select(`
           *,
-          variant:product_variants(
-            variant_name,
+          variant:product_variants (
             sku,
-            product:products(name)
+            variant_name,
+            product:products (
+              name
+            )
           )
         `)
         .eq('order_id', orderId);
@@ -300,6 +412,5 @@ export function useOrderItems(orderId: string) {
       if (error) throw error;
       return data;
     },
-    enabled: !!orderId,
   });
 }
