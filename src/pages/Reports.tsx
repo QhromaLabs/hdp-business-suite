@@ -4,7 +4,7 @@ import {
   Download,
   FileText,
   Calendar,
-  DollarSign,
+  Wallet,
   Package,
   Users,
   Factory,
@@ -56,7 +56,7 @@ type ReportWithSnapshot = ReportDefinition & {
 const reportCategories = [
   {
     name: 'Sales Reports',
-    icon: DollarSign,
+    icon: Wallet,
     reports: [
       { name: 'Daily Sales Summary', description: 'Sales breakdown by payment method', format: 'PDF' },
       { name: 'Monthly Sales Analysis', description: 'Trends, comparisons, and forecasts', format: 'PDF' },
@@ -142,7 +142,7 @@ export default function Reports() {
       label: 'Fiscal Revenue',
       value: formatCurrency(revenue),
       change: showFallback ? fallbackMetrics.revenueChange : changeLabel(lastRevenue, prevRevenue),
-      icon: DollarSign,
+      icon: Wallet,
       color: 'success',
     },
     { label: 'Opex & Capex', value: formatCurrency(expenses), change: '+0%', icon: TrendingUp, color: 'primary' },

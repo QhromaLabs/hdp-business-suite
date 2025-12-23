@@ -202,7 +202,7 @@ export default function Settings() {
                   <Copy className="w-4 h-4" /> Copy
                 </button>
               </div>
-              <p className="text-muted-foreground">Ask the user to open that link on the device/browser they will use, copy the Device ID shown, and send it to you. Paste it into Authorized Device ID for their profile, then save.</p>
+              <p className="text-muted-foreground">Ask the user to open that link on the device/browser they will use, copy the Device ID shown, and send it to you. Paste it into Authorized Device ID for their profile, then save (ID is unique per browser and persists unless they clear site data).</p>
             </div>
 
             <button

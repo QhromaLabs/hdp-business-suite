@@ -328,3 +328,28 @@ export function useRecordExpense() {
     },
   });
 }
+
+export function useDeleteExpense() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (id.startsWith('bank-')) {
+        throw new Error('Bank-sourced outflows cannot be deleted directly. Please void the original bank transaction.');
+      }
+
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['financial_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['expenses_by_category'] });
+    },
+  });
+}

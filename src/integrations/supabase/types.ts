@@ -998,6 +998,98 @@ export type Database = {
         }
         Relationships: []
       }
+      purchase_order_items: {
+        Row: {
+          created_at: string
+          id: string
+          purchase_order_id: string
+          quantity: number
+          subtotal: number
+          unit_cost: number
+          variant_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          purchase_order_id: string
+          quantity: number
+          subtotal: number
+          unit_cost: number
+          variant_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          purchase_order_id?: string
+          quantity?: number
+          subtotal?: number
+          unit_cost?: number
+          variant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_items_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_items_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "product_variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_orders: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          creditor_id: string
+          expected_date: string | null
+          id: string
+          notes: string | null
+          order_number: string
+          paid_amount: number
+          status: string
+          total_amount: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          creditor_id: string
+          expected_date?: string | null
+          id?: string
+          notes?: string | null
+          order_number: string
+          paid_amount?: number
+          status?: string
+          total_amount?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          creditor_id?: string
+          expected_date?: string | null
+          id?: string
+          notes?: string | null
+          order_number?: string
+          paid_amount?: number
+          status?: string
+          total_amount?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_orders_creditor_id_fkey"
+            columns: ["creditor_id"]
+            isOneToOne: false
+            referencedRelation: "creditors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       raw_materials: {
         Row: {
           created_at: string | null
@@ -1343,11 +1435,14 @@ export type Database = {
       | "cash"
       | "credit"
       | "till"
+      | "mpesa"
       | "nat"
       | "equity"
       | "coop"
       | "kcb_kt"
       | "capital"
+      | "mobile_money"
+      | "bank_transfer"
       production_status: "in_progress" | "completed" | "paused" | "cancelled"
     }
     CompositeTypes: {

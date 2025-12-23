@@ -29,7 +29,7 @@ export default function DeviceId() {
         </div>
 
         <p className="text-sm text-muted-foreground">
-          Share this ID with your administrator so they can authorize this device. This ID is generated locally in your browser/phone.
+          Share this ID with your administrator so they can authorize this device. This ID is unique to this browser/device and is saved locally.
         </p>
 
         <div className="rounded-lg border border-border bg-muted/30 p-3">
@@ -46,7 +46,7 @@ export default function DeviceId() {
         <div className="text-xs text-muted-foreground space-y-2">
           <p><span className="font-semibold text-foreground">PC/Laptop:</span> Open this page on the machine you will use, copy the ID above, and send it to your admin.</p>
           <p><span className="font-semibold text-foreground">Mobile:</span> Open this page on the phone browser, copy the ID above, and send it to your admin.</p>
-          <p><span className="font-semibold text-foreground">Privacy:</span> This ID is unique to this device/browser and stays the same for future visits.</p>
+          <p><span className="font-semibold text-foreground">Privacy:</span> This ID is unique to this device/browser and stays the same for future visits unless site data is cleared.</p>
         </div>
       </div>
     </div>

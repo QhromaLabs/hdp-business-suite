@@ -6,7 +6,7 @@ import {
   CheckCircle,
   Clock,
   FileText,
-  DollarSign,
+  Wallet,
   Package,
   Factory,
 } from 'lucide-react';
@@ -256,7 +256,7 @@ export default function Audit() {
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'stock': return Package;
-      case 'money': return DollarSign;
+      case 'money': return Wallet;
       case 'production': return Factory;
       default: return FileText;
     }
@@ -462,7 +462,7 @@ export default function Audit() {
               className="w-full p-4 bg-muted/30 rounded-xl text-left hover:bg-muted/50 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <DollarSign className="w-5 h-5 text-warning" />
+                <Wallet className="w-5 h-5 text-warning" />
                 <div>
                   <p className="font-medium text-foreground">Cash Reconciliation</p>
                   <p className="text-sm text-muted-foreground">Verify till balances</p>

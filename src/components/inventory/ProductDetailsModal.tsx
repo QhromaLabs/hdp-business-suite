@@ -3,6 +3,7 @@ import {
     DialogContent,
     DialogHeader,
     DialogTitle,
+    DialogDescription,
 } from "@/components/ui/dialog";
 import {
     Tabs,
@@ -18,7 +19,7 @@ import {
     TableHeader,
     TableRow
 } from "@/components/ui/table";
-import { Package, Barcode, DollarSign, Calendar, Tag, History, Info, List, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Package, Barcode, Wallet, Calendar, Tag, History, Info, List, ArrowUpRight, ArrowDownRight, Plus } from 'lucide-react';
 import { useProductHistory } from '@/hooks/useProducts';
 
 interface ProductDetailsModalProps {
@@ -38,8 +39,8 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
         { label: 'Category', value: prod?.category?.name || 'Uncategorized', icon: Tag },
         { label: 'SKU', value: variant?.sku, icon: Package },
         { label: 'Barcode', value: variant?.barcode || 'N/A', icon: Barcode },
-        { label: 'Cost Price', value: `KES ${variant?.cost_price || prod?.cost_price || 0}`, icon: DollarSign },
-        { label: 'Selling Price', value: `KES ${variant?.price || prod?.base_price || 0}`, icon: DollarSign },
+        { label: 'Cost Price', value: `KES ${variant?.cost_price || prod?.cost_price || 0}`, icon: Wallet },
+        { label: 'Selling Price', value: `KES ${variant?.price || prod?.base_price || 0}`, icon: Wallet },
         { label: 'Current Stock', value: product.quantity ?? 'N/A', icon: Package },
     ];
 
@@ -59,6 +60,9 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
                         )}
                         <div>
                             <DialogTitle className="text-2xl font-bold">{prod?.name}</DialogTitle>
+                            <DialogDescription className="sr-only">
+                                Product details and stock movements for {prod?.name}
+                            </DialogDescription>
                             <p className="text-muted-foreground text-sm flex items-center gap-2">
                                 <Tag className="w-3 h-3" />
                                 {prod?.category?.name || 'No Category'}
@@ -170,7 +174,7 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
 
                             <div className="pt-4 border-t border-border">
                                 <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                                    <DollarSign className="w-4 h-4 text-primary" />
+                                    <Wallet className="w-4 h-4 text-primary" />
                                     Recent Sales
                                 </h4>
                                 <Table>

@@ -15,6 +15,7 @@ import {
   Settings,
   LogOut,
   ClipboardList,
+  ShoppingBag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { label: 'All Orders', icon: ClipboardList, path: '/orders' },
   { label: 'Customers', icon: Users, path: '/customers' },
   { label: 'Inventory', icon: Package, path: '/inventory' },
+  { label: 'Purchases', icon: ShoppingBag, path: '/purchases', roles: ['admin', 'manager'] },
   { label: 'Categories', icon: Folder, path: '/categories' },
   { label: 'Manufacturing', icon: Factory, path: '/manufacturing', roles: ['admin', 'manager'] },
   { label: 'Accounting', icon: Calculator, path: '/accounting', roles: ['admin', 'manager'] },

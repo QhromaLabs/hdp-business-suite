@@ -1,0 +1,439 @@
+
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import {
+    Plus, Search, Filter, ArrowUpRight,
+    Calendar, User, DollarSign, Package,
+    Loader2, AlertCircle, CheckCircle2,
+    Clock, MoreVertical, Trash2, Eye, UserPlus, Edit2,
+    Phone, Mail, MapPin
+} from 'lucide-react';
+import { format } from 'date-fns';
+import { toast } from 'sonner';
+
+// Components
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+
+import CreatePurchaseOrder from './CreatePurchaseOrder';
+import RecordPaymentModal from './RecordPaymentModal';
+import CreateSupplierModal from './CreateSupplierModal';
+import EditSupplierModal from './EditSupplierModal';
+import PurchaseOrderDetailsModal from './PurchaseOrderDetailsModal';
+
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+export default function Purchases() {
+    const { userRole } = useAuth();
+    const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<'orders' | 'suppliers'>('orders');
+
+    // Data States
+    const [orders, setOrders] = useState<any[]>([]);
+    const [suppliers, setSuppliers] = useState<any[]>([]);
+
+    // Filter States
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
+
+    // Modal States
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showSupplierModal, setShowSupplierModal] = useState(false);
+    const [editingSupplier, setEditingSupplier] = useState<any>(null);
+    const [selectedOrder, setSelectedOrder] = useState<any>(null); // For Payment
+    const [viewOrder, setViewOrder] = useState<any>(null); // For Details View
+
+    useEffect(() => {
+        if (activeTab === 'orders') fetchOrders();
+        else fetchSuppliers();
+    }, [activeTab]);
+
+    const fetchOrders = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('purchase_orders')
+                .select(`
+                    *,
+                    creditor:creditors(name),
+                    items:purchase_order_items(id)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setOrders(data || []);
+        } catch (error: any) {
+            console.error('Error fetching purchases:', error);
+            toast.error('Failed to load purchases');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchSuppliers = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('creditors')
+                .select('*')
+                .order('name');
+
+            if (error) throw error;
+            setSuppliers(data || []);
+        } catch (error: any) {
+            console.error('Error fetching suppliers:', error);
+            toast.error('Failed to load suppliers');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Filter Logic
+    const filteredOrders = orders.filter(order => {
+        const matchesSearch =
+            order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            order.creditor?.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+        return matchesSearch && matchesStatus;
+    });
+
+    const filteredSuppliers = suppliers.filter(supplier =>
+        supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        supplier.contact_person?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'completed': return 'bg-green-100 text-green-700 border-green-200';
+            case 'partial': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+            default: return 'bg-gray-100 text-gray-700 border-gray-200';
+        }
+    };
+
+    return (
+        <div className="space-y-6 max-w-[1600px] mx-auto p-6 pb-20 animate-fade-in relative z-0">
+
+            {/* Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-6 rounded-3xl border border-border/50 shadow-sm backdrop-blur-xl">
+                <div>
+                    <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">
+                        Purchases & Suppliers
+                    </h1>
+                    <p className="text-muted-foreground mt-1">Manage restocking, orders, and vendors</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowSupplierModal(true)}
+                        className="h-11 px-6 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-2xl font-semibold transition-all shadow-sm flex items-center gap-2 active:scale-95"
+                    >
+                        <UserPlus className="w-5 h-5" />
+                        New Supplier
+                    </button>
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="h-11 px-6 bg-primary text-primary-foreground hover:bg-primary/90 rounded-2xl font-semibold transition-all shadow-lg hover:shadow-primary/20 flex items-center gap-2 active:scale-95"
+                    >
+                        <Plus className="w-5 h-5" />
+                        New Purchase Order
+                    </button>
+                </div>
+            </div>
+
+            {/* Tab Navigation */}
+            <div className="flex p-1 bg-muted/30 rounded-2xl w-fit border border-border/50">
+                <button
+                    onClick={() => setActiveTab('orders')}
+                    className={`px-6 py-2 rounded-xl font-medium text-sm transition-all ${activeTab === 'orders'
+                        ? 'bg-background shadow-sm text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                >
+                    All Orders
+                </button>
+                <button
+                    onClick={() => setActiveTab('suppliers')}
+                    className={`px-6 py-2 rounded-xl font-medium text-sm transition-all ${activeTab === 'suppliers'
+                        ? 'bg-background shadow-sm text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                >
+                    Suppliers
+                </button>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-col md:flex-row gap-4">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                        type="text"
+                        placeholder={activeTab === 'orders' ? "Search orders, suppliers..." : "Search suppliers..."}
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full h-11 pl-10 pr-4 rounded-2xl border border-border bg-card focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                    />
+                </div>
+                {activeTab === 'orders' && (
+                    <div className="flex items-center gap-2 bg-card p-1 rounded-2xl border border-border px-3 h-11">
+                        <Filter className="w-4 h-4 text-muted-foreground" />
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="bg-transparent border-none text-sm font-medium focus:outline-none"
+                        >
+                            <option value="all">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="partial">Partial</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                    </div>
+                )}
+            </div>
+
+            {/* Content Area */}
+            {loading ? (
+                <div className="flex justify-center py-20">
+                    <Loader2 className="w-10 h-10 animate-spin text-primary/50" />
+                </div>
+            ) : activeTab === 'orders' ? (
+                /* Orders List */
+                <div className="grid grid-cols-1 gap-4">
+                    {filteredOrders.length === 0 ? (
+                        <div className="text-center py-20 text-muted-foreground bg-muted/10 rounded-3xl border border-border/50 border-dashed">
+                            <Package className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                            <p>No orders found</p>
+                        </div>
+                    ) : (
+                        filteredOrders.map(order => (
+                            <div
+                                key={order.id}
+                                onClick={(e) => {
+                                    // Prevent modal open if clicking buttons
+                                    if ((e.target as HTMLElement).closest('button')) return;
+                                    setViewOrder(order);
+                                }}
+                                className="group bg-card hover:bg-muted/5 border border-border/50 rounded-2xl p-5 transition-all hover:shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4 cursor-pointer"
+                            >
+                                <div className="flex gap-4 items-center">
+                                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold">
+                                        PO
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-bold text-lg">{order.order_number}</h3>
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${getStatusColor(order.status)} uppercase`}>
+                                                {order.status}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground mt-1">
+                                            <span className="flex items-center gap-1">
+                                                <User className="w-3.5 h-3.5" />
+                                                {order.creditor?.name}
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <Package className="w-3.5 h-3.5" />
+                                                {order.items?.length || 0} items
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <Calendar className="w-3.5 h-3.5" />
+                                                {format(new Date(order.created_at), 'MMM dd, yyyy')}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-4 md:pt-0 border-border/50">
+                                    <div className="text-right">
+                                        <div className="text-xs text-muted-foreground mb-0.5">Total Amount</div>
+                                        <div className="font-bold">KES {order.total_amount.toLocaleString()}</div>
+                                    </div>
+                                    <div className="text-right bg-muted/30 px-3 py-1.5 rounded-xl">
+                                        <div className="text-xs text-muted-foreground mb-0.5">Paid</div>
+                                        <div className={`font-bold ${order.paid_amount >= order.total_amount ? 'text-green-600' : 'text-orange-500'}`}>
+                                            KES {order.paid_amount.toLocaleString()}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        {/* Actions */}
+                                        {order.status !== 'completed' && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedOrder(order);
+                                                }}
+                                                className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                                title="Record Payment"
+                                            >
+                                                <DollarSign className="w-5 h-5" />
+                                            </button>
+                                        )}
+                                        <button className="p-2.5 rounded-xl hover:bg-muted transition-colors text-muted-foreground">
+                                            <MoreVertical className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            ) : (
+                /* Suppliers List */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredSuppliers.map(supplier => {
+                        const isAnonymous = supplier.name === 'Anonymous Vendor';
+                        return (
+                            <div
+                                key={supplier.id}
+                                className={`bg-card border rounded-3xl p-6 hover:shadow-lg transition-all group relative overflow-hidden ${isAnonymous ? 'border-orange-400 shadow-orange-100 ring-4 ring-orange-50/50' : 'border-border/50'}`}
+                            >
+                                {isAnonymous && (
+                                    <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+                                        <User className="w-32 h-32" />
+                                    </div>
+                                )}
+                                <div className="flex justify-between items-start mb-4 relative z-10">
+                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isAnonymous ? 'bg-orange-600 text-white shadow-lg shadow-orange-200' : 'bg-orange-100 text-orange-600'}`}>
+                                        <User className="w-6 h-6" />
+                                    </div>
+
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <button className="p-2 hover:bg-muted rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <MoreVertical className="w-5 h-5 text-muted-foreground" />
+                                            </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-48">
+                                            <DropdownMenuItem onClick={() => setEditingSupplier(supplier)}>
+                                                <Edit2 className="w-4 h-4 mr-2" />
+                                                Edit Details
+                                            </DropdownMenuItem>
+                                            {!isAnonymous && (
+                                                <DropdownMenuItem
+                                                    className="text-red-600 focus:text-red-600"
+                                                    onClick={() => {
+                                                        if (confirm('Are you sure you want to delete this supplier?')) {
+                                                            // Handle delete directly here for now
+                                                            supabase.from('creditors').delete().eq('id', supplier.id)
+                                                                .then(({ error }) => {
+                                                                    if (error) toast.error('Failed to delete');
+                                                                    else {
+                                                                        toast.success('Supplier deleted');
+                                                                        fetchSuppliers();
+                                                                    }
+                                                                });
+                                                        }
+                                                    }}
+                                                >
+                                                    <Trash2 className="w-4 h-4 mr-2" />
+                                                    Delete Supplier
+                                                </DropdownMenuItem>
+                                            )}
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
+
+                                <div className="relative z-10">
+                                    <h3 className="font-bold text-lg mb-1">{supplier.name}</h3>
+                                    {isAnonymous && (
+                                        <p className="text-xs text-orange-600 font-medium mb-3 bg-orange-50 w-fit px-2 py-1 rounded-lg border border-orange-100">
+                                            Default for walk-in / unknown sources
+                                        </p>
+                                    )}
+
+                                    {supplier.contact_person && (
+                                        <div className="text-sm text-muted-foreground mb-4 flex items-center gap-1">
+                                            <User className="w-4 h-4" />
+                                            {supplier.contact_person}
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2 text-sm">
+                                        {supplier.phone && (
+                                            <div className="flex items-center gap-2 text-muted-foreground">
+                                                <Phone className="w-4 h-4" />
+                                                {supplier.phone}
+                                            </div>
+                                        )}
+                                        {supplier.email && (
+                                            <div className="flex items-center gap-2 text-muted-foreground truncate">
+                                                <Mail className="w-4 h-4" />
+                                                {supplier.email}
+                                            </div>
+                                        )}
+                                        {supplier.address ? (
+                                            <div className="flex items-center gap-2 text-muted-foreground truncate">
+                                                <MapPin className="w-4 h-4" />
+                                                {supplier.address}
+                                            </div>
+                                        ) : isAnonymous && (
+                                            <div className="flex items-center gap-2 text-muted-foreground italic">
+                                                <MapPin className="w-4 h-4" />
+                                                General Store
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="mt-6 pt-4 border-t border-border flex justify-between items-center">
+                                        <span className="text-sm font-medium text-muted-foreground">Balance</span>
+                                        <span className={`font-bold ${supplier.outstanding_balance > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                                            KES {(supplier.outstanding_balance || 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Modals */}
+            {showCreateModal && (
+                <CreatePurchaseOrder
+                    onClose={() => setShowCreateModal(false)}
+                    onSuccess={fetchOrders}
+                />
+            )}
+
+            {showSupplierModal && (
+                <CreateSupplierModal
+                    onClose={() => setShowSupplierModal(false)}
+                    onSuccess={() => {
+                        toast.success('Supplier added');
+                        if (activeTab === 'suppliers') fetchSuppliers();
+                    }}
+                />
+            )}
+
+            {editingSupplier && (
+                <EditSupplierModal
+                    supplier={editingSupplier}
+                    onClose={() => setEditingSupplier(null)}
+                    onSuccess={fetchSuppliers}
+                />
+            )}
+
+            {selectedOrder && (
+                <RecordPaymentModal
+                    order={selectedOrder}
+                    onClose={() => setSelectedOrder(null)}
+                    onSuccess={fetchOrders}
+                />
+            )}
+
+            {viewOrder && (
+                <PurchaseOrderDetailsModal
+                    order={viewOrder}
+                    onClose={() => setViewOrder(null)}
+                    onUpdate={fetchOrders}
+                />
+            )}
+        </div>
+    );
+}
+

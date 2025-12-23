@@ -6,7 +6,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { useCategories, useCreateProduct, useUpdateProduct, useCreateVariant, useAddStock } from '@/hooks/useProducts';
-import { Loader2, Plus, Package, Barcode, DollarSign, Tag, Upload, X, Image as ImageIcon, PlusCircle, MinusCircle, Wand2, ChevronDown, Folder } from 'lucide-react';
+import { Loader2, Plus, Package, Barcode, Wallet, Tag, Upload, X, Image as ImageIcon, PlusCircle, MinusCircle, Wand2, ChevronDown, Folder } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -459,7 +459,7 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Cost Price (KES)</label>
                                 <div className="relative">
-                                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                    <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                     <input
                                         required
                                         type="number"
@@ -473,7 +473,7 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Selling Price (KES)</label>
                                 <div className="relative">
-                                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                    <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                     <input
                                         required
                                         type="number"

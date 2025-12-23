@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import POS from "./pages/POS";
 import Customers from "./pages/Customers";
 import Inventory from "./pages/Inventory";
+import Purchases from './pages/Purchases';
 import Categories from "./pages/Categories";
 import DeviceId from "./pages/DeviceId";
 import Manufacturing from "@/pages/Manufacturing";
@@ -75,6 +76,7 @@ function AppRoutes() {
         <Route path="pos" element={<POS />} />
         <Route path="customers" element={<Customers />} />
         <Route path="inventory" element={<Inventory />} />
+        <Route path="purchases" element={<Purchases />} />
         <Route path="categories" element={<Categories />} />
         <Route path="manufacturing" element={<Manufacturing />} />
         <Route path="accounting" element={<Accounting />} />

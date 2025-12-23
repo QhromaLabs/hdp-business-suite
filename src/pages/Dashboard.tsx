@@ -7,7 +7,7 @@ import {
     Package,
     AlertTriangle,
     ArrowRight,
-    DollarSign,
+    Wallet,
     Clock,
 } from 'lucide-react';
 import { useDashboardStats, useTodaysSales } from '@/hooks/useSalesOrders';
@@ -44,7 +44,7 @@ export default function Dashboard() {
             title: "Today's Sales",
             value: dashboardStats?.todaySales || 0,
             change: 12.5,
-            icon: DollarSign,
+            icon: Wallet,
             color: 'primary',
             isCurrency: true,
         },

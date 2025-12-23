@@ -53,7 +53,8 @@ interface CustomerData {
 const paymentMethods: { value: PaymentMethod; label: string; icon: React.ElementType }[] = [
   { value: 'cash', label: 'Cash', icon: Banknote },
   { value: 'credit', label: 'Credit', icon: CreditCard },
-  { value: 'till', label: 'M-Pesa', icon: Smartphone },
+  { value: 'till', label: 'Till', icon: Smartphone },
+  { value: 'mpesa', label: 'Ken Mpesa', icon: Smartphone },
   { value: 'nat', label: 'Bank', icon: Building2 },
 ];
 
@@ -376,10 +377,10 @@ export default function POS() {
                       <div className="absolute bottom-2 right-2 z-10">
                         <span className={cn(
                           "text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest backdrop-blur-md border shadow-sm",
-                          item.quantity > 50 
-                            ? "bg-success/80 text-white border-success/20" 
-                            : item.quantity > 0 
-                              ? "bg-warning/80 text-white border-warning/20" 
+                          item.quantity > 50
+                            ? "bg-success/80 text-white border-success/20"
+                            : item.quantity > 0
+                              ? "bg-warning/80 text-white border-warning/20"
                               : "bg-destructive/80 text-white border-destructive/20"
                         )}>
                           {item.quantity <= 0 ? 'SOLD OUT' : `${item.quantity} IN STOCK`}

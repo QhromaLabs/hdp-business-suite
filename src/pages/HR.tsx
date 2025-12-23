@@ -1,6 +1,6 @@
 import {
   Users,
-  DollarSign,
+  Wallet,
   UserCheck,
   Calendar,
   UserX,
@@ -91,7 +91,7 @@ export default function HR() {
     {
       title: 'Monthly Payroll',
       value: formatCurrency(payrollSummary?.netPayroll || employees.reduce((sum, e) => sum + Number(e.basic_salary), 0)),
-      icon: DollarSign,
+      icon: Wallet,
       color: 'success',
     },
     {
@@ -252,9 +252,9 @@ export default function HR() {
               <div className="pt-6 border-t border-primary/20">
                 <div className="bg-primary/5 rounded-2xl p-5 border border-primary/10">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-semibold text-primary">Net Monthly Payout</span>
-                    <DollarSign className="w-4 h-4 text-primary" />
-                  </div>
+                <span className="text-[10px] font-semibold text-primary">Net Monthly Payout</span>
+                    <Wallet className="w-4 h-4 text-primary" />
+              </div>
                   <p className="text-3xl font-semibold text-primary">
                     {formatCurrency(payrollSummary?.netPayroll || employees.reduce((sum, e) => sum + Number(e.basic_salary), 0))}
                   </p>

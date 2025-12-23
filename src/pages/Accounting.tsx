@@ -1,7 +1,6 @@
 import {
-  DollarSign,
-  TrendingUp,
   Wallet,
+  TrendingUp,
   CreditCard,
   Building2,
   FileText,
@@ -9,8 +8,10 @@ import {
   ArrowDownRight,
   Plus,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   useFinancialSummary,
   useExpensesByCategory,
@@ -18,6 +19,7 @@ import {
   useBankAccounts,
   useExpenses,
   useRecordExpense,
+  useDeleteExpense,
   usePayments,
   useProductionRuns,
   useCreditorTransactions,
@@ -49,6 +51,8 @@ export default function Accounting() {
   const { data: productionRuns = [], isLoading: productionLoading } = useProductionRuns();
   const { data: creditorTransactions = [], isLoading: creditorTxLoading } = useCreditorTransactions();
   const { mutateAsync: recordExpense, isPending: savingExpense } = useRecordExpense();
+  const { mutate: deleteExpense } = useDeleteExpense();
+  const navigate = useNavigate();
   const { toast } = useToast();
 
   const [expenseForm, setExpenseForm] = useState({
@@ -58,6 +62,22 @@ export default function Accounting() {
     expense_date: new Date().toISOString().slice(0, 10),
     reference_number: '',
   });
+
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+
+  const DEFAULT_EXPENSE_CATEGORIES = [
+    'Rent',
+    'Fuel',
+    'Usable', // As requested
+    'Electricity',
+    'Car Service',
+    'Airtime',
+    'Office Costs',
+    'On Assigned Wages',
+    'Shipping Handling Costs',
+    'Custom Taxes',
+    'Shipping Freight Charges',
+  ];
 
   const isLoading =
     summaryLoading ||
@@ -70,8 +90,9 @@ export default function Accounting() {
     creditorTxLoading;
 
   const availableCategories = useMemo(() => {
-    const names = expenseCategories.map((c) => c.name);
-    return Array.from(new Set(names)).filter(Boolean);
+    const existingNames = expenseCategories.map((c) => c.name);
+    const allCategories = [...new Set([...DEFAULT_EXPENSE_CATEGORIES, ...existingNames])];
+    return allCategories.filter(Boolean).sort();
   }, [expenseCategories]);
 
   const workingCapital =
@@ -120,12 +141,33 @@ export default function Accounting() {
         description: '',
         amount: '',
         reference_number: '',
+        // Keep category for faster entry of similar expenses
       }));
     } catch (error) {
       toast({
         variant: 'destructive',
         title: 'Unable to record expense',
         description: error instanceof Error ? error.message : 'Please try again shortly.',
+      });
+    }
+  };
+
+  const handleDeleteExpense = (id: string, description: string) => {
+    if (confirm(`Are you sure you want to delete the expense: "${description}"?`)) {
+      deleteExpense(id, {
+        onSuccess: () => {
+          toast({
+            title: 'Expense removed',
+            description: 'The ledger has been updated successfully.',
+          });
+        },
+        onError: (error) => {
+          toast({
+            variant: 'destructive',
+            title: 'Deletion failed',
+            description: error instanceof Error ? error.message : 'Please try again.',
+          });
+        },
       });
     }
   };
@@ -139,7 +181,7 @@ export default function Accounting() {
     {
       title: 'Total Revenue',
       value: financialSummary?.revenue || 0,
-      icon: DollarSign,
+      icon: Wallet,
       color: 'primary',
     },
     {
@@ -220,20 +262,20 @@ export default function Accounting() {
           return (
             <div
               key={stat.title}
-      className="group bg-card rounded-2xl border border-border/50 p-6 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 animate-slide-up"
-      style={{ animationDelay: `${index * 50}ms` }}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <div className={cn(
+              className="group bg-card rounded-2xl border border-border/50 p-6 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 animate-slide-up"
+              style={{ animationDelay: `${index * 50}ms` }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className={cn(
                   'p-3 rounded-2xl transition-transform group-hover:scale-110 duration-500',
                   stat.color === 'primary' && 'bg-primary/10 text-primary',
                   stat.color === 'success' && 'bg-success/10 text-success',
                   stat.color === 'warning' && 'bg-warning/10 text-warning',
-              stat.color === 'destructive' && 'bg-destructive/10 text-destructive',
-            )}>
-              <Icon className="w-6 h-6" />
-            </div>
-          </div>
+                  stat.color === 'destructive' && 'bg-destructive/10 text-destructive',
+                )}>
+                  <Icon className="w-6 h-6" />
+                </div>
+              </div>
               <div>
                 <p className="text-3xl font-bold text-foreground tracking-tight">{formatCurrency(stat.value)}</p>
                 <p className="text-sm font-medium text-muted-foreground mt-1">{stat.title}</p>
@@ -241,6 +283,176 @@ export default function Accounting() {
             </div>
           );
         })}
+      </div>
+
+      {/* Expense Management Row */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
+        <div className="xl:col-span-2">
+          <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <p className="text-sm font-bold text-foreground">Record an Expense</p>
+                <p className="text-xs text-muted-foreground">Post an outflow straight into the ledger</p>
+              </div>
+              <div className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">Instant</div>
+            </div>
+            <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleExpenseSubmit}>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="category">Category</Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomCategory(!isCustomCategory);
+                      setExpenseForm((prev) => ({ ...prev, category: '' }));
+                    }}
+                    className="text-xs text-primary hover:underline font-medium"
+                  >
+                    {isCustomCategory ? 'Select from list' : 'Type custom category'}
+                  </button>
+                </div>
+                {!isCustomCategory ? (
+                  <Select
+                    value={expenseForm.category}
+                    onValueChange={(value) => setExpenseForm((prev) => ({ ...prev, category: value }))}
+                  >
+                    <SelectTrigger id="category" className="h-11 rounded-xl bg-card border-border/60">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[200px]">
+                      {availableCategories.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    id="category"
+                    value={expenseForm.category}
+                    onChange={(e) => setExpenseForm((prev) => ({ ...prev, category: e.target.value }))}
+                    className="h-11 rounded-xl bg-card border-border/60"
+                    placeholder="Type a category name"
+                    autoFocus
+                  />
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="amount">Amount</Label>
+                <Input
+                  id="amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={expenseForm.amount}
+                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  className="h-11 rounded-xl bg-card border-border/60"
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={expenseForm.description}
+                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className="min-h-[96px] rounded-2xl bg-card border-border/60"
+                  placeholder="Describe the expense or vendor"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="expense_date">Expense Date</Label>
+                <Input
+                  id="expense_date"
+                  type="date"
+                  value={expenseForm.expense_date}
+                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, expense_date: e.target.value }))}
+                  className="h-11 rounded-xl bg-card border-border/60"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="reference_number">Reference</Label>
+                <Input
+                  id="reference_number"
+                  value={expenseForm.reference_number}
+                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, reference_number: e.target.value }))}
+                  className="h-11 rounded-xl bg-card border-border/60"
+                  placeholder="Invoice or receipt number"
+                />
+              </div>
+              <div className="md:col-span-2 flex justify-end">
+                <Button
+                  type="submit"
+                  disabled={savingExpense}
+                  className="h-11 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-all"
+                >
+                  {savingExpense ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4 mr-2" /> Log expense
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-inner">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Recent Expenses</h3>
+              <p className="text-xs text-muted-foreground">Newest entries first</p>
+            </div>
+            <span className="text-[11px] px-3 py-1 rounded-full bg-secondary/50 text-muted-foreground font-semibold">
+              {expenses.length} tracked
+            </span>
+          </div>
+          {topExpenses.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground text-sm">No expenses posted yet.</div>
+          ) : (
+            <div className="space-y-3">
+              {topExpenses.map((expense) => (
+                <div
+                  key={expense.id}
+                  className="flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground truncate max-w-[160px]">
+                      {expense.description}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                      {expense.category}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-destructive">-{formatCurrency(Number(expense.amount))}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {new Date(expense.expense_date).toLocaleDateString('en-KE', {
+                          day: '2-digit',
+                          month: 'short',
+                        })}
+                      </p>
+                    </div>
+                    {!expense.id.startsWith('bank-') && (
+                      <button
+                        onClick={() => handleDeleteExpense(expense.id, expense.description)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -252,7 +464,10 @@ export default function Accounting() {
                 <h3 className="text-xl font-bold text-foreground">Financial Performance</h3>
                 <p className="text-sm text-muted-foreground">Detailed Profit & Loss analytics</p>
               </div>
-              <button className="btn-primary rounded-2xl shadow-lg premium-glow h-12 px-6">
+              <button
+                onClick={() => navigate('/audit')}
+                className="btn-primary rounded-2xl shadow-lg premium-glow h-12 px-6"
+              >
                 <TrendingUp className="w-5 h-5 mr-2" />
                 Full Audit
               </button>
@@ -345,11 +560,11 @@ export default function Accounting() {
             </div>
           ) : (
             <div className="space-y-3 flex-1 overflow-y-auto pr-2 scrollbar-thin">
-          {transactions.map((txn, idx) => {
-            const isCredit = txn.transaction_type === 'credit' || txn.transaction_type === 'deposit';
-            return (
-              <div key={txn.id} className="group flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
-                <div className="flex items-center gap-4">
+              {transactions.map((txn, idx) => {
+                const isCredit = txn.transaction_type === 'credit' || txn.transaction_type === 'deposit';
+                return (
+                  <div key={txn.id} className="group flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
+                    <div className="flex items-center gap-4">
                       <div className={cn(
                         'w-10 h-10 rounded-xl flex items-center justify-center shadow-inner transition-transform group-hover:rotate-12',
                         isCredit ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
@@ -367,25 +582,25 @@ export default function Accounting() {
                           {new Date(txn.transaction_date).toLocaleDateString('en-KE', { day: '2-digit', month: 'short' })}
                         </p>
                       </div>
-                </div>
-                <div className="text-right">
-                  <p className={cn(
-                    'text-sm font-bold',
-                    isCredit ? 'text-success' : 'text-destructive'
-                  )}>
-                    {isCredit ? '+' : '-'}{formatCurrency(Number(txn.amount))}
-                  </p>
-                  <span className={cn(
-                    'text-[10px] font-semibold uppercase',
-                    txn.is_reconciled ? 'text-success' : 'text-warning'
-                  )}>
-                    {txn.is_reconciled ? 'Reconciled' : 'Pending'}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                    </div>
+                    <div className="text-right">
+                      <p className={cn(
+                        'text-sm font-bold',
+                        isCredit ? 'text-success' : 'text-destructive'
+                      )}>
+                        {isCredit ? '+' : '-'}{formatCurrency(Number(txn.amount))}
+                      </p>
+                      <span className={cn(
+                        'text-[10px] font-semibold uppercase',
+                        txn.is_reconciled ? 'text-success' : 'text-warning'
+                      )}>
+                        {txn.is_reconciled ? 'Reconciled' : 'Pending'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
           <button className="w-full mt-6 py-4 bg-muted/30 rounded-2xl text-xs font-semibold uppercase text-muted-foreground hover:bg-primary/5 hover:text-primary transition-all tracking-wider">
             Request Full Statement
@@ -521,105 +736,6 @@ export default function Accounting() {
             </div>
           </div>
 
-          <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <p className="text-sm font-bold text-foreground">Record an Expense</p>
-                <p className="text-xs text-muted-foreground">Post an outflow straight into the ledger</p>
-              </div>
-              <div className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">Instant</div>
-            </div>
-            <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleExpenseSubmit}>
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                {availableCategories.length > 0 ? (
-                  <Select
-                    value={expenseForm.category}
-                    onValueChange={(value) => setExpenseForm((prev) => ({ ...prev, category: value }))}
-                  >
-                    <SelectTrigger id="category" className="h-11 rounded-xl bg-card border-border/60">
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableCategories.map((category) => (
-                        <SelectItem key={category} value={category}>
-                          {category}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    id="category"
-                    value={expenseForm.category}
-                    onChange={(e) => setExpenseForm((prev) => ({ ...prev, category: e.target.value }))}
-                    className="h-11 rounded-xl bg-card border-border/60"
-                    placeholder="Type a category"
-                  />
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="amount">Amount</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={expenseForm.amount}
-                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, amount: e.target.value }))}
-                  className="h-11 rounded-xl bg-card border-border/60"
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={expenseForm.description}
-                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, description: e.target.value }))}
-                  className="min-h-[96px] rounded-2xl bg-card border-border/60"
-                  placeholder="Describe the expense or vendor"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="expense_date">Expense Date</Label>
-                <Input
-                  id="expense_date"
-                  type="date"
-                  value={expenseForm.expense_date}
-                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, expense_date: e.target.value }))}
-                  className="h-11 rounded-xl bg-card border-border/60"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="reference_number">Reference</Label>
-                <Input
-                  id="reference_number"
-                  value={expenseForm.reference_number}
-                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, reference_number: e.target.value }))}
-                  className="h-11 rounded-xl bg-card border-border/60"
-                  placeholder="Invoice or receipt number"
-                />
-              </div>
-              <div className="md:col-span-2 flex justify-end">
-                <Button
-                  type="submit"
-                  disabled={savingExpense}
-                  className="h-11 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-all"
-                >
-                  {savingExpense ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4 mr-2" /> Log expense
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-          </div>
         </div>
 
         <div className="space-y-6">
@@ -685,47 +801,6 @@ export default function Accounting() {
             )}
           </div>
 
-          <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-inner">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-foreground">Recent Expenses</h3>
-                <p className="text-xs text-muted-foreground">Newest entries first</p>
-              </div>
-              <span className="text-[11px] px-3 py-1 rounded-full bg-secondary/50 text-muted-foreground font-semibold">
-                {expenses.length} tracked
-              </span>
-            </div>
-            {topExpenses.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground text-sm">No expenses posted yet.</div>
-            ) : (
-              <div className="space-y-3">
-                {topExpenses.map((expense) => (
-                  <div
-                    key={expense.id}
-                    className="flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate max-w-[160px]">
-                        {expense.description}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
-                        {expense.category}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-destructive">-{formatCurrency(Number(expense.amount))}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {new Date(expense.expense_date).toLocaleDateString('en-KE', {
-                          day: '2-digit',
-                          month: 'short',
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 

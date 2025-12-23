@@ -344,26 +344,37 @@ function OrderDetailsModal({
             const PURPLE = '#8B5CF6';
 
             const renderNote = (yOffset: number, titleSuffix: string) => {
-                // Header
-                doc.setFontSize(22);
+                // Header - Company Details
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(20);
                 doc.setTextColor(PURPLE);
-                doc.text('HDP BUSINESS SUITE', 105, yOffset + 20, { align: 'center' });
+                doc.text('HDPK K LTD', 105, yOffset + 15, { align: 'center' });
 
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(60, 60, 60); // Dark Gray
+                doc.text('P.O BOX 45678-00200 NAIROBI', 105, yOffset + 21, { align: 'center' });
+                doc.text('LOCATED AT SASIO ROAD, PETM GODOWNS, GODOWN NO 13, OFF LUNGA LUNGA ROAD', 105, yOffset + 26, { align: 'center' });
+                doc.text('TEL NO: 00111111111', 105, yOffset + 31, { align: 'center' });
+
+                // Delivery Note Title
+                doc.setFont('helvetica', 'bold');
                 doc.setFontSize(16);
                 doc.setTextColor(ORANGE);
-                doc.text(`DELIVERY NOTE ${titleSuffix}`, 105, yOffset + 30, { align: 'center' });
+                doc.text(`DELIVERY NOTE ${titleSuffix}`, 105, yOffset + 42, { align: 'center' });
 
                 // Info
+                doc.setFont('helvetica', 'normal');
                 doc.setFontSize(10);
                 doc.setTextColor(0, 0, 0); // Reset to black for text
-                doc.text(`Order Number: ${order.order_number}`, 20, yOffset + 45);
-                doc.text(`Date: ${format(new Date(order.created_at), 'dd/MM/yyyy HH:mm')}`, 20, yOffset + 50);
-                doc.text(`Customer: ${order.customer?.name || 'Walk-in Guest'}`, 20, yOffset + 55);
-                doc.text(`Phone: ${order.customer?.phone || 'N/A'}`, 20, yOffset + 60);
+                doc.text(`Order Number: ${order.order_number}`, 20, yOffset + 55);
+                doc.text(`Date: ${format(new Date(order.created_at), 'dd/MM/yyyy HH:mm')}`, 20, yOffset + 60);
+                doc.text(`Customer: ${order.customer?.name || 'Walk-in Guest'}`, 20, yOffset + 65);
+                doc.text(`Phone: ${order.customer?.phone || 'N/A'}`, 20, yOffset + 70);
 
-                // Table
+                // Table - start slightly lower to accommodate extra info
                 autoTable(doc, {
-                    startY: yOffset + 70,
+                    startY: yOffset + 78,
                     head: [['#', 'Item Description', 'Qty', 'Unit', 'Remarks']],
                     body: items.map((item: any, index: number) => [
                         index + 1,
@@ -373,7 +384,7 @@ function OrderDetailsModal({
                         ''
                     ]),
                     theme: 'grid',
-                    headStyles: { fillColor: ORANGE, textColor: 255, fontStyle: 'bold' },
+                    headStyles: { fillGray: 200, textColor: 0, fontStyle: 'bold' },
                     styles: { fontSize: 9, cellPadding: 2 },
                 });
 

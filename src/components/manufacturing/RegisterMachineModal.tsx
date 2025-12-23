@@ -5,8 +5,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Loader2, Plus, Wrench } from 'lucide-react';
-import { useRegisterMachine, useUpdateMachine, Machine } from '@/hooks/useManufacturing';
+import { Loader2, Plus, Wrench, Trash2 } from 'lucide-react';
+import { useRegisterMachine, useUpdateMachine, useDeleteMachine, Machine } from '@/hooks/useManufacturing';
 
 interface RegisterMachineModalProps {
   isOpen: boolean;
@@ -17,6 +17,7 @@ interface RegisterMachineModalProps {
 export function RegisterMachineModal({ isOpen, onClose, machineToEdit }: RegisterMachineModalProps) {
   const registerMachine = useRegisterMachine();
   const updateMachine = useUpdateMachine();
+  const deleteMachine = useDeleteMachine();
   const [formData, setFormData] = useState({
     name: '',
     status: 'operational',
@@ -97,6 +98,15 @@ export function RegisterMachineModal({ isOpen, onClose, machineToEdit }: Registe
   };
 
   const isSaving = registerMachine.isPending || updateMachine.isPending;
+  const isDeleting = deleteMachine.isPending;
+
+  const handleDelete = async () => {
+    if (!machineToEdit) return;
+    const confirmDelete = window.confirm(`Delete ${machineToEdit.name}? This cannot be undone.`);
+    if (!confirmDelete) return;
+    await deleteMachine.mutateAsync({ id: machineToEdit.id });
+    onClose();
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -195,9 +205,20 @@ export function RegisterMachineModal({ isOpen, onClose, machineToEdit }: Registe
                 placeholder="Notes, serial number, location..."
               />
             </div>
-          </div>
+        </div>
 
           <div className="flex justify-end gap-3 pt-2">
+            {machineToEdit && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-destructive/40 text-destructive hover:bg-destructive/10 text-sm font-semibold"
+                disabled={isDeleting}
+              >
+                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Delete
+              </button>
+            )}
             <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
             <button type="submit" className="btn-primary min-w-[140px]" disabled={isSaving}>
               {isSaving ? (
