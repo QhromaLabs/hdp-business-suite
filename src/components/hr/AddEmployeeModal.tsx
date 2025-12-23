@@ -5,7 +5,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Loader2, Plus, UserPlus2, Mail, Phone, Calendar as CalendarIcon, Briefcase } from 'lucide-react';
+import { Loader2, Plus, UserPlus2, Mail, Phone, Calendar as CalendarIcon, Briefcase, Shield } from 'lucide-react';
 import { useCreateEmployee, useUpdateEmployee, Employee } from '@/hooks/useEmployees';
 
 interface AddEmployeeModalProps {
@@ -26,6 +26,7 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
     phone: '',
     department: '',
     position: '',
+    role: '',
     basic_salary: '',
     hire_date: '',
   });
@@ -40,6 +41,7 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
           phone: employeeToEdit.phone || '',
           department: employeeToEdit.department || '',
           position: employeeToEdit.position || '',
+          role: employeeToEdit.role || '',
           basic_salary: String(employeeToEdit.basic_salary ?? ''),
           hire_date: employeeToEdit.hire_date || '',
         });
@@ -60,12 +62,15 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
         phone: formData.phone,
         department: formData.department,
         position: formData.position,
+        role: formData.role as any,
         basic_salary: Number(formData.basic_salary || 0),
         hire_date: formData.hire_date || null,
       });
     } else {
+      // @ts-ignore
       await createEmployee.mutateAsync({
         ...formData,
+        role: formData.role as any,
         basic_salary: Number(formData.basic_salary || 0),
         hire_date: formData.hire_date || null,
         is_active: true,
@@ -81,6 +86,7 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
       phone: '',
       department: '',
       position: '',
+      role: '',
       basic_salary: '',
       hire_date: '',
     });
@@ -148,7 +154,7 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Department</label>
               <div className="relative">
@@ -169,6 +175,23 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
                 className="input-field"
                 placeholder="Manager"
               />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">System Role</label>
+              <div className="relative">
+                <Shield className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <select
+                  value={formData.role}
+                  onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+                  className="input-field pl-10 w-full"
+                >
+                  <option value="">No Role</option>
+                  <option value="admin">Admin</option>
+                  <option value="manager">Manager</option>
+                  <option value="clerk">Clerk</option>
+                  <option value="sales_rep">Sales Rep</option>
+                </select>
+              </div>
             </div>
           </div>
 

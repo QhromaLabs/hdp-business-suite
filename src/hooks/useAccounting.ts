@@ -59,6 +59,29 @@ export interface CreditorTransaction {
   creditor?: { name?: string | null };
 }
 
+export interface Payroll {
+  id: string;
+  net_salary: number;
+  paid_at: string | null;
+  status: string;
+}
+
+export function usePayroll() {
+  return useQuery({
+    queryKey: ['payroll'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payroll')
+        .select('*')
+        .order('paid_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      return data as Payroll[];
+    },
+  });
+}
+
 export function useBankAccounts() {
   return useQuery({
     queryKey: ['bank_accounts'],
@@ -209,15 +232,28 @@ export function useFinancialSummary() {
       const salesTotal = salesOrders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
       const revenue = paymentsTotal > 0 ? paymentsTotal : salesTotal;
 
-      const expenseTotal = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
-      const bankOutflows = (bankTx || [])
-        .filter(txn => {
-          const t = (txn.transaction_type || '').toLowerCase();
-          return !t.includes('credit') && !t.includes('deposit') && !t.includes('receive');
-        })
-        .reduce((sum, txn) => sum + Number(txn.amount || 0), 0);
+      // 1. Get General Expenses
+      const generalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
 
-      const totalExpenses = expenseTotal > 0 ? expenseTotal + bankOutflows : bankOutflows;
+      // 2. Get Paid Payroll
+      const { data: payroll, error: payrollError } = await supabase
+        .from('payroll')
+        .select('net_salary')
+        .eq('status', 'paid');
+
+      if (payrollError) throw payrollError;
+      const totalPayroll = payroll?.reduce((sum, p) => sum + Number(p.net_salary), 0) || 0;
+
+      // 3. Get Production Costs
+      const { data: production, error: productionError } = await supabase
+        .from('production_runs')
+        .select('production_cost');
+
+      if (productionError) throw productionError;
+      const totalProductionCost = production?.reduce((sum, p) => sum + Number(p.production_cost), 0) || 0;
+
+      // Total Outflow
+      const totalExpenses = generalExpenses + totalPayroll + totalProductionCost;
 
       // Get cash balance from bank accounts
       const { data: accounts, error: accountsError } = await supabase
@@ -250,7 +286,12 @@ export function useFinancialSummary() {
       return {
         revenue,
         expenses: totalExpenses,
-        grossProfit: revenue - totalExpenses,
+        breakdown: {
+          general: generalExpenses,
+          payroll: totalPayroll,
+          production: totalProductionCost,
+        },
+        grossProfit: revenue - totalProductionCost, // Revenue - COGS (roughly)
         netProfit: revenue - totalExpenses,
         cashBalance,
         receivables: totalReceivables,

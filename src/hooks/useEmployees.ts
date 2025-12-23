@@ -11,6 +11,7 @@ export interface Employee {
   phone: string | null;
   department: string | null;
   position: string | null;
+  role: 'admin' | 'manager' | 'clerk' | 'sales_rep' | null;
   basic_salary: number;
   hire_date: string | null;
   is_active: boolean;
@@ -51,16 +52,15 @@ export function useEmployees() {
         .select('*')
         .eq('is_active', true)
         .order('full_name');
-      
+
       if (error) throw error;
       return data as Employee[];
     },
   });
 }
-
 export function useAttendanceToday() {
   const today = new Date().toISOString().split('T')[0];
-  
+
   return useQuery({
     queryKey: ['attendance', today],
     queryFn: async () => {
@@ -71,9 +71,9 @@ export function useAttendanceToday() {
           employee:employees(*)
         `)
         .eq('date', today);
-      
+
       if (error) throw error;
-      return data as Attendance[];
+      return data as unknown as Attendance[];
     },
   });
 }
@@ -86,16 +86,16 @@ export function usePayrollSummary() {
         .from('payroll')
         .select('*')
         .eq('status', 'pending');
-      
+
       if (error) throw error;
-      
+
       const summary = {
         totalSalaries: data.reduce((sum, p) => sum + Number(p.basic_salary), 0),
         allowances: data.reduce((sum, p) => sum + Number(p.allowances), 0),
         deductions: data.reduce((sum, p) => sum + Number(p.deductions), 0),
         netPayroll: data.reduce((sum, p) => sum + Number(p.net_salary), 0),
       };
-      
+
       return summary;
     },
   });
@@ -107,12 +107,12 @@ export function usePayrollEntries() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payroll')
-        .select('*, employee:employees(full_name, position, department)')
+        .select('*, employee:employees(*)')
         .order('pay_period_end', { ascending: false })
         .limit(25);
 
       if (error) throw error;
-      return data as Payroll[];
+      return data as unknown as Payroll[];
     },
   });
 }
@@ -170,7 +170,7 @@ export function useCreatePayrollEntry() {
 
 export function useCreateEmployee() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (employee: Omit<Employee, 'id' | 'created_at'>) => {
       const { data, error } = await supabase
@@ -178,7 +178,7 @@ export function useCreateEmployee() {
         .insert(employee)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },

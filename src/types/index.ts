@@ -52,14 +52,15 @@ export interface CartItem {
   discount: number;
 }
 
-export type PaymentMethod = 
-  | 'cash' 
-  | 'credit' 
-  | 'till' 
-  | 'nat' 
-  | 'equity' 
-  | 'coop' 
-  | 'kcb_kt' 
+export type PaymentMethod =
+  | 'cash'
+  | 'credit'
+  | 'till'
+  | 'mpesa'
+  | 'nat'
+  | 'equity'
+  | 'coop'
+  | 'kcb_kt'
   | 'capital';
 
 export interface Sale {

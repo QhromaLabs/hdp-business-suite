@@ -496,12 +496,25 @@ export default function Accounting() {
                 <span className="text-xs font-medium text-primary">Calculated Real-time</span>
               </div>
               <div className="flex items-end justify-between">
-                <p className="text-4xl font-bold text-primary tracking-tight">
-                  {formatCurrency(financialSummary?.netProfit || 0)}
-                </p>
+                <div>
+                  <p className={cn("text-4xl font-bold tracking-tight", (financialSummary?.netProfit || 0) >= 0 ? "text-primary" : "text-destructive")}>
+                    {formatCurrency(financialSummary?.netProfit || 0)}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Gross: {formatCurrency(financialSummary?.grossProfit || 0)}
+                  </p>
+                </div>
+
                 <div className="text-right">
                   <p className="text-xs font-medium text-muted-foreground mb-1">Status</p>
-                  <span className="px-3 py-1 bg-success/10 text-success text-xs font-semibold rounded-lg">Healthy Margin</span>
+                  <span className={cn(
+                    "px-3 py-1 text-xs font-semibold rounded-lg",
+                    (financialSummary?.netProfit || 0) >= 0
+                      ? "bg-success/10 text-success"
+                      : "bg-destructive/10 text-destructive"
+                  )}>
+                    {(financialSummary?.netProfit || 0) >= 0 ? "Profitable" : "Loss Making"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -509,30 +522,74 @@ export default function Accounting() {
             {/* Expense Breakdown */}
             <div className="mt-10">
               <div className="flex items-center justify-between mb-6">
-                <h4 className="text-sm font-semibold text-muted-foreground">Expense Vertical Breakdown</h4>
-                <button className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">Categories List</button>
+                <h4 className="text-sm font-semibold text-muted-foreground">Spending Breakdown</h4>
+                <button className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">Details</button>
               </div>
+
+              <div className="space-y-4">
+                {/* 1. Production Costs */}
+                <div className="group">
+                  <div className="flex items-center justify-between text-xs font-medium mb-2">
+                    <span className="text-foreground">Manufacturing & Production</span>
+                    <div className="flex gap-2 items-baseline">
+                      <span className="text-muted-foreground">
+                        {financialSummary?.expenses ? Math.round(((financialSummary.breakdown?.production || 0) / financialSummary.expenses) * 100) : 0}%
+                      </span>
+                      <span className="text-foreground font-bold">{formatCurrency(financialSummary?.breakdown?.production || 0)}</span>
+                    </div>
+                  </div>
+                  <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${financialSummary?.expenses ? ((financialSummary.breakdown?.production || 0) / financialSummary.expenses) * 100 : 0}%` }} />
+                  </div>
+                </div>
+
+                {/* 2. Payroll */}
+                <div className="group">
+                  <div className="flex items-center justify-between text-xs font-medium mb-2">
+                    <span className="text-foreground">Payroll & Salaries</span>
+                    <div className="flex gap-2 items-baseline">
+                      <span className="text-muted-foreground">
+                        {financialSummary?.expenses ? Math.round(((financialSummary.breakdown?.payroll || 0) / financialSummary.expenses) * 100) : 0}%
+                      </span>
+                      <span className="text-foreground font-bold">{formatCurrency(financialSummary?.breakdown?.payroll || 0)}</span>
+                    </div>
+                  </div>
+                  <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-purple-500 rounded-full" style={{ width: `${financialSummary?.expenses ? ((financialSummary.breakdown?.payroll || 0) / financialSummary.expenses) * 100 : 0}%` }} />
+                  </div>
+                </div>
+
+                {/* 3. General Expenses */}
+                <div className="group">
+                  <div className="flex items-center justify-between text-xs font-medium mb-2">
+                    <span className="text-foreground">General Expenses</span>
+                    <div className="flex gap-2 items-baseline">
+                      <span className="text-muted-foreground">
+                        {financialSummary?.expenses ? Math.round(((financialSummary.breakdown?.general || 0) / financialSummary.expenses) * 100) : 0}%
+                      </span>
+                      <span className="text-foreground font-bold">{formatCurrency(financialSummary?.breakdown?.general || 0)}</span>
+                    </div>
+                  </div>
+                  <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-orange-500 rounded-full" style={{ width: `${financialSummary?.expenses ? ((financialSummary.breakdown?.general || 0) / financialSummary.expenses) * 100 : 0}%` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Category Breakdown (Sub-section) */}
+            <div className="mt-8 pt-6 border-t border-border/50">
+              <h5 className="text-xs font-semibold text-muted-foreground mb-4">General Expense Categories</h5>
               {expenseCategories.length === 0 ? (
-                <div className="py-8 bg-muted/20 rounded-2xl text-center">
-                  <p className="text-sm font-medium text-muted-foreground opacity-60">Zero recorded outflows</p>
+                <div className="py-4 text-center">
+                  <p className="text-xs text-muted-foreground opacity-60">No general expenses recorded</p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3 pl-2 border-l-2 border-border/50">
                   {expenseCategories.map((category) => (
-                    <div key={category.name} className="group">
-                      <div className="flex items-center justify-between text-xs font-medium mb-2">
-                        <span className="text-foreground">{category.name}</span>
-                        <div className="flex gap-2 items-baseline">
-                          <span className="text-muted-foreground">{category.percentage}%</span>
-                          <span className="text-foreground font-bold">{formatCurrency(category.amount)}</span>
-                        </div>
-                      </div>
-                      <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all duration-1000 ease-out group-hover:opacity-80"
-                          style={{ width: `${category.percentage}%` }}
-                        />
-                      </div>
+                    <div key={category.name} className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">{category.name}</span>
+                      <span className="text-foreground font-medium">{formatCurrency(category.amount)}</span>
                     </div>
                   ))}
                 </div>

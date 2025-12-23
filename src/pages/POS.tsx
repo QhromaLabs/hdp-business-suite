@@ -18,9 +18,16 @@ import {
   ShoppingCart,
   Package,
   ChevronDown,
-  ChevronUp,
-  GripHorizontal
+  GripHorizontal,
+  Pencil
 } from 'lucide-react';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { useInventory, useCategories } from '@/hooks/useProducts';
 import { useCustomers, useCreateCustomer } from '@/hooks/useCustomers';
 import { useCreateSalesOrder } from '@/hooks/useSalesOrders';
@@ -53,8 +60,7 @@ interface CustomerData {
 const paymentMethods: { value: PaymentMethod; label: string; icon: React.ElementType }[] = [
   { value: 'cash', label: 'Cash', icon: Banknote },
   { value: 'credit', label: 'Credit', icon: CreditCard },
-  { value: 'till', label: 'Till', icon: Smartphone },
-  { value: 'mpesa', label: 'Ken Mpesa', icon: Smartphone },
+  { value: 'mpesa', label: 'M-Pesa', icon: Smartphone },
   { value: 'nat', label: 'Bank', icon: Building2 },
 ];
 
@@ -164,6 +170,16 @@ export default function POS() {
         return item;
       }).filter(item => item.quantity > 0);
     });
+  };
+
+  const updatePrice = (variantId: string, newPrice: number) => {
+    setCart(prev =>
+      prev.map(item =>
+        item.variantId === variantId
+          ? { ...item, price: newPrice }
+          : item
+      )
+    );
   };
 
   const removeFromCart = (variantId: string) => {
@@ -472,9 +488,32 @@ export default function POS() {
                     <h4 className="font-bold text-foreground text-[13px] leading-tight truncate">
                       {item.name}
                     </h4>
-                    <p className="text-[11px] text-primary font-bold mt-0.5">
-                      {formatCurrency(item.price)}
-                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-[11px] text-primary font-bold">
+                        {formatCurrency(item.price)}
+                      </p>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className="p-0.5 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-primary">
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-48 p-3" align="start">
+                          <div className="space-y-2">
+                            <Label htmlFor={`price-${item.variantId}`} className="text-xs font-bold">Edit Price</Label>
+                            <Input
+                              id={`price-${item.variantId}`}
+                              type="number"
+                              min="0"
+                              defaultValue={item.price}
+                              onChange={(e) => updatePrice(item.variantId, Number(e.target.value))}
+                              className="h-8 text-sm"
+                            />
+                            <p className="text-[10px] text-muted-foreground">Changes apply to this sale only.</p>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                   </div>
                   <button
                     onClick={() => removeFromCart(item.variantId)}
