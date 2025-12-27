@@ -40,6 +40,8 @@ import {
 import { useSettings } from '@/contexts/SettingsContext';
 import { calculateTotals } from '@/lib/tax';
 import { toast } from 'sonner';
+import { ReceiptContent } from '@/components/printing/Receipt';
+import { createRoot } from 'react-dom/client';
 
 export default function Orders() {
     const [searchTerm, setSearchTerm] = useState('');
@@ -336,6 +338,35 @@ function OrderDetailsModal({
     const displayedTax = taxEnabled ? Number(order.tax_amount) || totals.tax : totals.tax;
     const displayedTotal = taxEnabled ? Number(order.total_amount) || totals.total : totals.total;
 
+    const handleThermalPrint = () => {
+        const printWindow = window.open('', '', 'width=400,height=600');
+        if (!printWindow) return;
+
+        const container = printWindow.document.createElement('div');
+        printWindow.document.body.appendChild(container);
+
+        const root = createRoot(container);
+        root.render(
+            <ReceiptContent
+                order={order}
+                items={items}
+                settings={{
+                    storeName: 'HDPK K LTD',
+                    storeAddress: 'P.O BOX 45678-00200 NAIROBI',
+                    storePhone: '00111111111',
+                    taxRate: taxRate,
+                    taxEnabled: taxEnabled,
+                }}
+            />
+        );
+
+        // Wait for content to render then print
+        setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+        }, 500);
+    };
+
     const generateDeliveryNote = (isDoublePrint = false) => {
         try {
             const doc = new jsPDF();
@@ -427,6 +458,7 @@ function OrderDetailsModal({
     };
 
     return (
+
         <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
             <div className="bg-card w-full max-w-2xl rounded-3xl border border-border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-scale-in">
                 {/* Modal Header */}
@@ -601,11 +633,18 @@ function OrderDetailsModal({
                 {/* Modal Footer */}
                 <div className="p-6 border-t border-border/50 bg-muted/10 flex gap-3">
                     <button
+                        onClick={handleThermalPrint}
+                        className="flex-1 py-3 bg-zinc-800 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-700 transition-all shadow-sm"
+                    >
+                        <Receipt className="w-4 h-4" />
+                        Thermal Receipt
+                    </button>
+                    <button
                         onClick={() => generateDeliveryNote(true)}
                         className="flex-1 py-3 bg-secondary text-secondary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-secondary/80 transition-all shadow-sm"
                     >
                         <FileText className="w-4 h-4" />
-                        A4 Delivery Note
+                        A4 Note
                     </button>
                     <button
                         onClick={() => generateDeliveryNote(false)}

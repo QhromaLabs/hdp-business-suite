@@ -172,6 +172,16 @@ export default function POS() {
     });
   };
 
+  const setItemQuantity = (variantId: string, quantity: number) => {
+    setCart(prev =>
+      prev.map(item =>
+        item.variantId === variantId
+          ? { ...item, quantity: Math.max(0, quantity) }
+          : item
+      ).filter(item => item.quantity > 0)
+    );
+  };
+
   const updatePrice = (variantId: string, newPrice: number) => {
     setCart(prev =>
       prev.map(item =>
@@ -531,9 +541,19 @@ export default function POS() {
                     >
                       <Minus className="w-3 h-3" />
                     </button>
-                    <span className="w-8 text-center text-xs font-bold text-foreground">
-                      {item.quantity}
-                    </span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val)) {
+                          setItemQuantity(item.variantId, val);
+                        }
+                      }}
+                      onFocus={(e) => e.target.select()}
+                      className="w-10 text-center text-xs font-bold text-foreground bg-transparent border-none p-0 focus:outline-none focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
                     <button
                       onClick={() => updateQuantity(item.variantId, 1)}
                       className="w-6 h-6 rounded-md bg-card shadow-sm flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-all duration-300"

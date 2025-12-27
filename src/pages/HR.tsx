@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { AddEmployeeModal } from '@/components/hr/AddEmployeeModal';
 import { useState, useEffect } from 'react';
 import { CardGridSkeleton, PageHeaderSkeleton, StatsSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,11 @@ export default function HR() {
   const markLeave = useMarkLeaveAndRole('clerk');
   const updateEmployee = useUpdateEmployee();
   const terminateEmployee = useTerminateEmployee();
+
+  const { userRole } = useAuth();
+  const availableRoles = userRole === 'manager'
+    ? ['clerk', 'sales_rep']
+    : ['admin', 'manager', 'clerk', 'sales_rep'];
 
   const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false);
   const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
@@ -252,9 +258,9 @@ export default function HR() {
               <div className="pt-6 border-t border-primary/20">
                 <div className="bg-primary/5 rounded-2xl p-5 border border-primary/10">
                   <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-semibold text-primary">Net Monthly Payout</span>
+                    <span className="text-[10px] font-semibold text-primary">Net Monthly Payout</span>
                     <Wallet className="w-4 h-4 text-primary" />
-              </div>
+                  </div>
                   <p className="text-3xl font-semibold text-primary">
                     {formatCurrency(payrollSummary?.netPayroll || employees.reduce((sum, e) => sum + Number(e.basic_salary), 0))}
                   </p>
@@ -460,7 +466,7 @@ export default function HR() {
                       value={profileForm.role}
                       onChange={(e) => setProfileForm(prev => ({ ...prev, role: e.target.value as any }))}
                     >
-                      {['admin', 'manager', 'clerk', 'sales_rep'].map(r => (
+                      {availableRoles.map(r => (
                         <option key={r} value={r}>{r.replace('_', ' ')}</option>
                       ))}
                     </select>

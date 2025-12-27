@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, Plus, UserPlus2, Mail, Phone, Calendar as CalendarIcon, Briefcase, Shield } from 'lucide-react';
 import { useCreateEmployee, useUpdateEmployee, Employee } from '@/hooks/useEmployees';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AddEmployeeModalProps {
   isOpen: boolean;
@@ -50,6 +51,12 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
       }
     }
   }, [employeeToEdit, isOpen]);
+
+  const { userRole } = useAuth();
+
+  const availableRoles = userRole === 'manager'
+    ? ['clerk', 'sales_rep']
+    : ['admin', 'manager', 'clerk', 'sales_rep'];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,10 +193,9 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
                   className="input-field pl-10 w-full"
                 >
                   <option value="">No Role</option>
-                  <option value="admin">Admin</option>
-                  <option value="manager">Manager</option>
-                  <option value="clerk">Clerk</option>
-                  <option value="sales_rep">Sales Rep</option>
+                  {availableRoles.map(r => (
+                    <option key={r} value={r}>{r.replace('_', ' ')}</option>
+                  ))}
                 </select>
               </div>
             </div>
