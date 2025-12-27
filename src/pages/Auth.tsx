@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Eye, EyeOff, Lock, Mail, User } from 'lucide-react';
 import { toast } from 'sonner';
@@ -30,35 +31,35 @@ export default function Auth() {
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string; fullName?: string } = {};
-    
+
     const emailResult = emailSchema.safeParse(email);
     if (!emailResult.success) {
       newErrors.email = emailResult.error.errors[0].message;
     }
-    
+
     const passwordResult = passwordSchema.safeParse(password);
     if (!passwordResult.success) {
       newErrors.password = passwordResult.error.errors[0].message;
     }
-    
+
     if (mode === 'signup') {
       const nameResult = nameSchema.safeParse(fullName);
       if (!nameResult.success) {
         newErrors.fullName = nameResult.error.errors[0].message;
       }
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       return;
     }
-    
+
     setIsSubmitting(true);
 
     try {
@@ -81,6 +82,29 @@ export default function Auth() {
           navigate('/dashboard');
         }
       } else {
+        // Verify email exists in employees table
+        const { data: employee, error: empError } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (empError) {
+          toast.error('Verification failed', {
+            description: 'Could not verify employee status. Please try again.',
+          });
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (!employee) {
+          toast.error('Access Denied', {
+            description: 'This email is not authorized to create an account. Please contact your administrator.',
+          });
+          setIsSubmitting(false);
+          return;
+        }
+
         const { error } = await signUp(email, password, fullName);
         if (error) {
           if (error.message.includes('User already registered')) {
@@ -129,7 +153,7 @@ export default function Auth() {
             </div>
           </div>
         </div>
-        
+
         <div className="relative z-10 space-y-6">
           <h2 className="text-4xl font-bold text-sidebar-foreground leading-tight">
             Enterprise Resource
@@ -172,8 +196,8 @@ export default function Auth() {
               {mode === 'login' ? 'Welcome back' : 'Create account'}
             </h2>
             <p className="text-muted-foreground mt-2">
-              {mode === 'login' 
-                ? 'Sign in to access your dashboard' 
+              {mode === 'login'
+                ? 'Sign in to access your dashboard'
                 : 'Sign up to get started with HDP(K) ERP'}
             </p>
           </div>

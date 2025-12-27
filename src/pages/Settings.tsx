@@ -19,6 +19,194 @@ import { CardGridSkeleton, FormCardSkeleton, PageHeaderSkeleton, TableSkeleton }
 import { Switch } from '@/components/ui/switch';
 import { useSettings } from '@/contexts/SettingsContext';
 
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { Loader2, Trash2, Plus, AlertTriangle } from 'lucide-react';
+import { useEffect } from 'react';
+
+function IpManagementSection() {
+  const queryClient = useQueryClient();
+  const [currentIp, setCurrentIp] = useState<string | null>(null);
+  const [newIp, setNewIp] = useState('');
+
+  useEffect(() => {
+    fetch('https://api.ipify.org?format=json')
+      .then(res => res.json())
+      .then(data => setCurrentIp(data.ip))
+      .catch(err => console.error('Failed to fetch IP', err));
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'whitelisted_ips',
+        },
+        (payload) => {
+          queryClient.invalidateQueries({ queryKey: ['whitelisted_ips'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
+  const { data: whitelistedIps, isLoading } = useQuery({
+    queryKey: ['whitelisted_ips'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('whitelisted_ips')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const addIp = useMutation({
+    mutationFn: async (ip: string) => {
+      const { error } = await supabase.from('whitelisted_ips').insert({ ip_address: ip });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['whitelisted_ips'] });
+      setNewIp('');
+      toast.success('IP added to whitelist');
+    },
+    onError: (error) => toast.error('Failed to add IP: ' + error.message),
+  });
+
+  const removeIp = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('whitelisted_ips').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['whitelisted_ips'] });
+      toast.success('IP removed from whitelist');
+    },
+    onError: (error) => toast.error('Failed to remove IP: ' + error.message),
+  });
+
+  const handleAddCurrent = () => {
+    if (currentIp) addIp.mutate(currentIp);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* Current IP Card */}
+        <div className="flex-1 p-4 rounded-lg bg-muted/30 border border-border">
+          <p className="text-sm font-medium text-muted-foreground mb-1">Your Current IP Address</p>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-bold tracking-tight">{currentIp || 'Loading...'}</h2>
+            {currentIp && (
+              <button
+                onClick={() => navigator.clipboard.writeText(currentIp)}
+                className="text-xs bg-primary/10 text-primary px-2 py-1 rounded hover:bg-primary/20 transition-colors"
+              >
+                Copy
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            This is the address verified by our system. Ensure this is whitelisted to maintain access.
+            <a href="/my-ip" target="_blank" className="ml-1 text-primary hover:underline">
+              Share public IP link
+            </a>
+          </p>
+        </div>
+
+        {/* Warning Card */}
+        <div className="flex-1 p-4 rounded-lg bg-warning/10 border border-warning/20">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-semibold text-warning-foreground text-sm">Strict Access Control</h4>
+              <p className="text-xs text-warning-foreground/80 mt-1">
+                Adding IPs to this list enables <strong>Strict Mode</strong>. Only devices with these IPs will be able to access the system.
+                If the list is empty, access is open to everyone.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-semibold text-foreground">Whitelisted IP Addresses</h4>
+          <div className="flex gap-2">
+            {currentIp && (
+              <button
+                onClick={handleAddCurrent}
+                disabled={addIp.isPending || whitelistedIps?.some(w => w.ip_address === currentIp)}
+                className="btn-secondary h-9 text-xs"
+              >
+                {whitelistedIps?.some(w => w.ip_address === currentIp) ? 'Current IP Whitelisted' : 'Add Current IP'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Enter IP address manually (e.g., 192.168.1.1)"
+            value={newIp}
+            onChange={(e) => setNewIp(e.target.value)}
+            className="input-field max-w-sm"
+          />
+          <button
+            onClick={() => newIp && addIp.mutate(newIp)}
+            disabled={!newIp || addIp.isPending}
+            className="btn-primary h-10 w-10 p-0 flex items-center justify-center"
+          >
+            {addIp.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+          </button>
+        </div>
+
+        <div className="rounded-md border border-border">
+          {isLoading ? (
+            <div className="p-4 text-center text-sm text-muted-foreground">Loading whitelist...</div>
+          ) : whitelistedIps?.length === 0 ? (
+            <div className="p-8 text-center bg-muted/20">
+              <p className="text-sm text-muted-foreground">No IPs whitelisted. System is legally valid for public access.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {whitelistedIps?.map((item: any) => (
+                <div key={item.id} className="flex items-center justify-between p-3 hover:bg-muted/30 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-success" />
+                    <span className="font-mono text-sm">{item.ip_address}</span>
+                    {item.ip_address === currentIp && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">YOU</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => removeIp.mutate(item.id)}
+                    disabled={removeIp.isPending}
+                    className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                    title="Remove IP"
+                  >
+                    {removeIp.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const { data: profiles = [], isLoading } = useUserRoles();
   const removeRole = useRemoveUserRole();
@@ -232,6 +420,16 @@ export default function Settings() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* IP Management Section */}
+      <div className="bg-card rounded-xl border border-border p-6 space-y-6">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-primary" />
+          <h3 className="text-lg font-semibold text-foreground">Access Control & Security</h3>
+        </div>
+
+        <IpManagementSection />
       </div>
 
       <div className="bg-card rounded-xl border border-border p-6">

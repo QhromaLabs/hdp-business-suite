@@ -14,6 +14,7 @@ import Inventory from "./pages/Inventory";
 import Purchases from './pages/Purchases';
 import Categories from "./pages/Categories";
 import DeviceId from "./pages/DeviceId";
+import MyIp from "./pages/MyIp";
 import Manufacturing from "@/pages/Manufacturing";
 import Accounting from "./pages/Accounting";
 import HR from "./pages/HR";
@@ -63,6 +64,7 @@ function AppRoutes() {
         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />}
       />
       <Route path="/device-id" element={<DeviceId />} />
+      <Route path="/my-ip" element={<MyIp />} />
       <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
       <Route
         path="/"
