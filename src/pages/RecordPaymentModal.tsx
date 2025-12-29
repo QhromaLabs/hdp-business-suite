@@ -17,26 +17,31 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
     const [paymentMethod, setPaymentMethod] = useState('cash');
     const [notes, setNotes] = useState('');
 
-    const remainingBalance = order.total_amount - (order.paid_amount || 0);
+    // Ensure we're working with numbers
+    const totalAmount = Number(order.total_amount) || 0;
+    const paidAmount = Number(order.paid_amount) || 0;
+    const remainingBalance = Math.max(0, totalAmount - paidAmount); // Prevent negative balance display
+    const isFullyPaid = remainingBalance <= 0;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const paymentAmount = parseFloat(amount);
+        const paymentAmount = Number(amount);
 
         if (!paymentAmount || paymentAmount <= 0) {
             toast.error('Please enter a valid payment amount');
             return;
         }
 
-        if (paymentAmount > remainingBalance) {
-            toast.error(`Payment cannot exceed remaining balance of ${remainingBalance}`);
+        // Strict overpayment check
+        if (paymentAmount > remainingBalance + 0.01) { // Small epsilon for float safety if needed, though usually strict > is fine
+            toast.error(`Payment cannot exceed remaining balance of KES ${remainingBalance.toLocaleString()}`);
             return;
         }
 
         setLoading(true);
         try {
-            const newPaidAmount = (order.paid_amount || 0) + paymentAmount;
-            const newStatus = newPaidAmount >= order.total_amount ? 'completed' : 'partial';
+            const newPaidAmount = paidAmount + paymentAmount;
+            const newStatus = newPaidAmount >= totalAmount ? 'completed' : 'partial';
 
             // 1. Update Purchase Order Status
             const { error: poError } = await supabase
@@ -49,7 +54,7 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
 
             if (poError) throw poError;
 
-            // 2. Create Creditor Transaction (Legder)
+            // 2. Create Creditor Transaction (Ledger)
             const { error: txnError } = await supabase
                 .from('creditor_transactions')
                 .insert([{
@@ -86,7 +91,7 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
 
             if (credError) throw credError;
 
-            const currentBalance = creditorData.outstanding_balance || 0;
+            const currentBalance = Number(creditorData.outstanding_balance) || 0;
             const { error: balanceError } = await supabase
                 .from('creditors')
                 .update({ outstanding_balance: currentBalance - paymentAmount })
@@ -124,16 +129,23 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
                 <div className="p-4 bg-muted/10 border-b border-border">
                     <div className="flex justify-between text-sm mb-1">
                         <span className="text-muted-foreground">Total Amount:</span>
-                        <span className="font-bold">KES {order.total_amount?.toLocaleString()}</span>
+                        <span className="font-bold">KES {totalAmount.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-sm mb-1">
                         <span className="text-muted-foreground">Already Paid:</span>
-                        <span className="font-bold text-green-600">KES {order.paid_amount?.toLocaleString()}</span>
+                        <span className="font-bold text-green-600">KES {paidAmount.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-sm pt-2 border-t border-border mt-2">
                         <span className="font-medium">Remaining Balance:</span>
-                        <span className="font-bold text-red-500">KES {remainingBalance.toLocaleString()}</span>
+                        <span className={`font-bold ${isFullyPaid ? 'text-green-600' : 'text-red-500'}`}>
+                            KES {remainingBalance.toLocaleString()}
+                        </span>
                     </div>
+                    {isFullyPaid && (
+                        <div className="mt-2 text-center bg-green-100 text-green-700 py-1 rounded-lg text-sm font-bold border border-green-200">
+                            Order Fully Paid
+                        </div>
+                    )}
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -144,11 +156,13 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
                             <input
                                 type="number"
                                 required
-                                min="1"
+                                min="0.01"
                                 max={remainingBalance}
+                                step="0.01"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono"
+                                disabled={isFullyPaid}
+                                className="w-full pl-9 pr-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                                 placeholder="0.00"
                             />
                         </div>
@@ -163,7 +177,8 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
                                 required
                                 value={paymentDate}
                                 onChange={(e) => setPaymentDate(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                disabled={isFullyPaid}
+                                className="w-full pl-9 pr-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                             />
                         </div>
                     </div>
@@ -175,7 +190,8 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
                             <select
                                 value={paymentMethod}
                                 onChange={(e) => setPaymentMethod(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                disabled={isFullyPaid}
+                                className="w-full pl-9 pr-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <option value="cash">Cash</option>
                                 <option value="mpesa">M-Pesa</option>
@@ -190,8 +206,9 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
                         <textarea
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
+                            disabled={isFullyPaid}
                             placeholder="Check number, bank transfer ref, etc..."
-                            className="w-full px-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 min-h-[80px]"
+                            className="w-full px-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 min-h-[80px] disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                     </div>
 
@@ -201,16 +218,18 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
                             onClick={onClose}
                             className="px-6 py-2 rounded-xl font-medium hover:bg-muted transition-colors"
                         >
-                            Cancel
+                            {isFullyPaid ? 'Close' : 'Cancel'}
                         </button>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="bg-primary text-primary-foreground px-6 py-2 rounded-xl font-medium flex items-center gap-2 hover:opacity-90 transition-all shadow-md active:scale-95 disabled:opacity-50"
-                        >
-                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            Record Payment
-                        </button>
+                        {!isFullyPaid && (
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="bg-primary text-primary-foreground px-6 py-2 rounded-xl font-medium flex items-center gap-2 hover:opacity-90 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                            >
+                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                Record Payment
+                            </button>
+                        )}
                     </div>
                 </form>
             </div>

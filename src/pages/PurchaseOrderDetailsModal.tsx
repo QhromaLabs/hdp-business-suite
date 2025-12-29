@@ -44,6 +44,12 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
     const [newPaymentAmount, setNewPaymentAmount] = useState('');
     const [newPaymentMethod, setNewPaymentMethod] = useState('cash');
 
+    // Calculate Financials
+    const totalAmount = Number(order.total_amount) || 0;
+    const paidAmount = Number(order.paid_amount) || 0;
+    const remainingBalance = Math.max(0, totalAmount - paidAmount);
+    const isFullyPaid = remainingBalance <= 0;
+
     useEffect(() => {
         if (order.id) {
             fetchItems();
@@ -123,14 +129,21 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
     };
 
     const handleAddPayment = async () => {
-        if (!newPaymentAmount || parseFloat(newPaymentAmount) <= 0) {
+        const amount = parseFloat(newPaymentAmount);
+
+        if (!amount || amount <= 0) {
             toast.error('Please enter a valid amount');
+            return;
+        }
+
+        if (amount > remainingBalance + 0.01) {
+            toast.error(`Payment cannot exceed KES ${remainingBalance.toLocaleString()}`);
             return;
         }
 
         setLoading(true);
         try {
-            const amount = parseFloat(newPaymentAmount);
+            // const amount = parseFloat(newPaymentAmount); // Already parsed above
 
             // 1. Create PO Payment Record
             const { error: poPayError } = await supabase
@@ -478,15 +491,17 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
                         <div className="bg-card w-full border border-border rounded-2xl overflow-hidden flex flex-col">
                             <div className="p-4 bg-muted/10 border-b border-border flex justify-between items-center">
                                 <h3 className="font-semibold">Payments</h3>
-                                <button
-                                    onClick={() => setShowAddPayment(!showAddPayment)}
-                                    className="text-xs bg-white border border-border px-2 py-1 rounded shadow-sm hover:bg-muted transition-colors"
-                                >
-                                    {showAddPayment ? 'Cancel' : '+ Record Payment'}
-                                </button>
+                                {!isFullyPaid && (
+                                    <button
+                                        onClick={() => setShowAddPayment(!showAddPayment)}
+                                        className="text-xs bg-white border border-border px-2 py-1 rounded shadow-sm hover:bg-muted transition-colors"
+                                    >
+                                        {showAddPayment ? 'Cancel' : '+ Record Payment'}
+                                    </button>
+                                )}
                             </div>
 
-                            {showAddPayment && (
+                            {showAddPayment && !isFullyPaid && (
                                 <div className="p-4 bg-muted/20 border-b border-border space-y-3 animate-in fade-in slide-in-from-top-2">
                                     <h4 className="text-xs font-bold text-muted-foreground uppercase">New Payment</h4>
                                     <div className="space-y-2">
@@ -495,6 +510,8 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
                                             placeholder="Amount (KES)"
                                             value={newPaymentAmount}
                                             onChange={e => setNewPaymentAmount(e.target.value)}
+                                            min="0"
+                                            max={remainingBalance}
                                             className="w-full h-9 px-3 rounded-lg border border-input text-sm"
                                         />
                                         <select
@@ -515,6 +532,12 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
                                             {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Record Payment'}
                                         </button>
                                     </div>
+                                </div>
+                            )}
+
+                            {isFullyPaid && showAddPayment && (
+                                <div className="p-4 bg-green-50 border-b border-green-100 text-center text-green-700 text-sm font-medium">
+                                    Order is fully paid.
                                 </div>
                             )}
 

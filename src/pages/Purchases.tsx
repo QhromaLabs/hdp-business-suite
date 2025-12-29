@@ -166,6 +166,7 @@ export default function Purchases() {
             if (error) throw error;
 
             toast.success('Order deleted and financials reverted');
+            setOrders(prev => prev.filter(o => o.id !== order.id)); // Optimistic update
             fetchOrders();
             fetchSuppliers(); // Update balances
 
