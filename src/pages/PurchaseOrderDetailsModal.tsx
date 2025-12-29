@@ -3,6 +3,12 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { X, Edit2, Package, Calendar, User, Loader2, CheckCircle2, ArrowDownToLine, AlertTriangle, Truck, Gavel, Scale, DollarSign, Plus } from 'lucide-react';
 import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
     AlertDialog,
     AlertDialogAction,
     AlertDialogCancel,
@@ -16,12 +22,13 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 
 interface PurchaseOrderDetailsModalProps {
+    open: boolean;
     order: any;
     onClose: () => void;
     onUpdate: () => void;
 }
 
-export default function PurchaseOrderDetailsModal({ order, onClose, onUpdate }: PurchaseOrderDetailsModalProps) {
+export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpdate }: PurchaseOrderDetailsModalProps) {
     const [loading, setLoading] = useState(false);
     const [loadingItems, setLoadingItems] = useState(true);
     const [receiving, setReceiving] = useState(false);
@@ -269,40 +276,41 @@ export default function PurchaseOrderDetailsModal({ order, onClose, onUpdate }: 
     };
 
     return (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-card w-full max-w-4xl max-h-[90vh] rounded-3xl border border-border shadow-2xl flex flex-col overflow-hidden animate-scale-in">
-
-                {/* Header */}
-                <div className="p-6 border-b border-border flex justify-between items-start bg-muted/20">
-                    <div>
-                        <div className="flex items-center gap-3 mb-1">
-                            <h2 className="text-2xl font-bold">{order.order_number}</h2>
-                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase ${getStatusColor(order.status)}`}>
-                                {order.status}
-                            </span>
-                            {order.received_at && (
-                                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200 bg-green-50 text-green-700 uppercase flex items-center gap-1">
-                                    <CheckCircle2 className="w-3 h-3" /> Received
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                                <User className="w-4 h-4" />
-                                {order.creditor?.name || 'Unknown Supplier'}
+        <Dialog open={open} onOpenChange={onClose}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto w-full p-0 gap-0 bg-card border-border/50">
+                <DialogHeader className="px-6 py-4 border-b border-border bg-muted/10 sticky top-0 z-10 backdrop-blur-sm">
+                    <div className="flex items-center justify-between">
+                        <DialogTitle className="flex items-center gap-3">
+                            <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                                <Package className="w-5 h-5" />
                             </div>
-                            <div className="flex items-center gap-2">
-                                <Calendar className="w-4 h-4" />
-                                {format(new Date(order.created_at), 'PPP')}
+                            <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-3">
+                                    <span className="font-bold text-xl">{order.order_number}</span>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase ${getStatusColor(order.status)}`}>
+                                        {order.status}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-4 text-sm font-normal text-muted-foreground">
+                                    <div className="flex items-center gap-1.5">
+                                        <User className="w-3.5 h-3.5" />
+                                        {order.creditor?.name || 'Unknown Supplier'}
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <Calendar className="w-3.5 h-3.5" />
+                                        {order.created_at ? format(new Date(order.created_at), 'PPP') : 'N/A'}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        </DialogTitle>
+                        <div className="hidden">Purchase Order Details</div>
+                        <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
+                            <X className="w-5 h-5" />
+                        </button>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
-                        <X className="w-5 h-5" />
-                    </button>
-                </div>
+                </DialogHeader>
 
-                <div className="flex-1 overflow-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                     {/* Left Column: Items & Costs */}
                     <div className="lg:col-span-2 space-y-6">
@@ -408,7 +416,7 @@ export default function PurchaseOrderDetailsModal({ order, onClose, onUpdate }: 
                                 <div className="flex-1">
                                     <h4 className="font-semibold text-green-900">Inventory Received</h4>
                                     <p className="text-sm text-green-700">
-                                        Stock updated on {format(new Date(order.received_at), 'PPP p')}
+                                        Stock updated on {order.received_at ? format(new Date(order.received_at), 'PPP p') : 'N/A'}
                                     </p>
                                 </div>
                             </div>
@@ -524,7 +532,7 @@ export default function PurchaseOrderDetailsModal({ order, onClose, onUpdate }: 
                                                     <div className="text-xs text-muted-foreground capitalize">{pay.payment_method?.replace('_', ' ')}</div>
                                                 </div>
                                                 <div className="text-right text-xs text-muted-foreground">
-                                                    <div>{format(new Date(pay.payment_date || pay.created_at), 'MMM d, yyyy')}</div>
+                                                    <div>{(pay.payment_date || pay.created_at) ? format(new Date(pay.payment_date || pay.created_at), 'MMM d, yyyy') : 'N/A'}</div>
                                                     {pay.notes && <div className="max-w-[100px] truncate" title={pay.notes}>{pay.notes}</div>}
                                                 </div>
                                             </div>
@@ -536,30 +544,30 @@ export default function PurchaseOrderDetailsModal({ order, onClose, onUpdate }: 
 
                     </div>
                 </div>
-            </div>
 
-            {/* Confirmation Dialog */}
-            <AlertDialog open={showConfirmReceive} onOpenChange={setShowConfirmReceive}>
-                <AlertDialogContent className="z-[80]">
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Receive Inventory?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This will add the items to your inventory count and update the <b>Cost Price</b> for these products based on the Landed Cost (Items Cost + Variable Costs).
-                            <br /><br />
-                            <span className="flex items-center gap-2 text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-200">
-                                <AlertTriangle className="w-4 h-4" />
-                                This action cannot be undone.
-                            </span>
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmReceiveItems} className="bg-blue-600 hover:bg-blue-700">
-                            Confirm Receive
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-        </div >
+                {/* Confirmation Dialog */}
+                <AlertDialog open={showConfirmReceive} onOpenChange={setShowConfirmReceive}>
+                    <AlertDialogContent className="z-[80]">
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Receive Inventory?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                This will add the items to your inventory count and update the <b>Cost Price</b> for these products based on the Landed Cost (Items Cost + Variable Costs).
+                                <br /><br />
+                                <span className="flex items-center gap-2 text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                                    <AlertTriangle className="w-4 h-4" />
+                                    This action cannot be undone.
+                                </span>
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={confirmReceiveItems} className="bg-blue-600 hover:bg-blue-700">
+                                Confirm Receive
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </DialogContent>
+        </Dialog >
     );
 }

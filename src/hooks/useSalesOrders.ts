@@ -194,6 +194,28 @@ export function useCreateSalesOrder() {
       const discount = order.items.reduce((sum, item) => sum + (item.discount || 0), 0);
       const { tax, total } = calculateTotals(subtotal, discount, taxEnabled);
 
+      // 1. Validate Credit Limit (if credit sale)
+      if (order.is_credit_sale && order.customer_id) {
+        const { data: customer, error: customerError } = await supabase
+          .from('customers')
+          .select('credit_limit, credit_balance, name')
+          .eq('id', order.customer_id)
+          .single();
+
+        if (customerError) throw customerError;
+
+        if (customer) {
+          const currentBalance = customer.credit_balance || 0;
+          const limit = customer.credit_limit || 0;
+          const newBalance = currentBalance + total;
+
+          if (limit > 0 && newBalance > limit) {
+            const availableCredit = limit - currentBalance;
+            throw new Error(`Credit limit exceeded! Available credit: ${new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(availableCredit)}`);
+          }
+        }
+      }
+
       // Create order
       const { data: salesOrder, error: orderError } = await supabase
         .from('sales_orders')
@@ -246,7 +268,34 @@ export function useCreateSalesOrder() {
         }
       }
 
-      // 4. Create payment record for non-credit sales (POS cash/mpesa orders)
+      // 4. Update Customer Credit Balance (if credit sale)
+      if (order.is_credit_sale && order.customer_id) {
+        // Re-fetch strictly to be safe, or just use atomic increment logic if possible.
+        // For now, simpler read-modify-write as we did in validation, but purely incremental is safer.
+        // Supabase doesn't have atomic increment in simple update easily without RPC.
+        // We will just do a fresh fetch-update or assume the previous check is "close enough" but concurrency exists.
+        // Let's re-fetch current to be slightly safer.
+        const { data: freshCustomer } = await supabase
+          .from('customers')
+          .select('credit_balance')
+          .eq('id', order.customer_id)
+          .single();
+
+        const currentBalance = freshCustomer?.credit_balance || 0;
+        const newBalance = currentBalance + total;
+
+        const { error: balanceError } = await supabase
+          .from('customers')
+          .update({ credit_balance: newBalance })
+          .eq('id', order.customer_id);
+
+        if (balanceError) {
+          console.error('Failed to update credit balance:', balanceError);
+          toast.error('Order created but failed to update credit balance. Please check manually.');
+        }
+      }
+
+      // 5. Create payment record for non-credit sales (POS cash/mpesa orders)
       // This ensures the sale appears in the ledger immediately
       if (!order.is_credit_sale) {
         const now = new Date().toISOString();
@@ -274,6 +323,7 @@ export function useCreateSalesOrder() {
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       queryClient.invalidateQueries({ queryKey: ['payments'] }); // Invalidate payments to refresh ledger
+      queryClient.invalidateQueries({ queryKey: ['customers'] }); // Refresh customer list for balances
       toast.success('Sale completed successfully!');
     },
     onError: (error) => {

@@ -265,8 +265,10 @@ export default function POS() {
       });
       clearCart();
       setShowPaymentModal(false);
-    } catch (error) {
-      // Error handled by mutation
+    } catch (error: any) {
+      // Show specific error message from mutation (e.g., Credit Limit Exceeded)
+      console.error('Payment processing error:', error);
+      // Toast is already handled in mutation onError, but we ensure it's logged here too if needed
     }
   };
 
