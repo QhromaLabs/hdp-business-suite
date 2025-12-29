@@ -39,7 +39,8 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
         cost_price: '',
         price: '',
         initial_stock: '0',
-        warehouse_location: 'Main Warehouse'
+        warehouse_location: 'Main Warehouse',
+        weight: ''
     });
 
     useEffect(() => {
@@ -58,7 +59,8 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
                 cost_price: String(variant?.cost_price || product?.cost_price || ''),
                 price: String(variant?.price || product?.base_price || ''),
                 initial_stock: String(productToEdit.quantity || '0'),
-                warehouse_location: productToEdit.warehouse_location || 'Main Warehouse'
+                warehouse_location: productToEdit.warehouse_location || 'Main Warehouse',
+                weight: String(variant?.weight || '0')
             });
 
             if (product?.image_url) {
@@ -93,7 +95,8 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
             cost_price: '',
             price: '',
             initial_stock: '0',
-            warehouse_location: 'Main Warehouse'
+            warehouse_location: 'Main Warehouse',
+            weight: ''
         });
         setImageFile(null);
         setImagePreview(null);
@@ -202,6 +205,7 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
                             barcode: formData.barcode || null,
                             price: Number(formData.price),
                             cost_price: Number(formData.cost_price),
+                            weight: Number(formData.weight) || 0,
                         })
                         .eq('id', variantId);
 
@@ -225,6 +229,7 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
                     size: null,
                     color: null,
                     reorder_level: 10,
+                    weight: Number(formData.weight) || 0,
                 });
 
                 await addStock.mutateAsync({
@@ -466,6 +471,20 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
                                         placeholder="0"
                                         value={formData.cost_price}
                                         onChange={e => setFormData({ ...formData, cost_price: e.target.value })}
+                                        className="input-field pl-10"
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Weight (kg)</label>
+                                <div className="relative">
+                                    <Package className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                    <input
+                                        type="number"
+                                        placeholder="0.0"
+                                        step="0.01"
+                                        value={formData.weight}
+                                        onChange={e => setFormData({ ...formData, weight: e.target.value })}
                                         className="input-field pl-10"
                                     />
                                 </div>

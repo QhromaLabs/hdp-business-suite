@@ -1,247 +1,207 @@
-import { useEffect, useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Factory, Loader2, Package, Plus, RotateCcw } from 'lucide-react';
-import { RawMaterial, useCreateRawMaterial, useRestockRawMaterial } from '@/hooks/useManufacturing';
+import { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { useCreateRawMaterial, useUpdateRawMaterial, useRestockRawMaterial } from '@/hooks/useManufacturing';
 
 interface RawMaterialModalProps {
   isOpen: boolean;
   onClose: () => void;
-  materials: RawMaterial[];
+  mode: 'create' | 'edit' | 'restock';
+  initialData?: any;
 }
 
-type Mode = 'restock' | 'create';
+export function RawMaterialModal({ isOpen, onClose, mode, initialData }: RawMaterialModalProps) {
+  const createMutation = useCreateRawMaterial();
+  const updateMutation = useUpdateRawMaterial();
+  const restockMutation = useRestockRawMaterial();
 
-export function RawMaterialModal({ isOpen, onClose, materials }: RawMaterialModalProps) {
-  const [mode, setMode] = useState<Mode>('restock');
-  const [selectedMaterial, setSelectedMaterial] = useState<string>('');
-  const [restockQuantity, setRestockQuantity] = useState('0');
-  const [restockCost, setRestockCost] = useState('');
-  const [newMaterial, setNewMaterial] = useState({
+  const [formData, setFormData] = useState({
     name: '',
     unit: 'kg',
-    unit_cost: '',
-    quantity_in_stock: '0',
-    reorder_level: '10',
-    description: '',
+    unit_cost: 0,
+    quantity_in_stock: 0,
+    reorder_level: 10,
+    description: ''
   });
 
-  const createMaterial = useCreateRawMaterial();
-  const restockMaterial = useRestockRawMaterial();
+  // Restock specific state
+  const [restockQty, setRestockQty] = useState(0);
+  const [restockCost, setRestockCost] = useState(0);
 
   useEffect(() => {
-    if (materials.length && !selectedMaterial) {
-      setSelectedMaterial(materials[0].id);
+    if (initialData && (mode === 'edit' || mode === 'restock')) {
+      setFormData({
+        name: initialData.name,
+        unit: initialData.unit,
+        unit_cost: initialData.unit_cost,
+        quantity_in_stock: initialData.quantity_in_stock,
+        reorder_level: initialData.reorder_level || 0,
+        description: initialData.description || ''
+      });
+      if (mode === 'restock') {
+        setRestockCost(initialData.unit_cost); // Default to current cost
+      }
+    } else {
+      // Reset for create
+      setFormData({
+        name: '',
+        unit: 'kg',
+        unit_cost: 0,
+        quantity_in_stock: 0,
+        reorder_level: 10,
+        description: ''
+      });
     }
-  }, [materials, selectedMaterial]);
+  }, [initialData, mode, isOpen]);
 
-  const resetState = () => {
-    setMode('restock');
-    setRestockQuantity('0');
-    setRestockCost('');
-    setNewMaterial({
-      name: '',
-      unit: 'kg',
-      unit_cost: '',
-      quantity_in_stock: '0',
-      reorder_level: '10',
-      description: '',
-    });
-  };
-
-  const handleRestock = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMaterial) return;
-    await restockMaterial.mutateAsync({
-      materialId: selectedMaterial,
-      quantity: Number(restockQuantity || 0),
-      unit_cost: restockCost ? Number(restockCost) : undefined,
-    });
-    resetState();
-    onClose();
+
+    try {
+      if (mode === 'create') {
+        await createMutation.mutateAsync(formData);
+      } else if (mode === 'edit') {
+        await updateMutation.mutateAsync({ ...formData, id: initialData.id });
+      } else if (mode === 'restock') {
+        await restockMutation.mutateAsync({
+          id: initialData.id,
+          quantity: restockQty,
+          cost: restockCost
+        });
+      }
+      onClose();
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await createMaterial.mutateAsync({
-      name: newMaterial.name,
-      unit: newMaterial.unit,
-      unit_cost: newMaterial.unit_cost ? Number(newMaterial.unit_cost) : undefined,
-      quantity_in_stock: Number(newMaterial.quantity_in_stock || 0),
-      reorder_level: Number(newMaterial.reorder_level || 0),
-      description: newMaterial.description || undefined,
-    });
-    resetState();
-    onClose();
+  const getTitle = () => {
+    if (mode === 'edit') return 'Edit Raw Material';
+    if (mode === 'restock') return `Restock ${initialData?.name || 'Material'}`;
+    return 'New Raw Material'; // Default for create or undefined
   };
-
-  const currentMaterial = materials.find(m => m.id === selectedMaterial);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Package className="w-4 h-4" />
-            Raw Materials
-          </DialogTitle>
+          <DialogTitle>{getTitle()}</DialogTitle>
         </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
 
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => setMode('restock')}
-            className={`flex-1 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${mode === 'restock' ? 'border-primary text-primary bg-primary/10' : 'border-border text-foreground hover:bg-muted'}`}
-          >
-            Restock
-          </button>
-          <button
-            onClick={() => setMode('create')}
-            className={`flex-1 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${mode === 'create' ? 'border-primary text-primary bg-primary/10' : 'border-border text-foreground hover:bg-muted'}`}
-          >
-            Add Material
-          </button>
-        </div>
-
-        {mode === 'restock' ? (
-          <form onSubmit={handleRestock} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Material</label>
-              <select
-                required
-                value={selectedMaterial}
-                onChange={(e) => setSelectedMaterial(e.target.value)}
-                className="input-field"
-              >
-                <option value="">Select material</option>
-                {materials.map((material) => (
-                  <option key={material.id} value={material.id}>{material.name}</option>
-                ))}
-              </select>
-              {currentMaterial && (
-                <p className="text-xs text-muted-foreground">
-                  Current stock: {currentMaterial.quantity_in_stock} {currentMaterial.unit} • Reorder at {currentMaterial.reorder_level}
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {mode !== 'restock' && (
+            <>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Quantity to add</label>
-                <input
+                <Label htmlFor="name">Material Name</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                   required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="unit">Unit (e.g. kg, m, l)</Label>
+                  <Input
+                    id="unit"
+                    value={formData.unit}
+                    onChange={(e) => setFormData(prev => ({ ...prev, unit: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="unit_cost">Standard Unit Cost</Label>
+                  <Input
+                    id="unit_cost"
+                    type="number"
+                    min="0"
+                    value={formData.unit_cost}
+                    onChange={(e) => setFormData(prev => ({ ...prev, unit_cost: parseFloat(e.target.value) }))}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="qty">Initial Stock</Label>
+                  <Input
+                    id="qty"
+                    type="number"
+                    min="0"
+                    value={formData.quantity_in_stock}
+                    onChange={(e) => setFormData(prev => ({ ...prev, quantity_in_stock: parseFloat(e.target.value) }))}
+                    required
+                    disabled={mode === 'edit'} // Don't edit stock directly here, use restock
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="reorder">Reorder Level</Label>
+                  <Input
+                    id="reorder"
+                    type="number"
+                    min="0"
+                    value={formData.reorder_level}
+                    onChange={(e) => setFormData(prev => ({ ...prev, reorder_level: parseFloat(e.target.value) }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="desc">Description</Label>
+                <Textarea
+                  id="desc"
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                />
+              </div>
+            </>
+          )}
+
+          {mode === 'restock' && (
+            <>
+              <div className="p-4 bg-muted rounded-md mb-4 text-sm">
+                <p>Current Stock: <b>{formData.quantity_in_stock} {formData.unit}</b></p>
+                <p>Current Avg Cost: <b>KES {formData.unit_cost}</b></p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="restockQty">Quantity Adding</Label>
+                <Input
+                  id="restockQty"
                   type="number"
-                  min={0}
-                  value={restockQuantity}
-                  onChange={(e) => setRestockQuantity(e.target.value)}
-                  className="input-field"
+                  min="1"
+                  value={restockQty}
+                  onChange={(e) => setRestockQty(parseFloat(e.target.value))}
+                  required
+                  autoFocus
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Unit cost (optional)</label>
-                <input
+                <Label htmlFor="restockCost">Unit Cost for this Batch</Label>
+                <Input
+                  id="restockCost"
                   type="number"
-                  min={0}
+                  min="0"
                   value={restockCost}
-                  onChange={(e) => setRestockCost(e.target.value)}
-                  className="input-field"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-              <button type="submit" className="btn-primary" disabled={restockMaterial.isPending}>
-                {restockMaterial.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                Update Stock
-              </button>
-            </div>
-          </form>
-        ) : (
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Name</label>
-                <input
+                  onChange={(e) => setRestockCost(parseFloat(e.target.value))}
                   required
-                  value={newMaterial.name}
-                  onChange={(e) => setNewMaterial(prev => ({ ...prev, name: e.target.value }))}
-                  className="input-field"
-                  placeholder="e.g. Sugar"
                 />
+                <p className="text-xs text-muted-foreground">This will update the weighted average cost.</p>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Unit</label>
-                <input
-                  required
-                  value={newMaterial.unit}
-                  onChange={(e) => setNewMaterial(prev => ({ ...prev, unit: e.target.value }))}
-                  className="input-field"
-                  placeholder="kg, L, pcs"
-                />
-              </div>
-            </div>
+            </>
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Unit cost</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={newMaterial.unit_cost}
-                  onChange={(e) => setNewMaterial(prev => ({ ...prev, unit_cost: e.target.value }))}
-                  className="input-field"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Initial stock</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={newMaterial.quantity_in_stock}
-                  onChange={(e) => setNewMaterial(prev => ({ ...prev, quantity_in_stock: e.target.value }))}
-                  className="input-field"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Reorder level</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={newMaterial.reorder_level}
-                  onChange={(e) => setNewMaterial(prev => ({ ...prev, reorder_level: e.target.value }))}
-                  className="input-field"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Description</label>
-              <textarea
-                value={newMaterial.description}
-                onChange={(e) => setNewMaterial(prev => ({ ...prev, description: e.target.value }))}
-                className="input-field min-h-[80px]"
-                placeholder="Supplier, quality, notes..."
-              />
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-              <button type="submit" className="btn-primary" disabled={createMaterial.isPending}>
-                {createMaterial.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Save Material
-              </button>
-            </div>
-          </form>
-        )}
-
-        <div className="mt-4 rounded-lg bg-muted/50 border border-border px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
-          <Factory className="w-3 h-3" />
-          Keep materials updated to unlock accurate production costing and alerts.
-        </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit">
+              {(mode === 'create' || !mode) && 'Create Material'}
+              {mode === 'edit' && 'Save Changes'}
+              {mode === 'restock' && 'Confirm Restock'}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

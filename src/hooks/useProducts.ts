@@ -20,6 +20,7 @@ export interface ProductVariant {
   price: number;
   cost_price: number;
   reorder_level: number;
+  weight: number | null;
   is_active: boolean;
 }
 
@@ -54,10 +55,10 @@ export function useProducts() {
       const { data, error } = await supabase
         .from('products')
         .select(`
-          *,
-          category:product_categories(id, name, description),
-          variants:product_variants(*)
-        `)
+  *,
+  category: product_categories(id, name, description),
+    variants: product_variants(*)
+      `)
         .eq('is_active', true)
         .order('name');
 
@@ -74,12 +75,12 @@ export function useProductVariants() {
       const { data, error } = await supabase
         .from('product_variants')
         .select(`
-          *,
-          product:products(id, name, description, category_id, attributes, image_url)
+      *,
+      product: products(id, name, description, category_id, attributes, image_url)
         `)
         .eq('is_active', true)
         .order('variant_name');
-      
+
       if (error) throw error;
       return data;
     },
@@ -93,13 +94,13 @@ export function useInventory() {
       const { data, error } = await supabase
         .from('inventory')
         .select(`
-          *,
-          variant:product_variants!inner(
+        *,
+        variant: product_variants!inner(
             *,
-            product:products!inner(id, name, description, category_id, is_active, attributes, image_url, category:product_categories(name)),
-            is_active
-          )
-        `)
+          product: products!inner(id, name, description, category_id, is_active, attributes, image_url, category: product_categories(name)),
+          is_active
+        )
+          `)
         .eq('variant.is_active', true)
         .eq('variant.product.is_active', true)
         .order('quantity', { ascending: true });
@@ -210,8 +211,8 @@ export function useProductHistory(productId?: string) {
         .from('sales_order_items')
         .select(`
           *,
-          order:sales_orders(created_at, status, customer:customers(name))
-        `)
+          order: sales_orders(created_at, status, customer: customers(name))
+            `)
         .in('variant_id', variantIds)
         .order('created_at', { ascending: false })
         .limit(20);

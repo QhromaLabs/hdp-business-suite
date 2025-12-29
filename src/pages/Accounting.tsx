@@ -24,6 +24,7 @@ import {
   useProductionRuns,
   useCreditorTransactions,
 } from '@/hooks/useAccounting';
+import { usePayrollEntries } from '@/hooks/useEmployees';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -32,6 +33,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { CardGridSkeleton, PageHeaderSkeleton, StatsSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
+import TransactionLedgerModal from '@/components/accounting/TransactionLedgerModal';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -50,6 +52,7 @@ export default function Accounting() {
   const { data: payments = [], isLoading: paymentsLoading } = usePayments();
   const { data: productionRuns = [], isLoading: productionLoading } = useProductionRuns();
   const { data: creditorTransactions = [], isLoading: creditorTxLoading } = useCreditorTransactions();
+  const { data: payrollEntries = [], isLoading: payrollLoading } = usePayrollEntries();
   const { mutateAsync: recordExpense, isPending: savingExpense } = useRecordExpense();
   const { mutate: deleteExpense } = useDeleteExpense();
   const navigate = useNavigate();
@@ -64,11 +67,12 @@ export default function Accounting() {
   });
 
   const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
 
   const DEFAULT_EXPENSE_CATEGORIES = [
     'Rent',
     'Fuel',
-    'Usable', // As requested
+    'Usable',
     'Electricity',
     'Car Service',
     'Airtime',
@@ -95,30 +99,37 @@ export default function Accounting() {
     return allCategories.filter(Boolean).sort();
   }, [expenseCategories]);
 
-  const workingCapital =
-    (financialSummary?.cashBalance || 0) +
-    (financialSummary?.receivables || 0) -
-    (financialSummary?.payables || 0);
+  // Use new nested structure
+  const cashBalance = financialSummary?.assets?.cash || 0;
+  const receivables = financialSummary?.assets?.receivables || 0;
+  const payables = financialSummary?.liabilities?.payables || 0;
+
+  // Calculate cash from payment methods (actual cash received)
+  const paymentMethodBreakdown = payments.reduce(
+    (acc, payment) => {
+      const method = payment.payment_method || 'other';
+      acc[method] = (acc[method] || 0) + Number(payment.amount);
+      return acc;
+    },
+    {} as Record<string, number>
+  );
+
+  // Use actual cash payments for cash balance instead of bank account data
+  const actualCashBalance = paymentMethodBreakdown['cash'] || 0;
+
+  const workingCapital = cashBalance + receivables - payables;
 
   const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountNumber = Number(expenseForm.amount);
 
     if (!expenseForm.category || !expenseForm.description || !expenseForm.amount) {
-      toast({
-        variant: 'destructive',
-        title: 'Missing details',
-        description: 'Add category, description, and amount to record an expense.',
-      });
+      toast({ variant: 'destructive', title: 'Missing details', description: 'Add category, description, and amount.' });
       return;
     }
 
     if (Number.isNaN(amountNumber) || amountNumber <= 0) {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid amount',
-        description: 'Enter a positive amount before saving.',
-      });
+      toast({ variant: 'destructive', title: 'Invalid amount', description: 'Enter a positive amount.' });
       return;
     }
 
@@ -131,43 +142,19 @@ export default function Accounting() {
         reference_number: expenseForm.reference_number || null,
       });
 
-      toast({
-        title: 'Expense logged',
-        description: 'We updated your ledger and refreshed the finance snapshot.',
-      });
+      toast({ title: 'Expense logged', description: 'Ledger updated successfully.' });
 
-      setExpenseForm((prev) => ({
-        ...prev,
-        description: '',
-        amount: '',
-        reference_number: '',
-        // Keep category for faster entry of similar expenses
-      }));
+      setExpenseForm((prev) => ({ ...prev, description: '', amount: '', reference_number: '' }));
     } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Unable to record expense',
-        description: error instanceof Error ? error.message : 'Please try again shortly.',
-      });
+      toast({ variant: 'destructive', title: 'Error', description: error instanceof Error ? error.message : 'Please try again.' });
     }
   };
 
   const handleDeleteExpense = (id: string, description: string) => {
-    if (confirm(`Are you sure you want to delete the expense: "${description}"?`)) {
+    if (confirm(`Delete expense: "${description}"?`)) {
       deleteExpense(id, {
-        onSuccess: () => {
-          toast({
-            title: 'Expense removed',
-            description: 'The ledger has been updated successfully.',
-          });
-        },
-        onError: (error) => {
-          toast({
-            variant: 'destructive',
-            title: 'Deletion failed',
-            description: error instanceof Error ? error.message : 'Please try again.',
-          });
-        },
+        onSuccess: () => toast({ title: 'Expense removed' }),
+        onError: (error) => toast({ variant: 'destructive', title: 'Failed', description: error instanceof Error ? error.message : 'Error' }),
       });
     }
   };
@@ -192,53 +179,121 @@ export default function Accounting() {
     },
     {
       title: 'Cash Balance',
-      value: financialSummary?.cashBalance || 0,
+      value: actualCashBalance,
       icon: Wallet,
       color: 'warning',
     },
     {
       title: 'Receivables',
-      value: financialSummary?.receivables || 0,
+      value: receivables,
       icon: CreditCard,
       color: 'destructive',
     },
   ];
 
-  const receivables = financialSummary?.receivables || 0;
-  const payables = financialSummary?.payables || 0;
-  const cashBalance = financialSummary?.cashBalance || 0;
   const liquidityCover = payables > 0 ? ((cashBalance + receivables) / payables).toFixed(2) : 'N/A';
   const topExpenses = expenses.slice(0, 6);
 
-  const manufacturingExpenses = expenses.filter((e) => e.is_manufacturing_cost);
-  const manufacturingExpenseTotal = manufacturingExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
-  const productionRunCosts = productionRuns.reduce((sum, run) => sum + Number(run.production_cost || 0), 0);
-  const totalManufacturingSpend = manufacturingExpenseTotal + productionRunCosts;
+  // Create unified transaction ledger (income + expenses)
+  const unifiedLedger = useMemo(() => {
+    const ledgerItems: Array<{
+      id: string;
+      type: 'income' | 'expense';
+      category: string;
+      amount: number;
+      date: string;
+      description?: string;
+    }> = [];
 
-  const recentTransactions = transactions.filter((txn) => {
-    const txnDate = new Date(txn.transaction_date);
-    const now = new Date();
-    const diffDays = (now.getTime() - txnDate.getTime()) / (1000 * 60 * 60 * 24);
-    return diffDays <= 30;
-  });
+    // Add payments as income (money received from customers)
+    payments.forEach(payment => {
+      ledgerItems.push({
+        id: payment.id,
+        type: 'income',
+        category: 'Payment Received',
+        amount: payment.amount,
+        date: payment.created_at,
+        description: payment.payment_method
+      });
+    });
 
-  const cashIn30 = recentTransactions
-    .filter((txn) => isCreditTxn(txn.transaction_type))
+    // Add expenses as outflow (general business costs)
+    expenses.forEach(expense => {
+      ledgerItems.push({
+        id: expense.id,
+        type: 'expense',
+        category: expense.category,
+        amount: expense.amount,
+        date: expense.expense_date,
+        description: expense.description
+      });
+    });
+
+    // Add creditor transactions (supplier payments)
+    creditorTransactions.forEach(txn => {
+      const isPayment = txn.transaction_type === 'payment';
+      ledgerItems.push({
+        id: txn.id,
+        type: isPayment ? 'expense' : 'income', // Payment = expense, credit/refund = income
+        category: isPayment ? 'Supplier Payment' : 'Supplier Credit',
+        amount: txn.amount,
+        date: txn.created_at,
+        description: txn.notes || undefined
+      });
+    });
+
+    // Add payroll disbursements (employee salary payments)
+    payrollEntries
+      .filter(entry => entry.status === 'paid')
+      .forEach(entry => {
+        ledgerItems.push({
+          id: entry.id,
+          type: 'expense',
+          category: 'Payroll',
+          amount: entry.net_salary,
+          date: entry.payment_date || entry.created_at,
+          description: `Salary - ${entry.employee?.full_name || 'Employee'}`
+        });
+      });
+
+    // Sort by date (most recent first)
+    return ledgerItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [payments, expenses, creditorTransactions, payrollEntries]);
+
+  // New Manufacturing Spend Calculation from Summary
+  const totalManufacturingSpend = financialSummary?.breakdown?.manufacturing_spend || 0;
+
+  // Manufacturing spend data comes from useFinancialSummary hook (raw_materials table)
+
+  // Calculate 30-day cashflow from actual payments and expenses
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  // Cash IN: Payments received in last 30 days (from orders, including cash sales)
+  const cashIn30 = payments
+    .filter(payment => new Date(payment.created_at) >= thirtyDaysAgo)
+    .reduce((sum, payment) => sum + Number(payment.amount), 0);
+
+  // Cash OUT: Expenses + Supplier Payments + Payroll in last 30 days
+  const expensesLast30 = expenses
+    .filter(expense => new Date(expense.expense_date) >= thirtyDaysAgo)
+    .reduce((sum, expense) => sum + Number(expense.amount), 0);
+
+  const supplierPaymentsLast30 = creditorTransactions
+    .filter(txn => txn.transaction_type === 'payment' && new Date(txn.created_at) >= thirtyDaysAgo)
     .reduce((sum, txn) => sum + Number(txn.amount), 0);
-  const cashOut30 = recentTransactions
-    .filter((txn) => !isCreditTxn(txn.transaction_type))
-    .reduce((sum, txn) => sum + Number(txn.amount), 0);
+
+  const payrollLast30 = payrollEntries
+    .filter(entry => entry.status === 'paid' && new Date(entry.payment_date || entry.created_at) >= thirtyDaysAgo)
+    .reduce((sum, entry) => sum + Number(entry.net_salary), 0);
+
+  const cashOut30 = expensesLast30 + supplierPaymentsLast30 + payrollLast30;
 
   const creditorPayouts = creditorTransactions.reduce((sum, txn) => sum + Number(txn.amount), 0);
 
-  const paymentMethodBreakdown = payments.reduce((acc, payment) => {
-    const method = payment.payment_method || 'unknown';
-    acc[method] = (acc[method] || 0) + Number(payment.amount);
-    return acc;
-  }, {} as Record<string, number>);
-
+  // Helper for Payment Methods (topPaymentMethods uses the paymentMethodBreakdown defined earlier)
   const topPaymentMethods = Object.entries(paymentMethodBreakdown)
-    .sort((a, b) => b[1] - a[1])
+    .sort(([, a], [, b]) => b - a)
     .slice(0, 4);
 
   if (isLoading) {
@@ -247,32 +302,20 @@ export default function Accounting() {
         <PageHeaderSkeleton actions={2} />
         <StatsSkeleton />
         <CardGridSkeleton cards={6} />
-        <TableSkeleton rows={6} columns={6} />
       </div>
     );
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Stats */}
-      {/* Premium Stats Row */}
+      {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
-            <div
-              key={stat.title}
-              className="group bg-card rounded-2xl border border-border/50 p-6 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 animate-slide-up"
-              style={{ animationDelay: `${index * 50}ms` }}
-            >
+            <div key={stat.title} className="group bg-card rounded-2xl border border-border/50 p-6 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
               <div className="flex items-center justify-between mb-4">
-                <div className={cn(
-                  'p-3 rounded-2xl transition-transform group-hover:scale-110 duration-500',
-                  stat.color === 'primary' && 'bg-primary/10 text-primary',
-                  stat.color === 'success' && 'bg-success/10 text-success',
-                  stat.color === 'warning' && 'bg-warning/10 text-warning',
-                  stat.color === 'destructive' && 'bg-destructive/10 text-destructive',
-                )}>
+                <div className={cn('p-3 rounded-2xl transition-transform group-hover:scale-110 duration-500', stat.color === 'primary' && 'bg-primary/10 text-primary', stat.color === 'success' && 'bg-success/10 text-success', stat.color === 'warning' && 'bg-warning/10 text-warning', stat.color === 'destructive' && 'bg-destructive/10 text-destructive')}>
                   <Icon className="w-6 h-6" />
                 </div>
               </div>
@@ -285,9 +328,164 @@ export default function Accounting() {
         })}
       </div>
 
-      {/* Expense Management Row */}
+      {/* --- BALANCE SHEET SECTION --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-slide-up" style={{ animationDelay: '50ms' }}>
+        {/* Assets Card */}
+        <div className="bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Assets (What you Own)</h3>
+                <p className="text-xs text-muted-foreground">Total: {formatCurrency(
+                  (financialSummary?.assets?.stock || 0) +
+                  (financialSummary?.assets?.fixed_assets || 0) +
+                  (financialSummary?.assets?.receivables || 0) +
+                  actualCashBalance
+                )}</p>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
+              <div className="text-sm font-medium">Cash & Bank</div>
+              <div className="font-bold">{formatCurrency(actualCashBalance)}</div>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
+              <div className="text-sm font-medium">Inventory Stock <span className="text-[10px] text-muted-foreground ml-1">(Raw + Finished)</span></div>
+              <div className="font-bold text-blue-600">{formatCurrency(financialSummary?.assets?.stock || 0)}</div>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
+              <div className="text-sm font-medium">Equipment & Fixed Assets</div>
+              <div className="font-bold">{formatCurrency(financialSummary?.assets?.fixed_assets || 0)}</div>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
+              <div className="text-sm font-medium">Receivables (Owed by Customers)</div>
+              <div className="font-bold">{formatCurrency(financialSummary?.assets?.receivables || 0)}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Liabilities Card */}
+        <div className="bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-600">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Liabilities (What you Owe)</h3>
+                <p className="text-xs text-muted-foreground">Total: {formatCurrency(financialSummary?.liabilities?.total || 0)}</p>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
+              <div className="text-sm font-medium">Supplier Payables</div>
+              <div className="font-bold text-red-500">{formatCurrency(financialSummary?.liabilities?.payables || 0)}</div>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
+              <div className="text-sm font-medium">Pending Payroll</div>
+              <div className="font-bold text-orange-500">{formatCurrency(financialSummary?.liabilities?.payroll || 0)}</div>
+            </div>
+            <div className="mt-8 pt-6 border-t border-border/50">
+              <div className="flex justify-between items-center">
+                <div className="text-sm font-bold text-muted-foreground">Owner's Equity</div>
+                <div className="text-2xl font-bold text-success">{formatCurrency(financialSummary?.equity || 0)}</div>
+              </div>
+              <p className="text-[10px] text-muted-foreground text-right mt-1">Assets - Liabilities</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Operational insights */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Manufacturing Spend Card */}
+        <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm relative overflow-hidden">
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Manufacturing Spend</p>
+                <p className="text-lg font-bold text-foreground">{formatCurrency(totalManufacturingSpend)}</p>
+              </div>
+              <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                <Building2 className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="space-y-1 text-xs text-muted-foreground/80">
+              <div className="flex justify-between">
+                <span>Materials</span>
+                <span className="text-foreground font-semibold">
+                  {formatCurrency(financialSummary?.breakdown?.manufacturing_details?.materials || 0)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Equipment</span>
+                <span className="text-foreground font-semibold">
+                  {formatCurrency(financialSummary?.breakdown?.manufacturing_details?.equipment || 0)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Production Runs</span>
+                <span className="text-foreground font-semibold">
+                  {formatCurrency(financialSummary?.breakdown?.manufacturing_details?.production || 0)}
+                </span>
+              </div>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-3 opacity-60">
+            Source: Machines + {formatCurrency(financialSummary?.breakdown?.manufacturing_details?.production || 0)} Production
+          </p>
+        </div>
+
+        {/* ... Rest of existing dashboard widgets (retained but condensed) ... */}
+        <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">30-day cashflow</p>
+              <p className="text-lg font-bold text-foreground">In {formatCurrency(cashIn30)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Out</p>
+              <p className="text-base font-semibold text-destructive">-{formatCurrency(cashOut30)}</p>
+            </div>
+          </div>
+          <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary rounded-full transition-all"
+              style={{ width: cashIn30 + cashOut30 === 0 ? '0%' : `${Math.min(100, (cashIn30 / (cashIn30 + cashOut30)) * 100)}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Collections vs payouts</p>
+              <p className="text-lg font-bold text-foreground">{formatCurrency(financialSummary?.revenue || 0)}</p>
+            </div>
+            <CreditCard className="w-5 h-5 text-primary" />
+          </div>
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <div className="flex justify-between">
+              <span>Creditor payouts</span>
+              <span className="text-destructive font-semibold">-{formatCurrency(creditorPayouts)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Pending payables</span>
+              <span className="text-foreground font-semibold">{formatCurrency(payables)}</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
         <div className="xl:col-span-2">
+          {/* Expense Form Section - Retained */}
           <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -533,13 +731,13 @@ export default function Accounting() {
                     <span className="text-foreground">Manufacturing & Production</span>
                     <div className="flex gap-2 items-baseline">
                       <span className="text-muted-foreground">
-                        {financialSummary?.expenses ? Math.round(((financialSummary.breakdown?.production || 0) / financialSummary.expenses) * 100) : 0}%
+                        {financialSummary?.expenses ? Math.round(((financialSummary.breakdown?.manufacturing_spend || 0) / financialSummary.expenses) * 100) : 0}%
                       </span>
-                      <span className="text-foreground font-bold">{formatCurrency(financialSummary?.breakdown?.production || 0)}</span>
+                      <span className="text-foreground font-bold">{formatCurrency(financialSummary?.breakdown?.manufacturing_spend || 0)}</span>
                     </div>
                   </div>
                   <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${financialSummary?.expenses ? ((financialSummary.breakdown?.production || 0) / financialSummary.expenses) * 100 : 0}%` }} />
+                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${financialSummary?.expenses ? ((financialSummary.breakdown?.manufacturing_spend || 0) / financialSummary.expenses) * 100 : 0}%` }} />
                   </div>
                 </div>
 
@@ -603,55 +801,49 @@ export default function Accounting() {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h3 className="text-xl font-bold text-foreground tracking-tight">Ledger Stream</h3>
-              <p className="text-xs text-muted-foreground">Live reconciliation events</p>
+              <p className="text-xs text-muted-foreground">All financial transactions</p>
             </div>
             <button className="w-10 h-10 rounded-2xl bg-secondary/50 flex items-center justify-center hover:bg-primary hover:text-white transition-all">
               <TrendingUp className="w-4 h-4" />
             </button>
           </div>
 
-          {transactions.length === 0 ? (
+          {unifiedLedger.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground py-12">
               <FileText className="w-12 h-12 opacity-30 mb-4" />
               <p className="text-xs font-medium uppercase tracking-wider opacity-50">No entries detected</p>
             </div>
           ) : (
             <div className="space-y-3 flex-1 overflow-y-auto pr-2 scrollbar-thin">
-              {transactions.map((txn, idx) => {
-                const isCredit = txn.transaction_type === 'credit' || txn.transaction_type === 'deposit';
+              {unifiedLedger.slice(0, 15).map((item, idx) => {
+                const isIncome = item.type === 'income';
                 return (
-                  <div key={txn.id} className="group flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
+                  <div key={item.id} className="group flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
                     <div className="flex items-center gap-4">
                       <div className={cn(
                         'w-10 h-10 rounded-xl flex items-center justify-center shadow-inner transition-transform group-hover:rotate-12',
-                        isCredit ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
+                        isIncome ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
                       )}>
-                        {isCredit
-                          ? <ArrowUpRight className="w-5 h-5" />
-                          : <ArrowDownRight className="w-5 h-5" />
-                        }
+                        {isIncome ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-foreground truncate max-w-[120px]">
-                          {txn.description || txn.transaction_type}
+                          {item.category}
                         </p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {new Date(txn.transaction_date).toLocaleDateString('en-KE', { day: '2-digit', month: 'short' })}
+                          {new Date(item.date).toLocaleDateString('en-KE', { day: '2-digit', month: 'short' })}
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className={cn(
                         'text-sm font-bold',
-                        isCredit ? 'text-success' : 'text-destructive'
+                        isIncome ? 'text-success' : 'text-destructive'
                       )}>
-                        {isCredit ? '+' : '-'}{formatCurrency(Number(txn.amount))}
+                        {isIncome ? '+' : '-'}{formatCurrency(Number(item.amount))}
                       </p>
-                      <span className={cn(
-                        'text-[10px] font-semibold uppercase',
-                        txn.is_reconciled ? 'text-success' : 'text-warning'
-                      )}>
-                        {txn.is_reconciled ? 'Reconciled' : 'Pending'}
+                      <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                        {isIncome ? 'Income' : 'Expense'}
                       </span>
                     </div>
                   </div>
@@ -659,74 +851,12 @@ export default function Accounting() {
               })}
             </div>
           )}
-          <button className="w-full mt-6 py-4 bg-muted/30 rounded-2xl text-xs font-semibold uppercase text-muted-foreground hover:bg-primary/5 hover:text-primary transition-all tracking-wider">
-            Request Full Statement
+          <button
+            onClick={() => setIsLedgerModalOpen(true)}
+            className="w-full mt-6 py-4 bg-muted/30 rounded-2xl text-xs font-semibold uppercase text-muted-foreground hover:bg-primary/5 hover:text-primary transition-all tracking-wider"
+          >
+            View All Transactions
           </button>
-        </div>
-      </div>
-
-      {/* Operational insights */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">30-day cashflow</p>
-              <p className="text-lg font-bold text-foreground">In {formatCurrency(cashIn30)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">Out</p>
-              <p className="text-base font-semibold text-destructive">-{formatCurrency(cashOut30)}</p>
-            </div>
-          </div>
-          <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary rounded-full transition-all"
-              style={{ width: cashIn30 + cashOut30 === 0 ? '0%' : `${Math.min(100, (cashIn30 / (cashIn30 + cashOut30)) * 100)}%` }}
-            />
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Based on bank transactions in the last 30 days</p>
-        </div>
-
-        <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Manufacturing spend</p>
-              <p className="text-lg font-bold text-foreground">{formatCurrency(totalManufacturingSpend)}</p>
-            </div>
-            <Wallet className="w-5 h-5 text-primary" />
-          </div>
-          <div className="space-y-1 text-xs text-muted-foreground">
-            <div className="flex justify-between">
-              <span>Production runs</span>
-              <span className="text-foreground font-semibold">{formatCurrency(productionRunCosts)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Flagged expenses</span>
-              <span className="text-foreground font-semibold">{formatCurrency(manufacturingExpenseTotal)}</span>
-            </div>
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Includes expenses marked manufacturing and production_run costs</p>
-        </div>
-
-        <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Collections vs payouts</p>
-              <p className="text-lg font-bold text-foreground">{formatCurrency(financialSummary?.revenue || 0)}</p>
-            </div>
-            <CreditCard className="w-5 h-5 text-primary" />
-          </div>
-          <div className="space-y-1 text-xs text-muted-foreground">
-            <div className="flex justify-between">
-              <span>Creditor payouts</span>
-              <span className="text-destructive font-semibold">-{formatCurrency(creditorPayouts)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Pending payables</span>
-              <span className="text-foreground font-semibold">{formatCurrency(payables)}</span>
-            </div>
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Uses payments received and creditor transactions</p>
         </div>
       </div>
 
@@ -803,13 +933,30 @@ export default function Accounting() {
                 <p className="text-xs text-muted-foreground">Active treasury positions</p>
               </div>
               <span className="text-[11px] px-3 py-1 rounded-full bg-muted text-muted-foreground font-semibold">
-                {bankAccounts.length} accounts
+                {bankAccounts.length + (actualCashBalance > 0 ? 1 : 0)} accounts
               </span>
             </div>
-            {bankAccounts.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm">No bank accounts captured yet.</div>
+            {bankAccounts.length === 0 && actualCashBalance === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">No cash or bank accounts captured yet.</div>
             ) : (
               <div className="space-y-3">
+                {actualCashBalance > 0 && (
+                  <div className="flex items-center justify-between p-3 bg-card rounded-2xl border border-border/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center text-green-600">
+                        <Wallet className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Cash in Hand</p>
+                        <p className="text-[11px] text-muted-foreground">Main Cash Register</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-foreground">{formatCurrency(actualCashBalance)}</p>
+                      <span className="text-[10px] font-semibold text-success uppercase">Active</span>
+                    </div>
+                  </div>
+                )}
                 {bankAccounts.map((account) => (
                   <div
                     key={account.id}
@@ -897,6 +1044,13 @@ export default function Accounting() {
           );
         })}
       </div>
+
+      {/* Transaction Ledger Modal */}
+      <TransactionLedgerModal
+        open={isLedgerModalOpen}
+        onClose={() => setIsLedgerModalOpen(false)}
+        transactions={unifiedLedger}
+      />
     </div>
   );
 }

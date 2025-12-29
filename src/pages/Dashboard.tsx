@@ -49,11 +49,19 @@ export default function Dashboard() {
             isCurrency: true,
         },
         {
+            title: "Today's Profit",
+            value: dashboardStats?.todayProfit || 0,
+            change: 0,
+            icon: TrendingUp,
+            color: 'success',
+            isCurrency: true,
+        },
+        {
             title: 'Orders Today',
             value: dashboardStats?.todayOrders || 0,
             change: 8.2,
             icon: ShoppingCart,
-            color: 'success',
+            color: 'primary',
             isCurrency: false,
         },
         {
@@ -62,14 +70,6 @@ export default function Dashboard() {
             change: -5.1,
             icon: Clock,
             color: 'warning',
-            isCurrency: false,
-        },
-        {
-            title: 'Low Stock Items',
-            value: dashboardStats?.lowStockItems || 0,
-            change: 15.3,
-            icon: AlertTriangle,
-            color: 'destructive',
             isCurrency: false,
         },
     ];

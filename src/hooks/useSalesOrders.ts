@@ -103,16 +103,46 @@ export function useDashboardStats() {
       // 1. Fetch sales for the last 7 days
       const { data: salesData } = await supabase
         .from('sales_orders')
-        .select('total_amount, created_at')
+        .select('id, total_amount, created_at, subtotal')
         .gte('created_at', last7Days)
         .order('created_at', { ascending: true });
 
       // 2. Process today's sales
-      const todaySales = salesData?.filter(s => s.created_at.startsWith(today)) || [];
-      const todayTotal = todaySales.reduce((sum, o) => sum + Number(o.total_amount), 0);
-      const todayOrders = todaySales.length;
+      const todaySalesOrders = salesData?.filter(s => s.created_at.startsWith(today)) || [];
+      const todayTotal = todaySalesOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
+      const todayOrders = todaySalesOrders.length;
+      const todayOrderIds = todaySalesOrders.map(o => o.id);
 
-      // 3. Process historical chart data
+      // 3. Calculate COGS for today
+      let todayCOGS = 0;
+      if (todayOrderIds.length > 0) {
+        const { data: items } = await supabase
+          .from('sales_order_items')
+          .select('quantity, variant:product_variants(cost_price)')
+          .in('order_id', todayOrderIds);
+
+        todayCOGS = items?.reduce((sum: number, item: any) => {
+          const cost = item.variant?.cost_price || 0;
+          return sum + (cost * item.quantity);
+        }, 0) || 0;
+      }
+
+      // 4. Fetch Today's Expenses
+      const { data: expenses } = await supabase
+        .from('expenses')
+        .select('amount')
+        .eq('expense_date', today);
+
+      const todayExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+
+      // 5. Calculate Net Profit (Gross Revenue - COGS - Expenses)
+      // Note: Using total_amount (Revenue) might include tax. Ideally we use subtotal for Gross Profit.
+      // Let's use Subtotal if available, else Total. 
+      // Profit = (Sum of Subtotals) - COGS - Expenses
+      const todayRevenue = todaySalesOrders.reduce((sum, o) => sum + Number(o.subtotal || o.total_amount), 0);
+      const todayProfit = todayRevenue - todayCOGS - todayExpenses;
+
+      // 6. Process historical chart data
       const dailyTotals: { [key: string]: number } = {};
       salesData?.forEach(s => {
         const date = s.created_at.split('T')[0];
@@ -124,13 +154,13 @@ export function useDashboardStats() {
         revenue
       })).slice(-7);
 
-      // 4. Pending orders
+      // 7. Pending orders
       const { count: pendingOrders } = await supabase
         .from('sales_orders')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'pending');
 
-      // 5. Low stock items
+      // 8. Low stock items
       const { count: lowStock } = await supabase
         .from('inventory')
         .select('id', { count: 'exact', head: true })
@@ -139,6 +169,7 @@ export function useDashboardStats() {
       return {
         todaySales: todayTotal,
         todayOrders,
+        todayProfit, // New field
         pendingOrders: pendingOrders || 0,
         lowStockItems: lowStock || 0,
         chartData
@@ -215,6 +246,26 @@ export function useCreateSalesOrder() {
         }
       }
 
+      // 4. Create payment record for non-credit sales (POS cash/mpesa orders)
+      // This ensures the sale appears in the ledger immediately
+      if (!order.is_credit_sale) {
+        const now = new Date().toISOString();
+        const { error: paymentError } = await supabase
+          .from('payments')
+          .insert({
+            order_id: salesOrder.id,
+            customer_id: order.customer_id,
+            amount: total,
+            payment_method: order.payment_method,
+            created_at: now
+          });
+
+        if (paymentError) {
+          console.error('Failed to create payment record:', paymentError);
+          // Don't throw - allow order creation to succeed even if payment logging fails
+        }
+      }
+
       return salesOrder;
     },
     onSuccess: () => {
@@ -222,6 +273,7 @@ export function useCreateSalesOrder() {
       queryClient.invalidateQueries({ queryKey: ['todays_sales'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] }); // Invalidate payments to refresh ledger
       toast.success('Sale completed successfully!');
     },
     onError: (error) => {
@@ -242,6 +294,31 @@ export function useUpdateSalesOrderStatus() {
       }
       if (status === 'dispatched') {
         updates.dispatched_at = now;
+
+        // Get order details to create payment record
+        const { data: order, error: fetchError } = await supabase
+          .from('sales_orders')
+          .select('total_amount, payment_method, customer_id')
+          .eq('id', id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        // Create payment record for the order (so it appears in ledger)
+        const { error: paymentError } = await supabase
+          .from('payments')
+          .insert({
+            order_id: id,
+            customer_id: order.customer_id,
+            amount: order.total_amount,
+            payment_method: order.payment_method || 'cash',
+            created_at: now
+          });
+
+        if (paymentError) {
+          console.error('Failed to create payment record:', paymentError);
+          // Don't throw - allow dispatch to succeed even if payment logging fails
+        }
       }
 
       const { error } = await supabase
@@ -256,6 +333,7 @@ export function useUpdateSalesOrderStatus() {
       queryClient.invalidateQueries({ queryKey: ['sales_orders'] });
       queryClient.invalidateQueries({ queryKey: ['todays_sales'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] }); // Invalidate payments to refresh ledger
       toast.success('Order status updated');
     },
     onError: (error) => {
@@ -320,7 +398,7 @@ export function useDeleteSalesOrder() {
         console.error('Error deleting order:', error);
         throw error;
       }
-      
+
       console.log('Deletion successful');
       return { orderId };
     },
@@ -354,14 +432,15 @@ export function useCreateSalesFeedback() {
       content: string,
       feedback_type: string,
       customer_id?: string,
-      follow_up_date?: string
+      follow_up_date?: string,
+      sales_rep_id: string
     }) => {
       const { data, error } = await supabase
         .from('sales_feedback')
         .insert(payload)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -402,6 +481,7 @@ export function useOrderItems(orderId: string) {
           variant:product_variants (
             sku,
             variant_name,
+            weight,
             product:products (
               name
             )

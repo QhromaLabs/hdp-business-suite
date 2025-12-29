@@ -32,6 +32,7 @@ import { toast } from 'sonner';
 import { cn } from "@/lib/utils";
 import { useFinancialSummary } from '@/hooks/useAccounting';
 import { useDashboardStats } from '@/hooks/useSalesOrders';
+import { useInventory } from '@/hooks/useProducts';
 import { StatsSkeleton } from '@/components/loading/PageSkeletons';
 
 const formatCurrency = (amount: number) => {
@@ -109,6 +110,7 @@ const reportCategories = [
 export default function Reports() {
   const { data: financialSummary, isLoading: financialLoading, isError: financialError } = useFinancialSummary();
   const { data: dashboardStats, isLoading: dashboardLoading, isError: dashboardError } = useDashboardStats();
+  const { data: inventory = [] } = useInventory();
   const [reportRange] = useState('This Month');
   const [selectedReport, setSelectedReport] = useState<ReportWithSnapshot | null>(null);
 
@@ -208,6 +210,7 @@ export default function Reports() {
       return {
         ...report,
         snapshot: [
+          { label: 'Total Stock Value', value: formatCurrency(inventory.reduce((sum, i) => sum + (Number(i.variant?.cost_price || 0) * i.quantity), 0)) },
           { label: 'Low Stock Items', value: (dashboardStats?.lowStockItems ?? 0).toLocaleString() },
           { label: 'Pending Orders', value: (dashboardStats?.pendingOrders ?? 0).toLocaleString() },
           { label: 'Range', value: printableStats.range },

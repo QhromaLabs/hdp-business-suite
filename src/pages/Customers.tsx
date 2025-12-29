@@ -12,11 +12,13 @@ import {
   Trash2,
   Eye,
   Loader2,
+  DollarSign,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCustomers, useDeleteCustomer, CustomerType } from '@/hooks/useCustomers';
 import { cn } from '@/lib/utils';
 import { AddCustomerModal } from '@/components/customers/AddCustomerModal';
-import { CustomerDetailsModal } from '@/components/customers/CustomerDetailsModal';
+import { AdvancedCustomerModal } from '@/components/customers/AdvancedCustomerModal';
 import { CardGridSkeleton, FilterBarSkeleton, PageHeaderSkeleton, StatsSkeleton } from '@/components/loading/PageSkeletons';
 
 const formatCurrency = (amount: number) => {
@@ -35,11 +37,13 @@ const customerTypes = [
 ];
 
 export default function Customers() {
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any>(null);
   const [viewingCustomer, setViewingCustomer] = useState<any>(null);
+  const [paymentCustomer, setPaymentCustomer] = useState<any>(null);
 
   const { data: customers = [], isLoading } = useCustomers();
   const deleteCustomer = useDeleteCustomer();
@@ -241,6 +245,15 @@ export default function Customers() {
                   </td>
                   <td className="py-4 px-6">
                     <div className="flex items-center justify-end gap-2">
+                      {Number(customer.credit_balance) > 0 && (
+                        <button
+                          onClick={() => setViewingCustomer(customer)}
+                          className="p-2 rounded-lg bg-success/10 text-success hover:bg-success/20 transition-colors"
+                          title="Manage Finances"
+                        >
+                          <DollarSign className="w-4 h-4" />
+                        </button>
+                      )}
                       <button
                         onClick={() => setViewingCustomer(customer)}
                         className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
@@ -265,17 +278,20 @@ export default function Customers() {
                 </tr>
               ))}
             </tbody>
+
           </table>
         </div>
 
-        {filteredCustomers.length === 0 && (
-          <div className="py-12 text-center">
-            <Users className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
-            <p className="text-muted-foreground">No customers found</p>
-            <p className="text-sm text-muted-foreground mt-1">Add your first customer to get started</p>
-          </div>
-        )}
-      </div>
+        {
+          filteredCustomers.length === 0 && (
+            <div className="py-12 text-center">
+              <Users className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
+              <p className="text-muted-foreground">No customers found</p>
+              <p className="text-sm text-muted-foreground mt-1">Add your first customer to get started</p>
+            </div>
+          )
+        }
+      </div >
       <AddCustomerModal
         isOpen={isAddModalOpen}
         onClose={() => {
@@ -284,11 +300,13 @@ export default function Customers() {
         }}
         customerToEdit={editingCustomer}
       />
-      <CustomerDetailsModal
+      <AdvancedCustomerModal
         isOpen={!!viewingCustomer}
         onClose={() => setViewingCustomer(null)}
         customer={viewingCustomer}
       />
-    </div>
+
+    </div >
   );
 }
+

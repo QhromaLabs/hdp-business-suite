@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { X, Plus, Trash2, Save, Loader2, Search } from 'lucide-react';
+import { X, Plus, Trash2, Save, Loader2, Search, Truck, Scale, Gavel } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface CreatePurchaseOrderProps {
@@ -20,6 +20,12 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
     const [expectedDate, setExpectedDate] = useState('');
     const [notes, setNotes] = useState('');
     const [paidAmount, setPaidAmount] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState('cash');
+
+    // Variable Costs
+    const [freightCost, setFreightCost] = useState('');
+    const [customsCost, setCustomsCost] = useState('');
+    const [handlingCost, setHandlingCost] = useState('');
 
     // Cart State
     const [items, setItems] = useState<any[]>([]);
@@ -51,7 +57,6 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
             quantity: 1,
             unit_cost: product.cost_price || 0
         }]);
-        setSearchTerm(''); // Clear search to show added item easily? No, keep it.
     };
 
     const updateItem = (index: number, field: string, value: any) => {
@@ -64,8 +69,29 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
         setItems(items.filter((_, i) => i !== index));
     };
 
-    const calculateTotal = () => {
+    const calculateSubtotal = () => {
         return items.reduce((sum, item) => sum + (item.quantity * item.unit_cost), 0);
+    };
+
+    const calculateTotalVariableCosts = () => {
+        return (parseFloat(freightCost) || 0) + (parseFloat(customsCost) || 0) + (parseFloat(handlingCost) || 0);
+    };
+
+    // The logic: Total Amount usually means what we owe the SUPPLIER.
+    // Freight/Customs might be paid to 3rd parties.
+    // Assuming for now these costs are part of the PO total if the supplier bills them.
+    // If they are separate bills (e.g. DHL for freight, KRA for customs), they shouldn't increase the PO Total owed to Supplier X.
+    // However, usually "Landed Cost" tracks these.
+    // For simplicity in this request "Cost of products ... + variable costs", we will store them on the PO.
+    // But does the Supplier charge them? 
+    // Let's assume these are just informational for Costing purposes, OR they are added to the Bill.
+    // To be safe, we will treat 'Total Amount' as (Items Subtotal). Variable costs are stored separately.
+    // If they were part of the supplier invoice, the user would likely add them as line items or we'd sum them.
+    // Let's keep Total Amount = Subtotal of Items.
+    // And store costs in columns.
+
+    const calculateTotal = () => {
+        return calculateSubtotal();
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -80,7 +106,8 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
             return;
         }
 
-        const totalAmount = calculateTotal();
+        const subtotal = calculateSubtotal();
+        const totalAmount = subtotal; // For now, assuming PO Total is just items.
         const initialPayment = parseFloat(paidAmount) || 0;
 
         if (initialPayment > totalAmount) {
@@ -98,17 +125,20 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
                     order_number: `PO-${Date.now().toString().slice(-6)}`,
                     total_amount: totalAmount,
                     paid_amount: initialPayment,
-                    status: initialPayment >= totalAmount ? 'completed' : initialPayment > 0 ? 'partial' : 'pending',
+                    status: initialPayment >= totalAmount ? 'completed' : 'pending',
                     notes,
                     expected_date: expectedDate || null,
-                    created_at: new Date(orderDate).toISOString()
+                    created_at: new Date(orderDate).toISOString(),
+                    freight_cost: parseFloat(freightCost) || 0,
+                    customs_cost: parseFloat(customsCost) || 0,
+                    handling_cost: parseFloat(handlingCost) || 0
                 }])
                 .select()
                 .single();
 
             if (poError) throw poError;
 
-            // 2. Create PO Items and Update Inventory/Cost
+            // 2. Create PO Items
             const poItems = items.map(item => ({
                 purchase_order_id: po.id,
                 variant_id: item.variant_id,
@@ -123,30 +153,12 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
 
             if (itemsError) throw itemsError;
 
-            // 3. Update Inventory & Cost Price for each item
-            for (const item of items) {
-                // Determine transaction type
-                // Logic: Buying creates 'purchase' stock entry
-                await supabase.from('inventory').insert([{
-                    variant_id: item.variant_id,
-                    quantity: item.quantity,
-                    transaction_type: 'purchase',
-                    notes: `PO #${po.order_number}`
-                }]);
+            // REMOVED: Immediate Inventory Update. 
+            // Inventory should only be updated when "Received".
 
-                // Update Cost Price if changed (Basic logic: update to latest cost)
-                await supabase
-                    .from('product_variants')
-                    .update({ cost_price: item.unit_cost })
-                    .eq('id', item.variant_id);
-            }
+            // 3. Handle Financials
 
-            // 4. Handle Financials (Creditor Ledger)
-            // A. Record the Bill (increases debt)
-            // Wait, we need to track debt. 
-            // If we pay 100% upfront, debt is 0. 
-            // If we pay 0, debt is Total.
-            // Creditor Transaction for BILL
+            // A. Creditor Ledger (Bill)
             const { error: billError } = await supabase
                 .from('creditor_transactions')
                 .insert([{
@@ -161,6 +173,7 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
 
             // B. Record Payment if any
             if (initialPayment > 0) {
+                // i. Creditor Transaction
                 const { error: payError } = await supabase
                     .from('creditor_transactions')
                     .insert([{
@@ -168,10 +181,24 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
                         transaction_type: 'payment',
                         amount: initialPayment,
                         reference_number: `PAY-${po.order_number}`,
-                        notes: 'Initial Payment',
+                        notes: `Initial Payment via ${paymentMethod}`,
                         created_at: new Date(orderDate).toISOString()
                     }]);
                 if (payError) throw payError;
+
+                // ii. Purchase Order Payment Record
+                const { error: poPayError } = await supabase
+                    .from('purchase_order_payments')
+                    .insert([{
+                        purchase_order_id: po.id,
+                        amount: initialPayment,
+                        payment_date: new Date(orderDate).toISOString(),
+                        payment_method: paymentMethod,
+                        reference_number: `PAY-${po.order_number}`,
+                        notes: 'Initial Down Payment'
+                    }]);
+
+                if (poPayError) throw poPayError;
             }
 
             // C. Update Creditor Outstanding Balance
@@ -205,7 +232,7 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
 
     return (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-card w-full max-w-4xl max-h-[90vh] rounded-3xl border border-border shadow-2xl flex flex-col overflow-hidden animate-scale-in">
+            <div className="bg-card w-full max-w-5xl max-h-[90vh] rounded-3xl border border-border shadow-2xl flex flex-col overflow-hidden animate-scale-in">
 
                 {/* Header */}
                 <div className="p-4 border-b border-border flex justify-between items-center bg-muted/20">
@@ -224,53 +251,9 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
                     <div className="lg:col-span-2 space-y-6">
 
                         {/* Supplier & Dates */}
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <div className="flex justify-between items-center mb-2">
-                                    <label className="text-sm font-medium">Supplier</label>
-                                    <label className="flex items-center gap-2 text-xs font-medium text-primary cursor-pointer hover:text-primary/80 bg-primary/10 px-2 py-1 rounded-md transition-colors">
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedSupplier === suppliers.find(s => s.name === 'Anonymous Vendor')?.id}
-                                            onChange={async (e) => {
-                                                if (e.target.checked) {
-                                                    const anon = suppliers.find(s => s.name === 'Anonymous Vendor');
-                                                    if (anon) {
-                                                        setSelectedSupplier(anon.id);
-                                                    } else {
-                                                        // Auto-create if missing
-                                                        try {
-                                                            const { data: newAnon, error } = await supabase
-                                                                .from('creditors')
-                                                                .insert([{
-                                                                    name: 'Anonymous Vendor',
-                                                                    contact_person: 'Walk-in',
-                                                                    address: 'General',
-                                                                    outstanding_balance: 0
-                                                                }])
-                                                                .select()
-                                                                .single();
-
-                                                            if (error) throw error;
-                                                            if (newAnon) {
-                                                                setSuppliers([...suppliers, newAnon]);
-                                                                setSelectedSupplier(newAnon.id);
-                                                                toast.success('Created Anonymous Vendor record');
-                                                            }
-                                                        } catch (err: any) {
-                                                            console.error('Error creating anonymous vendor:', err);
-                                                            toast.error('Could not create Anonymous Vendor. Please add manually.');
-                                                        }
-                                                    }
-                                                } else {
-                                                    setSelectedSupplier('');
-                                                }
-                                            }}
-                                            className="w-3.5 h-3.5 rounded border-primary text-primary focus:ring-primary/20 cursor-pointer"
-                                        />
-                                        Anonymous / Walk-in
-                                    </label>
-                                </div>
+                                <label className="text-sm font-medium">Supplier</label>
                                 <select
                                     value={selectedSupplier}
                                     onChange={e => setSelectedSupplier(e.target.value)}
@@ -293,15 +276,48 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
                             </div>
                         </div>
 
+                        {/* Variable Costs Section */}
+                        <div className="bg-muted/10 p-4 rounded-xl border border-border space-y-3">
+                            <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground">
+                                <Truck className="w-4 h-4" />
+                                Variable / Landed Costs (Estimates)
+                            </h3>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium">Freight</label>
+                                    <input
+                                        type="number"
+                                        placeholder="0"
+                                        value={freightCost}
+                                        onChange={e => setFreightCost(e.target.value)}
+                                        className="w-full h-9 px-2 rounded-lg border border-input text-sm"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium">Customs/Tax</label>
+                                    <input
+                                        type="number"
+                                        placeholder="0"
+                                        value={customsCost}
+                                        onChange={e => setCustomsCost(e.target.value)}
+                                        className="w-full h-9 px-2 rounded-lg border border-input text-sm"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium">Handling</label>
+                                    <input
+                                        type="number"
+                                        placeholder="0"
+                                        value={handlingCost}
+                                        onChange={e => setHandlingCost(e.target.value)}
+                                        className="w-full h-9 px-2 rounded-lg border border-input text-sm"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Item Selection */}
                         <div className="space-y-4">
-                            <h3 className="font-semibold text-lg flex items-center gap-2">
-                                Items
-                                <span className="text-xs font-normal bg-muted px-2 py-0.5 rounded-full text-muted-foreground">
-                                    {items.length} items
-                                </span>
-                            </h3>
-
                             {/* Product Search */}
                             <div className="relative z-10">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -339,7 +355,7 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
                                         <tr>
                                             <th className="px-4 text-left font-medium">Item</th>
                                             <th className="px-2 text-center font-medium w-20">Qty</th>
-                                            <th className="px-2 text-right font-medium w-24">Cost</th>
+                                            <th className="px-2 text-right font-medium w-24">Unit Cost</th>
                                             <th className="px-2 text-right font-medium w-24">Total</th>
                                             <th className="px-2 w-10"></th>
                                         </tr>
@@ -398,7 +414,7 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
                                 value={notes}
                                 onChange={e => setNotes(e.target.value)}
                                 placeholder="Delivery instructions, reference numbers, etc."
-                                className="w-full px-4 py-2 rounded-xl border border-input bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 min-h-[80px]"
+                                className="w-full px-4 py-2 rounded-xl border border-input bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 min-h-[60px]"
                             />
                         </div>
                     </div>
@@ -410,9 +426,15 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
 
                             <div className="space-y-3 text-sm">
                                 <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Subtotal</span>
-                                    <span className="font-mono">{calculateTotal().toLocaleString()}</span>
+                                    <span className="text-muted-foreground">Items Subtotal</span>
+                                    <span className="font-mono">{calculateSubtotal().toLocaleString()}</span>
                                 </div>
+                                {calculateTotalVariableCosts() > 0 && (
+                                    <div className="flex justify-between text-muted-foreground">
+                                        <span>Variable Costs</span>
+                                        <span className="font-mono">+{calculateTotalVariableCosts().toLocaleString()}</span>
+                                    </div>
+                                )}
                                 <div className="flex justify-between items-center pt-2 border-t border-border">
                                     <span className="font-bold text-base">Total Amount</span>
                                     <span className="font-bold text-xl text-primary font-mono">
@@ -421,8 +443,20 @@ export default function CreatePurchaseOrder({ onClose, onSuccess }: CreatePurcha
                                 </div>
                             </div>
 
-                            <div className="space-y-2 pt-4 border-t border-border">
-                                <label className="text-sm font-medium">Initial Payment</label>
+                            <div className="space-y-3 pt-4 border-t border-border">
+                                <label className="text-sm font-medium block">Initial Payment</label>
+
+                                <select
+                                    className="w-full h-9 px-2 mb-2 rounded-lg border border-input text-sm bg-background"
+                                    value={paymentMethod}
+                                    onChange={(e) => setPaymentMethod(e.target.value)}
+                                >
+                                    <option value="cash">Cash</option>
+                                    <option value="mpesa">M-Pesa</option>
+                                    <option value="bank_transfer">Bank Transfer</option>
+                                    <option value="capital">Capital Injection</option>
+                                </select>
+
                                 <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">KES</span>
                                     <input

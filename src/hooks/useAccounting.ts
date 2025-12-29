@@ -173,16 +173,23 @@ export function usePayments() {
 
 export function useProductionRuns() {
   return useQuery({
-    queryKey: ['production_runs'],
+    queryKey: ['production_batches'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('production_runs')
-        .select('id, production_cost, status, start_date, machine:machines(name)')
+        .from('production_batches')
+        .select('id, production_cost, status, start_date, recipe:recipes(name)')
         .order('start_date', { ascending: false })
         .limit(50);
 
       if (error) throw error;
-      return data as ProductionRun[];
+      // Map to interface, handling the join shape
+      return data.map((b: any) => ({
+        id: b.id,
+        production_cost: b.production_cost,
+        status: b.status,
+        start_date: b.start_date,
+        machine: { name: b.recipe?.name || 'Batch' } // reuse machine field for recipe name
+      })) as ProductionRun[];
     },
   });
 }
@@ -207,95 +214,137 @@ export function useFinancialSummary() {
   return useQuery({
     queryKey: ['financial_summary'],
     queryFn: async () => {
-      // Use actual payments collected as revenue; if none, fall back to sales orders totals
-      const [{ data: payments, error: paymentError }, { data: salesOrders, error: salesError }, { data: bankTx, error: bankError }, { data: expenses, error: expensesError }] = await Promise.all([
-        supabase
-          .from('payments')
-          .select('amount'),
-        supabase
-          .from('sales_orders')
-          .select('total_amount'),
-        supabase
-          .from('bank_transactions')
-          .select('transaction_type, amount'),
-        supabase
-          .from('expenses')
-          .select('amount'),
+      // Execute parallel queries for all financial data points
+      const [
+        { data: payments },
+        { data: salesOrders },
+        { data: expenses },
+        { data: payroll },
+        { data: accounts },
+        { data: receivables },
+        { data: payables },
+        { data: machines },
+        { data: inventory },
+        { data: rawMaterials },
+        { data: productionBatches }
+      ] = await Promise.all([
+        supabase.from('payments').select('amount'),
+        supabase.from('sales_orders').select('total_amount'),
+        supabase.from('expenses').select('amount, category, is_manufacturing_cost'),
+        supabase.from('payroll').select('net_salary, status'),
+        supabase.from('bank_accounts').select('current_balance').eq('is_active', true),
+        supabase.from('customers').select('credit_balance'),
+        supabase.from('creditors').select('outstanding_balance'),
+        supabase.from('machines').select('purchase_cost'),
+        supabase.from('inventory').select('quantity, variant:product_variants(cost_price)'),
+        supabase.from('raw_materials').select('quantity_in_stock, unit_cost'),
+        supabase.from('production_batches').select('production_cost')
       ]);
 
-      if (paymentError) throw paymentError;
-      if (salesError) throw salesError;
-      if (bankError) throw bankError;
-      if (expensesError) throw expensesError;
-
+      // --- Revenue & Expenses ---
       const paymentsTotal = payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
       const salesTotal = salesOrders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
-      const revenue = paymentsTotal > 0 ? paymentsTotal : salesTotal;
+      const revenue = paymentsTotal > 0 ? paymentsTotal : salesTotal; // Prefer collected cash
 
-      // 1. Get General Expenses
-      const generalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      // Filter Expenses
+      const allExpenses = expenses || [];
+      const manufacturingExpenses = allExpenses.filter(e =>
+        e.category === 'Raw Materials' ||
+        e.category === 'Equipment' ||
+        e.is_manufacturing_cost
+      );
+      const operatingExpenses = allExpenses.filter(e => !manufacturingExpenses.includes(e));
 
-      // 2. Get Paid Payroll
-      const { data: payroll, error: payrollError } = await supabase
-        .from('payroll')
-        .select('net_salary')
-        .eq('status', 'paid');
+      const totalOpex = operatingExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
-      if (payrollError) throw payrollError;
-      const totalPayroll = payroll?.reduce((sum, p) => sum + Number(p.net_salary), 0) || 0;
+      // Add Paid Payroll to Opex
+      const paidPayroll = payroll?.filter(p => p.status === 'paid').reduce((sum, p) => sum + Number(p.net_salary), 0) || 0;
+      const totalExpenses = totalOpex + paidPayroll;
 
-      // 3. Get Production Costs
-      const { data: production, error: productionError } = await supabase
-        .from('production_runs')
-        .select('production_cost');
+      // --- COGS (Approximate from Production Costs or Sales) ---
+      // For now, let's use Production Costs as a proxy for "Cost of Goods Manufactured"
+      const totalProductionCost = productionBatches?.reduce((sum, b) => sum + Number(b.production_cost || 0), 0) || 0;
 
-      if (productionError) throw productionError;
-      const totalProductionCost = production?.reduce((sum, p) => sum + Number(p.production_cost), 0) || 0;
+      // Calculate COGS based on Sales (Standard Inventory Method)
+      // Note: This requires sales_items query which we skipped to save connections, 
+      // but we can infer or fetch if needed. For now, we'll use a simplified margin or 0 if strictly cash basis.
+      // Let's re-fetch sales items for accurate Gross Profit if possible, or stick to Cash flow.
+      // RE-ADDING Sales Items fetch for COGS:
+      const { data: salesItems } = await supabase
+        .from('sales_order_items')
+        .select('quantity, variant:product_variants(cost_price)');
 
-      // Total Outflow
-      const totalExpenses = generalExpenses + totalPayroll + totalProductionCost;
+      const totalCOGS = salesItems?.reduce((sum, item: any) => {
+        const cost = item.variant?.cost_price || 0;
+        return sum + (cost * item.quantity);
+      }, 0) || 0;
 
-      // Get cash balance from bank accounts
-      const { data: accounts, error: accountsError } = await supabase
-        .from('bank_accounts')
-        .select('current_balance')
-        .eq('is_active', true);
 
-      if (accountsError) throw accountsError;
-
+      // --- Assets ---
       const cashBalance = accounts?.reduce((sum, a) => sum + Number(a.current_balance), 0) || 0;
-
-      // Get receivables (credit sales unpaid)
-      const { data: receivables, error: receivablesError } = await supabase
-        .from('customers')
-        .select('credit_balance');
-
-      if (receivablesError) throw receivablesError;
-
       const totalReceivables = receivables?.reduce((sum, c) => sum + Number(c.credit_balance), 0) || 0;
 
-      // Get payables
-      const { data: payables, error: payablesError } = await supabase
-        .from('creditors')
-        .select('outstanding_balance');
+      const rawMaterialValue = rawMaterials?.reduce((sum, m) => sum + (m.quantity_in_stock * m.unit_cost), 0) || 0;
+      const finishedGoodsValue = inventory?.reduce((sum, i: any) => sum + (i.quantity * (i.variant?.cost_price || 0)), 0) || 0;
+      const totalStockValue = rawMaterialValue + finishedGoodsValue;
 
-      if (payablesError) throw payablesError;
+      const fixedAssets = machines?.reduce((sum, m) => sum + Number(m.purchase_cost), 0) || 0;
 
+      const totalAssets = cashBalance + totalReceivables + totalStockValue + fixedAssets;
+
+      // --- Liabilities ---
       const totalPayables = payables?.reduce((sum, c) => sum + Number(c.outstanding_balance), 0) || 0;
+      const pendingPayroll = payroll?.filter(p => p.status === 'pending').reduce((sum, p) => sum + Number(p.net_salary), 0) || 0;
+
+      const totalLiabilities = totalPayables + pendingPayroll;
+
+      // 1. Equipment: Sum of purchase_cost from machines table (Source of Truth for Assets)
+      const accumulatedEquipmentCost = machines?.reduce((sum, m) => sum + Number(m.purchase_cost || 0), 0) || 0;
+
+      // 2. Production Runs: Sum of production_cost from production_batches (Source of Truth for Output)
+      const accumulatedProductionCost = productionBatches?.reduce((sum, b) => sum + Number(b.production_cost || 0), 0) || 0;
+
+      // 3. Raw Materials: Use Current Stock Value from raw_materials table
+      // This matches the "Raw Materials" inventory card on the Manufacturing page, representing active material assets.
+      const accumulatedMaterialCost = rawMaterials?.reduce((sum, m) => sum + ((m.quantity_in_stock || 0) * (m.unit_cost || 0)), 0) || 0;
+
+      const totalManufacturingSpend = accumulatedEquipmentCost + accumulatedProductionCost + accumulatedMaterialCost;
 
       return {
         revenue,
         expenses: totalExpenses,
+        grossProfit: revenue - totalCOGS,
+        netProfit: revenue - totalCOGS - totalExpenses,
         breakdown: {
-          general: generalExpenses,
-          payroll: totalPayroll,
-          production: totalProductionCost,
+          general: totalOpex,
+          payroll: paidPayroll,
+          manufacturing_spend: totalManufacturingSpend,
+          cogs: totalCOGS,
+
+          // New granular fields for the UI
+          manufacturing_details: {
+            equipment: accumulatedEquipmentCost,
+            production: accumulatedProductionCost,
+            materials: accumulatedMaterialCost
+          }
         },
-        grossProfit: revenue - totalProductionCost, // Revenue - COGS (roughly)
-        netProfit: revenue - totalExpenses,
-        cashBalance,
-        receivables: totalReceivables,
-        payables: totalPayables,
+
+        // Balance Sheet Data
+        assets: {
+          cash: cashBalance,
+          receivables: totalReceivables,
+          stock: totalStockValue,
+          raw_materials: rawMaterialValue,
+          finished_goods: finishedGoodsValue,
+          fixed_assets: fixedAssets,
+          total: totalAssets
+        },
+        liabilities: {
+          payables: totalPayables,
+          payroll: pendingPayroll,
+          total: totalLiabilities
+        },
+        equity: totalAssets - totalLiabilities
       };
     },
   });

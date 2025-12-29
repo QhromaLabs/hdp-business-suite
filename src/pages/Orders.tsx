@@ -403,36 +403,58 @@ function OrderDetailsModal({
                 doc.text(`Customer: ${order.customer?.name || 'Walk-in Guest'}`, 20, yOffset + 65);
                 doc.text(`Phone: ${order.customer?.phone || 'N/A'}`, 20, yOffset + 70);
 
-                // Table - start slightly lower to accommodate extra info
-                autoTable(doc, {
-                    startY: yOffset + 78,
-                    head: [['#', 'Item Description', 'Qty', 'Unit', 'Remarks']],
-                    body: items.map((item: any, index: number) => [
+                const tableBody = items.map((item: any, index: number) => {
+                    const unitWeight = (item.variant?.weight || 0);
+                    const totalWeight = unitWeight * item.quantity;
+                    return [
                         index + 1,
                         `${item.variant?.product?.name} (${item.variant?.variant_name})`,
                         item.quantity,
-                        'Pcs',
-                        ''
-                    ]),
-                    theme: 'grid',
-                    headStyles: { fillGray: 200, textColor: 0, fontStyle: 'bold' },
-                    styles: { fontSize: 9, cellPadding: 2 },
+                        unitWeight > 0 ? `${unitWeight} kg` : '-',
+                        totalWeight > 0 ? `${totalWeight} kg` : '-',
+                        'Pcs'
+                    ];
                 });
 
-                const finalY = (doc as any).lastAutoTable.finalY + 15;
+                const totalOrderWeight = items.reduce((sum: number, item: any) =>
+                    sum + ((item.variant?.weight || 0) * item.quantity), 0);
+
+                // Table - start slightly lower to accommodate extra info
+                autoTable(doc, {
+                    startY: yOffset + 78,
+                    head: [['#', 'Item Description', 'Qty', 'Unit Wgt', 'Total Wgt', 'Unit']],
+                    body: tableBody,
+                    theme: 'grid',
+                    headStyles: { fillColor: [220, 220, 220], textColor: 20, fontStyle: 'bold', halign: 'center' },
+                    styles: { fontSize: 9, cellPadding: 3, valign: 'middle', halign: 'center' },
+                    columnStyles: {
+                        1: { halign: 'left' } // Description left aligned
+                    }
+                });
+
+                const weightY = (doc as any).lastAutoTable.finalY + 5;
+
+                // Show Total Weight if > 0
+                if (totalOrderWeight > 0) {
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(`Total Order Weight: ${totalOrderWeight.toLocaleString()} kg`, 190, weightY + 5, { align: 'right' });
+                }
+
+                const signatureY = (doc as any).lastAutoTable.finalY + 15;
 
                 // Signatures
                 doc.setDrawColor(0);
-                doc.text('---------------------------', 20, finalY + 10);
-                doc.text('Issued By', 20, finalY + 15);
+                doc.text('---------------------------', 20, signatureY + 10);
+                doc.text('Issued By', 20, signatureY + 15);
 
-                doc.text('---------------------------', 140, finalY + 10);
-                doc.text('Received By/Stamp', 140, finalY + 15);
+                doc.text('---------------------------', 140, signatureY + 10);
+                doc.text('Received By/Stamp', 140, signatureY + 15);
 
                 if (!isDoublePrint) {
                     doc.setFontSize(8);
                     doc.setTextColor(100);
-                    doc.text('Thank you for your business!', 105, finalY + 30, { align: 'center' });
+                    doc.text('Thank you for your business!', 105, signatureY + 30, { align: 'center' });
                 }
             };
 

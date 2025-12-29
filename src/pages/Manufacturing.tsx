@@ -11,20 +11,29 @@ import {
   ChefHat,
   ChevronRight,
   ChevronDown,
-  Trash2
+  Trash2,
+  Pencil,
+  PackagePlus
 } from 'lucide-react';
 import {
   useProductionBatches,
   useRecipes,
   useMachines,
   useCompleteBatch,
-  useUpdateMachine
+  useUpdateMachine,
+  useRawMaterials,
+  useDeleteRawMaterial,
+  useMonthlyProductionValue,
+  useYearlyProductionValue,
+  Recipe,
+  ProductionBatch
 } from '@/hooks/useManufacturing';
 import { cn } from '@/lib/utils';
 import { CardGridSkeleton, PageHeaderSkeleton, StatsSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
 import CreateBatchModal from '@/components/manufacturing/CreateBatchModal';
 import CreateRecipeModal from '@/components/manufacturing/CreateRecipeModal';
 import { RegisterMachineModal } from '@/components/manufacturing/RegisterMachineModal';
+import { RawMaterialModal } from '@/components/manufacturing/RawMaterialModal';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -38,31 +47,35 @@ export default function Manufacturing() {
   const { data: productionBatches = [], isLoading: batchesLoading } = useProductionBatches();
   const { data: recipes = [], isLoading: recipesLoading } = useRecipes();
   const { data: machines = [], isLoading: machinesLoading } = useMachines();
+  const { data: rawMaterials = [] } = useRawMaterials();
+  const { data: monthlyProductionValue = 0 } = useMonthlyProductionValue();
+  const { data: yearlyProductionValue = 0 } = useYearlyProductionValue();
   const completeBatch = useCompleteBatch();
+  const deleteRawMaterial = useDeleteRawMaterial();
 
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
   const [isMachineModalOpen, setIsMachineModalOpen] = useState(false);
+  const [rawMaterialModal, setRawMaterialModal] = useState<{ open: boolean; type: 'create' | 'restock' | 'edit'; data?: any }>({ open: false, type: 'create' });
+  const [batchTab, setBatchTab] = useState<'active' | 'history'>('active');
+
   const [machineToEdit, setMachineToEdit] = useState<any>(null);
+  const [recipeToEdit, setRecipeToEdit] = useState<Recipe | undefined>();
+  const [batchToEdit, setBatchToEdit] = useState<ProductionBatch | undefined>();
 
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
 
   const isLoading = batchesLoading || machinesLoading || recipesLoading;
 
   const activeBatches = productionBatches.filter(b => b.status === 'in_progress' || b.status === 'planned');
+  const completedBatches = productionBatches.filter(b => b.status === 'completed');
   const totalOutput = productionBatches
     .filter(b => b.status === 'completed')
     .reduce((sum, b) => sum + (Number(b.quantity) * (b.recipe?.yield_quantity || 1)), 0);
 
-  const totalDepreciation = machines.reduce((sum, m) => sum + (Number(m.purchase_cost) * (Number(m.depreciation_rate) / 100)), 0);
+  const totalRawMaterialsValue = rawMaterials.reduce((sum, m) => sum + ((m.quantity_in_stock || 0) * (m.unit_cost || 0)), 0);
 
   const stats = [
-    {
-      title: "Today's Output",
-      value: `${totalOutput} units`,
-      icon: Package,
-      color: 'primary',
-    },
     {
       title: 'Active Batches',
       value: `${activeBatches.length} / ${productionBatches.length}`,
@@ -76,10 +89,10 @@ export default function Manufacturing() {
       color: 'warning',
     },
     {
-      title: 'Machine Depreciation',
-      value: formatCurrency(totalDepreciation),
-      icon: Cog,
-      color: 'destructive',
+      title: 'Raw Materials Value',
+      value: formatCurrency(totalRawMaterialsValue),
+      icon: Package,
+      color: 'warning',
     },
   ];
 
@@ -87,6 +100,17 @@ export default function Manufacturing() {
     if (window.confirm('Mark batch as complete? This will update inventory.')) {
       completeBatch.mutate(id);
     }
+  };
+
+  const handleEditRecipe = (e: React.MouseEvent, recipe: Recipe) => {
+    e.stopPropagation();
+    setRecipeToEdit(recipe);
+    setIsRecipeModalOpen(true);
+  };
+
+  const handleEditBatch = (batch: ProductionBatch) => {
+    setBatchToEdit(batch);
+    setIsBatchModalOpen(true);
   };
 
   if (isLoading) {
@@ -103,13 +127,42 @@ export default function Manufacturing() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* First Card - Production Output with Layered Values */}
+        <div className="group bg-card rounded-2xl border border-border/50 p-6 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 animate-slide-up">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-2xl transition-transform group-hover:scale-110 duration-500 bg-primary/10 text-primary">
+              <Package className="w-6 h-6" />
+            </div>
+            <div className="h-1.5 w-12 bg-muted rounded-full overflow-hidden">
+              <div className="h-full w-2/3 rounded-full bg-primary" />
+            </div>
+          </div>
+          <div>
+            <p className="text-3xl font-semibold text-foreground tracking-tight">{totalOutput} units</p>
+            <p className="text-sm text-muted-foreground mt-1">Today's Output</p>
+
+            {/* Layered Production Values */}
+            <div className="mt-4 pt-4 border-t border-border/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Monthly Value</span>
+                <span className="text-sm font-semibold text-success">{formatCurrency(monthlyProductionValue)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Yearly Value</span>
+                <span className="text-sm font-semibold text-primary">{formatCurrency(yearlyProductionValue)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Other Stats */}
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
             <div
               key={stat.title}
               className="group bg-card rounded-2xl border border-border/50 p-6 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 animate-slide-up"
-              style={{ animationDelay: `${index * 50}ms` }}
+              style={{ animationDelay: `${(index + 1) * 50}ms` }}
             >
               <div className="flex items-center justify-between mb-4">
                 <div className={cn(
@@ -140,36 +193,70 @@ export default function Manufacturing() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* LEFT COLUMN: Production Batches (Replaces "Active Production") */}
+        {/* LEFT COLUMN: Production Batches */}
         <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-8">
             <div>
               <h3 className="text-xl font-semibold text-foreground">Active Production</h3>
-              <p className="text-sm text-muted-foreground">{activeBatches.length} runs currently on the floor</p>
+              <p className="text-sm text-muted-foreground">
+                {batchTab === 'active' ? `${activeBatches.length} runs currently on the floor` : `${completedBatches.length} completed batches`}
+              </p>
             </div>
             <button
-              onClick={() => setIsBatchModalOpen(true)}
+              onClick={() => {
+                setBatchToEdit(undefined);
+                setIsBatchModalOpen(true);
+              }}
               className="btn-primary rounded-2xl shadow-lg premium-glow h-12 px-6 flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
               Start Batch
             </button>
           </div>
+
+          {/* Tabs */}
+          <div className="flex gap-2 mb-6 bg-muted/30 p-1 rounded-xl">
+            <button
+              onClick={() => setBatchTab('active')}
+              className={cn(
+                "flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-all",
+                batchTab === 'active'
+                  ? "bg-card shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Active ({activeBatches.length})
+            </button>
+            <button
+              onClick={() => setBatchTab('history')}
+              className={cn(
+                "flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-all",
+                batchTab === 'history'
+                  ? "bg-card shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              History ({completedBatches.length})
+            </button>
+          </div>
+
           <div className="space-y-6 flex-1 overflow-y-auto pr-2 scrollbar-thin">
-            {productionBatches.length === 0 ? (
+            {(batchTab === 'active' ? activeBatches : completedBatches).length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground py-12">
                 <div className="w-20 h-20 rounded-full bg-muted/20 flex items-center justify-center mb-4">
                   <Factory className="w-10 h-10 opacity-30" />
                 </div>
-                <p className="font-bold">Factory floor is quiet</p>
-                <p className="text-sm opacity-60">Start a run to see live progress</p>
+                <p className="font-bold">{batchTab === 'active' ? 'Factory floor is quiet' : 'No completed batches yet'}</p>
+                <p className="text-sm opacity-60">{batchTab === 'active' ? 'Start a run to see live progress' : 'Complete batches to see history'}</p>
               </div>
             ) : (
-              productionBatches.map((batch) => {
+              (batchTab === 'active' ? activeBatches : completedBatches).map((batch) => {
                 const isCompleted = batch.status === 'completed';
                 return (
-                  <div key={batch.id} className="group bg-card rounded-2xl border border-border/50 p-5 hover:border-primary/30 transition-all duration-300">
-                    <div className="flex items-start justify-between mb-4">
+                  <div key={batch.id} className="group bg-card rounded-2xl border border-border/50 p-5 hover:border-primary/30 transition-all duration-300 relative">
+                    {!isCompleted && null}
+
+                    <div className="flex items-start justify-between mb-4 pr-12">
                       <div className="flex items-center gap-4">
                         <div className={cn(
                           'w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner',
@@ -191,6 +278,13 @@ export default function Manufacturing() {
                         )}>
                           {batch.status.replace('_', ' ')}
                         </span>
+                        <button
+                          onClick={() => handleEditBatch(batch)}
+                          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 h-8 px-3 rounded-lg flex items-center gap-1 text-xs font-semibold shadow-sm mr-2"
+                          title="Edit Batch Details"
+                        >
+                          <Pencil className="w-3 h-3" /> Edit
+                        </button>
                         {!isCompleted && (
                           <button
                             onClick={() => handleCompleteBatch(batch.id)}
@@ -223,67 +317,170 @@ export default function Manufacturing() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Recipes (Replaces "Raw Material Wealth") */}
-        <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner flex flex-col">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h3 className="text-xl font-semibold text-foreground">Recipes</h3>
-              <p className="text-sm text-muted-foreground">Manage product compositions</p>
-            </div>
-            <button
-              onClick={() => setIsRecipeModalOpen(true)}
-              className="btn-secondary rounded-2xl h-12 px-6 border-border group overflow-hidden relative flex items-center gap-2"
-            >
-              <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" />
-              <span className="relative z-10 font-medium">New Recipe</span>
-            </button>
-          </div>
-          <div className="space-y-4 flex-1 overflow-y-auto pr-2 scrollbar-thin">
-            {recipes.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground py-12">
-                <ChefHat className="w-12 h-12 opacity-30 mb-3" />
-                <p className="font-bold">No recipes defined</p>
+        {/* RIGHT COLUMN: Raw Materials & Recipes */}
+        <div className="flex flex-col gap-6">
+
+          {/* Raw Materials Card */}
+          <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-inner">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">Raw Materials</h3>
+                <p className="text-xs text-muted-foreground">
+                  {rawMaterials.length} items in inventory
+                </p>
               </div>
-            ) : (
-              recipes.map((recipe) => (
-                <div
-                  key={recipe.id}
-                  className="group bg-card rounded-2xl border border-border/50 p-4 transition-all duration-300 hover:shadow-md cursor-pointer relative"
-                  onClick={() => setExpandedRecipe(expandedRecipe === recipe.id ? null : recipe.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                        <ChefHat className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-foreground text-sm">{recipe.name}</p>
-                        <p className="text-[10px] font-medium text-muted-foreground mt-0.5">
-                          Yields: {recipe.yield_quantity} units
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <ChevronDown className={cn("w-5 h-5 text-muted-foreground transition-transform", expandedRecipe === recipe.id ? "rotate-180" : "")} />
+              <button
+                onClick={() => setRawMaterialModal({ open: true, type: 'create' })}
+                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl h-9 px-4 text-xs font-semibold shadow-sm flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" /> Add Raw Material
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 overflow-y-auto max-h-[300px] pr-2 scrollbar-thin">
+              {rawMaterials.map(mat => (
+                <div key={mat.id} className="bg-white border rounded-lg p-3 hover:shadow-md transition-shadow group relative flex justify-between items-start">
+                  <div>
+                    <div className="font-semibold text-sm text-gray-900">{mat.name}</div>
+                    <div className={cn("mt-1 text-xs", (mat.quantity_in_stock || 0) <= (mat.reorder_level || 0) ? "text-red-500 font-medium" : "text-muted-foreground")}>
+                      {mat.quantity_in_stock} {mat.unit}
                     </div>
                   </div>
-
-                  {expandedRecipe === recipe.id && (
-                    <div className="mt-4 pt-3 border-t border-border/50 animate-in slide-in-from-top-2">
-                      <p className="text-xs font-semibold text-muted-foreground mb-2">Ingredients:</p>
-                      <div className="space-y-2">
-                        {recipe.items?.map(item => (
-                          <div key={item.id} className="flex justify-between text-sm bg-muted/20 p-2 rounded-lg">
-                            <span>{item.material_variant?.product?.name}</span>
-                            <span className="font-mono">{item.quantity}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* Edit Buttons - Visible Outline */}
+                  <div className="flex gap-1 ml-2">
+                    <button
+                      onClick={() => setRawMaterialModal({ open: true, type: 'restock', data: mat })}
+                      className="h-7 w-7 flex items-center justify-center rounded-md border border-slate-200 hover:bg-green-50 hover:border-green-200 text-muted-foreground hover:text-green-600 transition-colors"
+                      title="Restock Material"
+                    >
+                      <PackagePlus className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setRawMaterialModal({ open: true, type: 'edit', data: mat })}
+                      className="h-7 w-7 flex items-center justify-center rounded-md border border-slate-200 hover:bg-blue-50 hover:border-blue-200 text-muted-foreground hover:text-blue-600 transition-colors"
+                      title="Edit Material"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Delete ${mat.name}? This cannot be undone.`)) {
+                          deleteRawMaterial.mutate(mat.id);
+                        }
+                      }}
+                      className="h-7 w-7 flex items-center justify-center rounded-md border border-slate-200 hover:bg-red-50 hover:border-red-200 text-muted-foreground hover:text-red-600 transition-colors"
+                      title="Delete Material"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              ))
-            )}
+              ))}
+            </div>
+          </div>
+
+          {/* Recipes Card */}
+          <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner flex flex-col flex-1">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-xl font-semibold text-foreground">Recipes</h3>
+                <p className="text-sm text-muted-foreground">Manage product compositions</p>
+              </div>
+              <button
+                onClick={() => {
+                  setRecipeToEdit(undefined);
+                  setIsRecipeModalOpen(true);
+                }}
+                className="btn-secondary rounded-2xl h-12 px-6 border-border group overflow-hidden relative flex items-center gap-2"
+              >
+                <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" />
+                <span className="relative z-10 font-medium">New Recipe</span>
+              </button>
+            </div>
+            <div className="space-y-4 flex-1 overflow-y-auto pr-2 scrollbar-thin max-h-[500px]">
+              {recipes.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground py-12">
+                  <ChefHat className="w-12 h-12 opacity-30 mb-3" />
+                  <p className="font-bold">No recipes defined</p>
+                </div>
+              ) : (
+                recipes.map((recipe) => {
+                  // Check if any raw materials in this recipe are low on stock
+                  const lowStockCount = recipe.items?.filter(item => {
+                    if (item.raw_material_id) {
+                      const rawMat = rawMaterials.find(rm => rm.id === item.raw_material_id);
+                      return rawMat && rawMat.quantity_in_stock <= (rawMat.reorder_level || 0);
+                    }
+                    return false;
+                  }).length || 0;
+
+                  return (
+                    <div
+                      key={recipe.id}
+                      className="group bg-card rounded-2xl border border-border/50 p-4 transition-all duration-300 hover:shadow-md cursor-pointer relative"
+                      onClick={() => setExpandedRecipe(expandedRecipe === recipe.id ? null : recipe.id)}
+                    >
+                      <div className="absolute top-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => handleEditRecipe(e, recipe)}
+                          className="p-1.5 hover:bg-muted rounded-full"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                            <ChefHat className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-foreground text-sm">{recipe.name}</p>
+                              {lowStockCount > 0 && (
+                                <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  ⚠ {lowStockCount} low
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] font-medium text-muted-foreground mt-0.5">
+                              Yields: {recipe.yield_quantity} units
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right pl-6">
+                          <ChevronDown className={cn("w-5 h-5 text-muted-foreground transition-transform", expandedRecipe === recipe.id ? "rotate-180" : "")} />
+                        </div>
+                      </div>
+
+                      {expandedRecipe === recipe.id && (
+                        <div className="mt-4 pt-3 border-t border-border/50 animate-in slide-in-from-top-2">
+                          <div className="grid grid-cols-2 gap-4 text-xs mb-3">
+                            <div className="bg-secondary/30 p-2 rounded-lg">
+                              <span className="text-muted-foreground block">Labor Cost</span>
+                              <span className="font-semibold">{formatCurrency(recipe.labor_cost || 0)}</span>
+                            </div>
+                            <div className="bg-secondary/30 p-2 rounded-lg">
+                              <span className="text-muted-foreground block">Machine Cost</span>
+                              <span className="font-semibold">{formatCurrency(recipe.machine_cost || 0)}</span>
+                            </div>
+                          </div>
+                          <p className="text-xs font-semibold text-muted-foreground mb-2">Ingredients:</p>
+                          <div className="space-y-2">
+                            {recipe.items?.map(item => (
+                              <div key={item.id} className="flex justify-between text-sm bg-muted/20 p-2 rounded-lg">
+                                <span>{item.material_variant?.product?.name}</span>
+                                <span className="font-mono">{item.quantity}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -373,18 +570,18 @@ export default function Manufacturing() {
         )}
       </div>
 
-
-
       {isBatchModalOpen && (
         <CreateBatchModal
           onClose={() => setIsBatchModalOpen(false)}
           recipes={recipes || []}
+          batchToEdit={batchToEdit}
         />
       )}
 
       {isRecipeModalOpen && (
         <CreateRecipeModal
           onClose={() => setIsRecipeModalOpen(false)}
+          recipeToEdit={recipeToEdit}
         />
       )}
 
@@ -395,6 +592,13 @@ export default function Manufacturing() {
           setIsMachineModalOpen(false);
           setMachineToEdit(null);
         }}
+      />
+
+      <RawMaterialModal
+        isOpen={rawMaterialModal.open}
+        onClose={() => setRawMaterialModal({ open: false, type: 'create' })}
+        mode={rawMaterialModal.type}
+        initialData={rawMaterialModal.data}
       />
     </div>
   );
