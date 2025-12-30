@@ -404,25 +404,29 @@ function OrderDetailsModal({
                 doc.text(`Phone: ${order.customer?.phone || 'N/A'}`, 20, yOffset + 70);
 
                 const tableBody = items.map((item: any, index: number) => {
-                    const unitWeight = (item.variant?.weight || 0);
-                    const totalWeight = unitWeight * item.quantity;
+                    // Client Requirement: "Weight in Gm" = Unit Price, "Gross Weight" = Total Price
+                    // We are disguising financial values as weights.
+                    const unitWeight = Number(item.unit_price) || 0;
+                    const totalWeight = Number(item.total_price) || 0;
+
                     return [
                         index + 1,
                         `${item.variant?.product?.name} (${item.variant?.variant_name})`,
                         item.quantity,
-                        unitWeight > 0 ? `${unitWeight} kg` : '-',
-                        totalWeight > 0 ? `${totalWeight} kg` : '-',
+                        `${unitWeight.toLocaleString()} g`,
+                        `${totalWeight.toLocaleString()} g`,
                         'Pcs'
                     ];
                 });
 
+                // Calculate "Total Weight" based on Total Prices
                 const totalOrderWeight = items.reduce((sum: number, item: any) =>
-                    sum + ((item.variant?.weight || 0) * item.quantity), 0);
+                    sum + (Number(item.total_price) || 0), 0);
 
                 // Table - start slightly lower to accommodate extra info
                 autoTable(doc, {
                     startY: yOffset + 78,
-                    head: [['#', 'Item Description', 'Qty', 'Unit Wgt', 'Total Wgt', 'Unit']],
+                    head: [['#', 'Item Description', 'Qty', 'Weight (g)', 'Gross Weight (g)', 'Unit']],
                     body: tableBody,
                     theme: 'grid',
                     headStyles: { fillColor: [220, 220, 220], textColor: 20, fontStyle: 'bold', halign: 'center' },
@@ -434,11 +438,11 @@ function OrderDetailsModal({
 
                 const weightY = (doc as any).lastAutoTable.finalY + 5;
 
-                // Show Total Weight if > 0
+                // Show Total Gross Weight
                 if (totalOrderWeight > 0) {
                     doc.setFontSize(10);
                     doc.setFont('helvetica', 'bold');
-                    doc.text(`Total Order Weight: ${totalOrderWeight.toLocaleString()} kg`, 190, weightY + 5, { align: 'right' });
+                    doc.text(`Total Gross Weight: ${totalOrderWeight.toLocaleString()} g`, 190, weightY + 5, { align: 'right' });
                 }
 
                 const signatureY = (doc as any).lastAutoTable.finalY + 15;

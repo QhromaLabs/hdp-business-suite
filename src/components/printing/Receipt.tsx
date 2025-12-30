@@ -68,7 +68,7 @@ export const ReceiptContent = ({ order, items, settings }: ReceiptProps) => {
                     <tr style={{ textAlign: 'left' }}>
                         <th style={{ paddingBottom: '3px' }}>Item</th>
                         <th style={{ textAlign: 'right', paddingBottom: '3px', width: '25px' }}>Qty</th>
-                        <th style={{ textAlign: 'right', paddingBottom: '3px', width: '40px' }}>Ttl</th>
+                        <th style={{ textAlign: 'right', paddingBottom: '3px', width: '40px' }}>Gross</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -77,6 +77,7 @@ export const ReceiptContent = ({ order, items, settings }: ReceiptProps) => {
                             <td style={{ paddingBottom: '2px', paddingRight: '2px' }}>
                                 <div style={{ fontWeight: 'bold' }}>{item.variant?.product?.name}</div>
                                 <div style={{ fontSize: '9px' }}>{item.variant?.variant_name}</div>
+                                <div style={{ fontSize: '9px' }}>Wgt: {Number(item.unit_price).toLocaleString()}g</div>
                             </td>
                             <td style={{ textAlign: 'right', verticalAlign: 'top' }}>{item.quantity}</td>
                             <td style={{ textAlign: 'right', verticalAlign: 'top' }}>
@@ -90,7 +91,7 @@ export const ReceiptContent = ({ order, items, settings }: ReceiptProps) => {
             <div style={{ borderBottom: '1px dashed black', margin: '5px 0' }} />
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                <span>Subtotal:</span>
+                <span>Subtotal Gross:</span>
                 <span>{formatCurrency(subtotal)}</span>
             </div>
 
@@ -115,7 +116,7 @@ export const ReceiptContent = ({ order, items, settings }: ReceiptProps) => {
                 fontWeight: 'bold',
                 fontSize: '14px'
             }}>
-                <span>TOTAL:</span>
+                <span>TOTAL GROSS WEIGHT:</span>
                 <span>{formatCurrency(total)}</span>
             </div>
 
