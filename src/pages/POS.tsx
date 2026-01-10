@@ -377,7 +377,7 @@ export default function POS() {
         </div>
 
         {/* Products Grid */}
-        <div className="flex-1 overflow-y-auto pr-2 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin">
           {filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground animate-fade-in">
               <div className="w-20 h-20 rounded-full bg-muted/30 flex items-center justify-center mb-4">
