@@ -196,12 +196,17 @@ export default function Reports() {
       return {
         ...report,
         snapshot: [
-          { label: 'Revenue', value: printableStats.revenue },
-          { label: 'Expenses', value: printableStats.expenses },
+          { label: 'Revenue (Sales)', value: printableStats.revenue },
+          { label: 'Opening Stock', value: formatCurrency(financialSummary?.breakdown?.opening_stock ?? 0) },
+          { label: 'Add: Purchases', value: formatCurrency(financialSummary?.breakdown?.purchases ?? 0) },
+          { label: 'Less: Closing Stock', value: formatCurrency(financialSummary?.breakdown?.closing_stock ?? 0) },
+          { label: '= Cost of Goods Sold', value: formatCurrency(financialSummary?.breakdown?.cogs ?? 0) },
+          { label: 'Gross Profit', value: formatCurrency(financialSummary?.grossProfit ?? 0) },
+          { label: 'Operating Expenses', value: printableStats.expenses },
           { label: 'Net Profit', value: printableStats.netProfit },
-          { label: 'Cash Balance', value: formatCurrency(financialSummary?.cashBalance ?? 0) },
-          { label: 'Receivables', value: formatCurrency(financialSummary?.receivables ?? 0) },
-          { label: 'Payables', value: formatCurrency(financialSummary?.payables ?? 0) },
+          { label: 'Cash Balance', value: formatCurrency(financialSummary?.assets?.cash ?? 0) },
+          { label: 'Receivables', value: formatCurrency(financialSummary?.assets?.receivables ?? 0) },
+          { label: 'Payables', value: formatCurrency(financialSummary?.liabilities?.payables ?? 0) },
         ],
       };
     }

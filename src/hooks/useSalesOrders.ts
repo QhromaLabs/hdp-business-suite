@@ -542,9 +542,17 @@ export function useSalesFeedback() {
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (error) throw error;
+      // Handle missing table gracefully
+      if (error) {
+        console.warn('Sales feedback table not available:', error.message);
+        return [];
+      }
       return data as SalesFeedback[];
     },
+    // Don't retry on error to avoid spamming console
+    retry: false,
+    // Return empty array as fallback
+    placeholderData: [],
   });
 }
 

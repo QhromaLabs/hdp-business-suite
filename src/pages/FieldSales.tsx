@@ -30,7 +30,9 @@ const formatCurrency = (amount: number) => {
 export default function FieldSales() {
   const { data: employees = [], isLoading: repsLoading } = useEmployees();
   const { data: attendanceToday = [], isLoading: attendanceLoading } = useAttendanceToday();
-  const { data: pendingOrders = [], isLoading: pendingLoading } = useSalesOrders('pending');
+  const { data: pendingOrdersData, isLoading: pendingLoading } = useSalesOrders('pending');
+  const pendingOrders = pendingOrdersData?.orders || [];
+
   const { data: todaysSales = [], isLoading: todayLoading } = useTodaysSales();
   const { data: salesFeedback = [], isLoading: feedbackLoading } = useSalesFeedback();
   const updateStatus = useUpdateSalesOrderStatus();
@@ -139,7 +141,7 @@ export default function FieldSales() {
                   <Icon className="w-6 h-6" />
                 </div>
                 <div className="w-10 h-10 rounded-full border-2 border-card bg-muted flex items-center justify-center text-xs font-bold shadow-sm">
-                  {stat.value.toString().charAt(0)}
+                  {String(stat.value || '0').charAt(0)}
                 </div>
               </div>
               <div>

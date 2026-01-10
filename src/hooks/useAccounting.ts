@@ -246,14 +246,47 @@ export function useFinancialSummary() {
       const salesTotal = salesOrders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
       const revenue = paymentsTotal > 0 ? paymentsTotal : salesTotal; // Prefer collected cash
 
-      // Filter Expenses
+      // --- PROPER ACCRUAL ACCOUNTING: COGS CALCULATION ---
+      // COGS = Opening Stock + Purchases - Closing Stock
+
+      // Closing Stock (Current Inventory Value)
+      const rawMaterialValue = rawMaterials?.reduce((sum, m) => sum + (m.quantity_in_stock * m.unit_cost), 0) || 0;
+      const finishedGoodsValue = inventory?.reduce((sum, i: any) => sum + (i.quantity * (i.variant?.cost_price || 0)), 0) || 0;
+      const closingStock = rawMaterialValue + finishedGoodsValue;
+
+      // Opening Stock (for initial period, use closing stock as baseline)
+      // TODO: Implement period-based inventory snapshots for historical tracking
+      const openingStock = closingStock; // Baseline assumption for first period
+
+      // Purchases (Inventory acquisitions during the period)
       const allExpenses = expenses || [];
-      const manufacturingExpenses = allExpenses.filter(e =>
+      const inventoryPurchases = allExpenses.filter(e =>
+        e.category === 'Inventory Purchase' ||
+        e.category === 'Stock Purchase' ||
         e.category === 'Raw Materials' ||
+        e.category === 'Inventory'
+      ).reduce((sum, e) => sum + Number(e.amount), 0);
+
+      // COGS = Opening Stock + Purchases - Closing Stock
+      const totalCOGS = openingStock + inventoryPurchases - closingStock;
+
+      // Filter Expenses: EXCLUDE inventory purchases (they're capitalized, not expensed)
+      const manufacturingExpenses = allExpenses.filter(e =>
         e.category === 'Equipment' ||
-        e.is_manufacturing_cost
+        (e.is_manufacturing_cost &&
+          e.category !== 'Inventory Purchase' &&
+          e.category !== 'Stock Purchase' &&
+          e.category !== 'Raw Materials' &&
+          e.category !== 'Inventory')
       );
-      const operatingExpenses = allExpenses.filter(e => !manufacturingExpenses.includes(e));
+
+      const operatingExpenses = allExpenses.filter(e =>
+        !manufacturingExpenses.includes(e) &&
+        e.category !== 'Inventory Purchase' &&
+        e.category !== 'Stock Purchase' &&
+        e.category !== 'Raw Materials' &&
+        e.category !== 'Inventory'
+      );
 
       const totalOpex = operatingExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
@@ -261,32 +294,16 @@ export function useFinancialSummary() {
       const paidPayroll = payroll?.filter(p => p.status === 'paid').reduce((sum, p) => sum + Number(p.net_salary), 0) || 0;
       const totalExpenses = totalOpex + paidPayroll;
 
-      // --- COGS (Approximate from Production Costs or Sales) ---
-      // For now, let's use Production Costs as a proxy for "Cost of Goods Manufactured"
+      // Production Cost (for manufacturing businesses)
       const totalProductionCost = productionBatches?.reduce((sum, b) => sum + Number(b.production_cost || 0), 0) || 0;
-
-      // Calculate COGS based on Sales (Standard Inventory Method)
-      // Note: This requires sales_items query which we skipped to save connections, 
-      // but we can infer or fetch if needed. For now, we'll use a simplified margin or 0 if strictly cash basis.
-      // Let's re-fetch sales items for accurate Gross Profit if possible, or stick to Cash flow.
-      // RE-ADDING Sales Items fetch for COGS:
-      const { data: salesItems } = await supabase
-        .from('sales_order_items')
-        .select('quantity, variant:product_variants(cost_price)');
-
-      const totalCOGS = salesItems?.reduce((sum, item: any) => {
-        const cost = item.variant?.cost_price || 0;
-        return sum + (cost * item.quantity);
-      }, 0) || 0;
 
 
       // --- Assets ---
       const cashBalance = accounts?.reduce((sum, a) => sum + Number(a.current_balance), 0) || 0;
       const totalReceivables = receivables?.reduce((sum, c) => sum + Number(c.credit_balance), 0) || 0;
 
-      const rawMaterialValue = rawMaterials?.reduce((sum, m) => sum + (m.quantity_in_stock * m.unit_cost), 0) || 0;
-      const finishedGoodsValue = inventory?.reduce((sum, i: any) => sum + (i.quantity * (i.variant?.cost_price || 0)), 0) || 0;
-      const totalStockValue = rawMaterialValue + finishedGoodsValue;
+      // Stock values already calculated above (closingStock, rawMaterialValue, finishedGoodsValue)
+      const totalStockValue = closingStock;
 
       const fixedAssets = machines?.reduce((sum, m) => sum + Number(m.purchase_cost), 0) || 0;
 
@@ -306,7 +323,7 @@ export function useFinancialSummary() {
 
       // 3. Raw Materials: Use Current Stock Value from raw_materials table
       // This matches the "Raw Materials" inventory card on the Manufacturing page, representing active material assets.
-      const accumulatedMaterialCost = rawMaterials?.reduce((sum, m) => sum + ((m.quantity_in_stock || 0) * (m.unit_cost || 0)), 0) || 0;
+      const accumulatedMaterialCost = rawMaterialValue;
 
       const totalManufacturingSpend = accumulatedEquipmentCost + accumulatedProductionCost + accumulatedMaterialCost;
 
@@ -320,6 +337,11 @@ export function useFinancialSummary() {
           payroll: paidPayroll,
           manufacturing_spend: totalManufacturingSpend,
           cogs: totalCOGS,
+
+          // Inventory accounting breakdown
+          opening_stock: openingStock,
+          purchases: inventoryPurchases,
+          closing_stock: closingStock,
 
           // New granular fields for the UI
           manufacturing_details: {
