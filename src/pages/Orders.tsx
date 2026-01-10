@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSalesOrders, useOrderItems, SalesOrder, useDeleteSalesOrder } from '@/hooks/useSalesOrders';
 import {
     Search,
@@ -21,6 +21,9 @@ import {
     Clock,
     FileText,
     Trash2,
+    ChevronLeft,
+    ChevronsLeft,
+    ChevronsRight,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -48,13 +51,63 @@ export default function Orders() {
     const [selectedStatus, setSelectedStatus] = useState<string>('all');
     const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
     const [orderToDelete, setOrderToDelete] = useState<SalesOrder | null>(null);
+
+    // Date filtering state
+    const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'last30' | 'all' | 'custom'>('last30');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+
     const updateStatus = useUpdateSalesOrderStatus();
     const deleteOrder = useDeleteSalesOrder();
     const { taxEnabled } = useSettings();
 
-    const { data: orders = [], isLoading } = useSalesOrders(
-        selectedStatus === 'all' ? undefined : selectedStatus as any
+    // Calculate date range based on filter
+    const dateRange = useMemo(() => {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        switch (dateFilter) {
+            case 'today':
+                return { start: today.toISOString(), end: now.toISOString() };
+            case 'week': {
+                const weekStart = new Date(today);
+                weekStart.setDate(today.getDate() - today.getDay());
+                return { start: weekStart.toISOString(), end: now.toISOString() };
+            }
+            case 'month': {
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                return { start: monthStart.toISOString(), end: now.toISOString() };
+            }
+            case 'last30': {
+                const last30 = new Date(today);
+                last30.setDate(today.getDate() - 30);
+                return { start: last30.toISOString(), end: now.toISOString() };
+            }
+            case 'custom':
+                return { start: startDate, end: endDate };
+            case 'all':
+            default:
+                return { start: undefined, end: undefined };
+        }
+    }, [dateFilter, startDate, endDate]);
+
+    const { data, isLoading } = useSalesOrders(
+        selectedStatus === 'all' ? undefined : selectedStatus as any,
+        {
+            startDate: dateRange.start,
+            endDate: dateRange.end,
+            page: currentPage,
+            pageSize: pageSize,
+        }
     );
+
+    const orders = data?.orders || [];
+    const totalCount = data?.totalCount || 0;
+    const totalPages = Math.ceil(totalCount / pageSize);
 
     const filteredOrders = orders.filter(order =>
         order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -123,7 +176,61 @@ export default function Orders() {
             </div>
 
             {/* Filters & Search */}
-            <div className="flex flex-col md:flex-row gap-4 items-center">
+            <div className="space-y-4">
+                {/* Date Filter Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                    <Calendar className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Time Period:</span>
+                    {(['today', 'week', 'month', 'last30', 'all', 'custom'] as const).map((filter) => (
+                        <button
+                            key={filter}
+                            onClick={() => {
+                                setDateFilter(filter);
+                                setCurrentPage(1); // Reset to first page when changing filter
+                            }}
+                            className={cn(
+                                "px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+                                dateFilter === filter
+                                    ? "bg-primary text-primary-foreground shadow-sm"
+                                    : "bg-card text-muted-foreground hover:bg-muted border border-border/50"
+                            )}
+                        >
+                            {filter === 'last30' ? 'Last 30 Days' : filter === 'week' ? 'This Week' : filter === 'month' ? 'This Month' : filter}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Custom Date Range Inputs */}
+                {dateFilter === 'custom' && (
+                    <div className="flex items-center gap-3 animate-slide-down">
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-bold text-muted-foreground">From:</label>
+                            <input
+                                type="date"
+                                value={startDate ? startDate.split('T')[0] : ''}
+                                onChange={(e) => {
+                                    setStartDate(e.target.value ? new Date(e.target.value).toISOString() : '');
+                                    setCurrentPage(1);
+                                }}
+                                className="px-3 py-2 bg-card border border-border/50 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                            />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-bold text-muted-foreground">To:</label>
+                            <input
+                                type="date"
+                                value={endDate ? endDate.split('T')[0] : ''}
+                                onChange={(e) => {
+                                    setEndDate(e.target.value ? new Date(e.target.value).toISOString() : '');
+                                    setCurrentPage(1);
+                                }}
+                                className="px-3 py-2 bg-card border border-border/50 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Search Bar */}
                 <div className="relative flex-1 w-full">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
@@ -247,6 +354,110 @@ export default function Orders() {
                     </table>
                 </div>
             </div>
+
+            {/* Pagination Controls */}
+            {!isLoading && filteredOrders.length > 0 && (
+                <div className="mt-6 flex flex-col md:flex-row items-center justify-between gap-4 px-6 py-4 bg-card rounded-2xl border border-border/50 shadow-sm">
+                    {/* Page Info */}
+                    <div className="text-sm text-muted-foreground font-medium">
+                        Showing <span className="font-bold text-foreground">{((currentPage - 1) * pageSize) + 1}</span> to{' '}
+                        <span className="font-bold text-foreground">{Math.min(currentPage * pageSize, totalCount)}</span> of{' '}
+                        <span className="font-bold text-foreground">{totalCount}</span> orders
+                    </div>
+
+                    {/* Page Navigation */}
+                    <div className="flex items-center gap-2">
+                        {/* First Page */}
+                        <button
+                            onClick={() => setCurrentPage(1)}
+                            disabled={currentPage === 1}
+                            className="p-2 rounded-lg border border-border/50 hover:bg-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="First Page"
+                        >
+                            <ChevronsLeft className="w-4 h-4" />
+                        </button>
+
+                        {/* Previous Page */}
+                        <button
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                            disabled={currentPage === 1}
+                            className="p-2 rounded-lg border border-border/50 hover:bg-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Previous Page"
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                        </button>
+
+                        {/* Page Numbers */}
+                        <div className="flex items-center gap-1">
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let pageNum;
+                                if (totalPages <= 5) {
+                                    pageNum = i + 1;
+                                } else if (currentPage <= 3) {
+                                    pageNum = i + 1;
+                                } else if (currentPage >= totalPages - 2) {
+                                    pageNum = totalPages - 4 + i;
+                                } else {
+                                    pageNum = currentPage - 2 + i;
+                                }
+
+                                return (
+                                    <button
+                                        key={pageNum}
+                                        onClick={() => setCurrentPage(pageNum)}
+                                        className={cn(
+                                            "min-w-[36px] h-9 px-3 rounded-lg text-sm font-bold transition-all",
+                                            currentPage === pageNum
+                                                ? "bg-primary text-primary-foreground shadow-sm"
+                                                : "border border-border/50 hover:bg-muted"
+                                        )}
+                                    >
+                                        {pageNum}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Next Page */}
+                        <button
+                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={currentPage === totalPages}
+                            className="p-2 rounded-lg border border-border/50 hover:bg-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Next Page"
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </button>
+
+                        {/* Last Page */}
+                        <button
+                            onClick={() => setCurrentPage(totalPages)}
+                            disabled={currentPage === totalPages}
+                            className="p-2 rounded-lg border border-border/50 hover:bg-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Last Page"
+                        >
+                            <ChevronsRight className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    {/* Page Size Selector */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Per Page:</span>
+                        <select
+                            value={pageSize}
+                            onChange={(e) => {
+                                setPageSize(Number(e.target.value));
+                                setCurrentPage(1); // Reset to first page when changing page size
+                            }}
+                            className="px-3 py-2 bg-card border border-border/50 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none cursor-pointer hover:bg-muted transition-all"
+                        >
+                            <option value={10}>10</option>
+                            <option value={25}>25</option>
+                            <option value={50}>50</option>
+                            <option value={100}>100</option>
+                        </select>
+                    </div>
+                </div>
+            )}
 
             {/* Order Details Modal */}
             {selectedOrder && (

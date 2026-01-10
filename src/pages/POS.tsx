@@ -101,6 +101,7 @@ export default function POS() {
     variants: any[];
   } | null>(null);
   const [showNoCustomerAlert, setShowNoCustomerAlert] = useState(false);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const createOrder = useCreateSalesOrder();
 
   const categoryNames = ['All', ...categories.map(c => c.name)];
@@ -126,6 +127,15 @@ export default function POS() {
     const { tax, total } = calculateTotals(subtotal, discount, taxEnabled);
     return { subtotal, discount, tax, total };
   }, [cart, taxEnabled]);
+
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearchQuery.trim()) return customers;
+    const query = customerSearchQuery.toLowerCase();
+    return customers.filter(customer =>
+      customer.name.toLowerCase().includes(query) ||
+      customer.phone?.toLowerCase().includes(query)
+    );
+  }, [customers, customerSearchQuery]);
 
   const addToCart = (item: any, quantity = 1) => {
     const variant = item.variant;
@@ -774,6 +784,22 @@ export default function POS() {
               </div>
             </div>
 
+            {!showQuickAdd && (
+              <div className="p-4 border-b border-border/50">
+                <div className="relative group">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type="text"
+                    placeholder="Search customers by name or phone..."
+                    value={customerSearchQuery}
+                    onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                    className="input-field pl-10 h-10 text-sm bg-muted/30"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
+
             {showQuickAdd ? (
               <form onSubmit={handleQuickAdd} className="p-6 space-y-4 animate-slide-up">
                 <div className="space-y-4">
@@ -810,11 +836,13 @@ export default function POS() {
               </form>
             ) : (
               <div className="p-4 overflow-y-auto max-h-96">
-                {customers.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">No customers found</p>
+                {filteredCustomers.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">
+                    {customerSearchQuery ? 'No customers match your search' : 'No customers found'}
+                  </p>
                 ) : (
                   <div className="space-y-1">
-                    {customers.map((customer) => (
+                    {filteredCustomers.map((customer) => (
                       <button
                         key={customer.id}
                         onClick={() => {

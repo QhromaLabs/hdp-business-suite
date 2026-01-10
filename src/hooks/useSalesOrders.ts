@@ -48,26 +48,54 @@ export interface SalesFeedback {
   sales_rep?: { full_name?: string | null };
 }
 
-export function useSalesOrders(status?: OrderStatus) {
+export function useSalesOrders(
+  status?: OrderStatus,
+  options?: {
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    pageSize?: number;
+  }
+) {
+  const page = options?.page || 1;
+  const pageSize = options?.pageSize || 25;
+
   return useQuery({
-    queryKey: ['sales_orders', status],
+    queryKey: ['sales_orders', status, options?.startDate, options?.endDate, page, pageSize],
     queryFn: async () => {
       let query = supabase
         .from('sales_orders')
         .select(`
           *,
           customer:customers(name, phone)
-        `)
+        `, { count: 'exact' })
         .order('created_at', { ascending: false });
 
       if (status) {
         query = query.eq('status', status);
       }
 
-      const { data, error } = await query.limit(50);
+      if (options?.startDate) {
+        query = query.gte('created_at', options.startDate);
+      }
+
+      if (options?.endDate) {
+        // Add one day to endDate to include the entire end date
+        const endDatePlusOne = new Date(options.endDate);
+        endDatePlusOne.setDate(endDatePlusOne.getDate() + 1);
+        query = query.lt('created_at', endDatePlusOne.toISOString());
+      }
+
+      const offset = (page - 1) * pageSize;
+      query = query.range(offset, offset + pageSize - 1);
+
+      const { data, error, count } = await query;
 
       if (error) throw error;
-      return data as SalesOrder[];
+      return {
+        orders: data as SalesOrder[],
+        totalCount: count || 0
+      };
     },
   });
 }
