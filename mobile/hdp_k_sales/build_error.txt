@@ -1,0 +1,42 @@
+﻿Running Gradle task 'assembleRelease'...                        
+flutter : 
+At line:1 char:1
++ flutter build apk 2>&1 | Out-File 
+-Encoding UTF8 build_error.txt
++ ~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSp 
+   ecified: (:String) [], RemoteEx  
+  ception
+    + FullyQualifiedErrorId : Nativ 
+   eCommandError
+ 
+FAILURE: Build failed with an 
+exception.
+
+* What went wrong:
+Could not resolve all dependencies 
+for configuration 'classpath'.
+> Could not resolve project :gradle.
+  Required by:
+      
+unspecified:unspecified:unspecified
+   > Dependency requires at least 
+JVM runtime version 11. This build 
+uses a Java 8 JVM.
+
+* Try:
+> Run this build using a Java 11 or 
+newer JVM.
+> Run with --stacktrace option to 
+get the stack trace.
+> Run with --info or --debug option 
+to get more log output.
+> Run with --scan to get full 
+insights.
+> Get more help at 
+https://help.gradle.org.
+
+BUILD FAILED in 4s
+Running Gradle task 'assembleRelease'...                            4.9s
+Gradle task assembleRelease failed 
+with exit code 1

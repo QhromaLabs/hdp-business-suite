@@ -10,8 +10,13 @@ import {
   Loader2,
   Trash2,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { DateRange } from "react-day-picker";
+import { subDays, startOfYear, endOfYear, startOfMonth } from "date-fns";
+
 import {
   useFinancialSummary,
   useExpensesByCategory,
@@ -34,6 +39,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { CardGridSkeleton, PageHeaderSkeleton, StatsSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
 import TransactionLedgerModal from '@/components/accounting/TransactionLedgerModal';
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -44,15 +50,21 @@ const formatCurrency = (amount: number) => {
 };
 
 export default function Accounting() {
-  const { data: financialSummary, isLoading: summaryLoading } = useFinancialSummary();
-  const { data: expenseCategories = [], isLoading: expensesLoading } = useExpensesByCategory();
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: subDays(new Date(), 30),
+    to: new Date(),
+  });
+
+  const queryDateRange = dateRange ? { from: dateRange.from!, to: dateRange.to! } : undefined;
+  const { data: financialSummary, isLoading: summaryLoading } = useFinancialSummary(queryDateRange);
+  const { data: expenseCategories = [], isLoading: expensesLoading } = useExpensesByCategory(queryDateRange);
   const { data: transactions = [], isLoading: transactionsLoading } = useBankTransactions();
   const { data: bankAccounts = [], isLoading: accountsLoading } = useBankAccounts();
-  const { data: expenses = [], isLoading: expensesListLoading } = useExpenses();
-  const { data: payments = [], isLoading: paymentsLoading } = usePayments();
-  const { data: productionRuns = [], isLoading: productionLoading } = useProductionRuns();
-  const { data: creditorTransactions = [], isLoading: creditorTxLoading } = useCreditorTransactions();
-  const { data: payrollEntries = [], isLoading: payrollLoading } = usePayrollEntries();
+  const { data: expenses = [], isLoading: expensesListLoading } = useExpenses(queryDateRange);
+  const { data: payments = [], isLoading: paymentsLoading } = usePayments(queryDateRange);
+  const { data: productionRuns = [], isLoading: productionLoading } = useProductionRuns(queryDateRange);
+  const { data: creditorTransactions = [], isLoading: creditorTxLoading } = useCreditorTransactions(queryDateRange);
+  const { data: payrollEntries = [], isLoading: payrollLoading } = usePayrollEntries(queryDateRange);
   const { mutateAsync: recordExpense, isPending: savingExpense } = useRecordExpense();
   const { mutate: deleteExpense } = useDeleteExpense();
   const navigate = useNavigate();
@@ -68,6 +80,31 @@ export default function Accounting() {
 
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Realtime Sync for Accounting Tables
+  useEffect(() => {
+    const tables = ['expenses', 'payments', 'sales_orders', 'creditor_transactions', 'payroll', 'production_runs'];
+    const channels = tables.map(table => {
+      return supabase
+        .channel(`realtime_${table}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+          // Invalidate ALL accounting related queries on any change
+          queryClient.invalidateQueries({ queryKey: ['financial_summary'] });
+          queryClient.invalidateQueries({ queryKey: ['expenses'] });
+          queryClient.invalidateQueries({ queryKey: ['expenses_by_category'] });
+          queryClient.invalidateQueries({ queryKey: ['payments'] });
+          queryClient.invalidateQueries({ queryKey: ['creditor_transactions'] });
+          queryClient.invalidateQueries({ queryKey: ['payroll'] });
+          queryClient.invalidateQueries({ queryKey: ['production_batches'] });
+        })
+        .subscribe();
+    });
+
+    return () => {
+      channels.forEach(channel => supabase.removeChannel(channel));
+    };
+  }, [queryClient]);
 
   const DEFAULT_EXPENSE_CATEGORIES = [
     'Rent',
@@ -308,6 +345,70 @@ export default function Accounting() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Header with Date Picker */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Accounting & Finance</h1>
+          <p className="text-muted-foreground">Real-time financial overview and reporting</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-card/50 backdrop-blur-sm rounded-xl p-1 border border-border/40 mr-2 shadow-sm">
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-8 px-3 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all",
+                dateRange?.from?.getTime() === subDays(new Date(), 30).setHours(0, 0, 0, 0) && "bg-primary text-primary-foreground shadow-md"
+              )}
+              onClick={() => {
+                const from = subDays(new Date(), 30);
+                from.setHours(0, 0, 0, 0);
+                setDateRange({ from, to: new Date() });
+              }}
+            >
+              30 Days
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-8 px-3 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ml-1",
+                dateRange?.from?.getTime() === subDays(new Date(), 60).setHours(0, 0, 0, 0) && "bg-primary text-primary-foreground shadow-md"
+              )}
+              onClick={() => {
+                const from = subDays(new Date(), 60);
+                from.setHours(0, 0, 0, 0);
+                setDateRange({ from, to: new Date() });
+              }}
+            >
+              Bi-Monthly
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-8 px-3 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ml-1",
+                dateRange?.from?.getTime() === startOfYear(new Date()).getTime() && "bg-primary text-primary-foreground shadow-md"
+              )}
+              onClick={() => {
+                setDateRange({ from: startOfYear(new Date()), to: endOfYear(new Date()) });
+              }}
+            >
+              Yearly
+            </Button>
+          </div>
+          <DatePickerWithRange date={dateRange} setDate={setDateRange} />
+          <Button
+            variant="outline"
+            onClick={() => setIsLedgerModalOpen(true)}
+            className="hidden md:flex"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            Ledger
+          </Button>
+        </div>
+      </div>
+
       {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => {
@@ -1011,15 +1112,22 @@ export default function Accounting() {
       {/* Premium Quick Actions */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Balance Sheet', icon: FileText, desc: 'Equity & Liability overview' },
-          { label: 'Cash Flow', icon: TrendingUp, desc: 'Opex vs Capex streams' },
-          { label: 'Reconciliation', icon: Building2, desc: 'Sync with bank ledgers' },
-          { label: 'Record Expense', icon: Plus, desc: 'Register a direct outflow', primary: true },
+          { label: 'Balance Sheet', icon: FileText, desc: 'Equity & Liability overview', action: () => { } }, // Could open a specific report
+          { label: 'Cash Flow', icon: TrendingUp, desc: 'Opex vs Capex streams', action: () => { } },
+          { label: 'Reconciliation', icon: Building2, desc: 'Sync with bank ledgers', action: () => { } },
+          {
+            label: 'Record Expense', icon: Plus, desc: 'Register a direct outflow', primary: true, action: () => {
+              // Scroll to form or focus
+              document.querySelector('form')?.scrollIntoView({ behavior: 'smooth' });
+              document.getElementById('category')?.focus();
+            }
+          },
         ].map((action) => {
           const Icon = action.icon;
           return (
             <button
               key={action.label}
+              onClick={action.action}
               className={cn(
                 "group relative bg-card rounded-3xl border border-border/50 p-6 flex flex-col items-start gap-4 transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 overflow-hidden",
                 action.primary && "border-primary/20 bg-primary/5 shadow-glow"

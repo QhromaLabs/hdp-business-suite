@@ -115,3 +115,27 @@ export function useUpdateProfile() {
     },
   });
 }
+
+export function useDeleteUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      const { data, error } = await supabase.functions.invoke('delete-user', {
+        body: { user_id: userId },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user_roles_list'] });
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast.success('User permanently deleted');
+    },
+    onError: (error) => {
+      toast.error('Failed to delete user: ' + error.message);
+    },
+  });
+}
+

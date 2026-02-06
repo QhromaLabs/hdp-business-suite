@@ -7,7 +7,8 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { useCreateCustomer, useUpdateCustomer, CustomerType } from '@/hooks/useCustomers';
-import { Loader2, Plus, User, Phone, Mail, MapPin, CreditCard, Building } from 'lucide-react';
+import { Loader2, Plus, User, Phone, Mail, MapPin, CreditCard, Building, Map as MapIcon } from 'lucide-react';
+import { LocationPicker } from '../deliveries/LocationPicker';
 
 interface AddCustomerModalProps {
     isOpen: boolean;
@@ -25,6 +26,9 @@ export function AddCustomerModal({ isOpen, onClose, customerToEdit }: AddCustome
         email: '',
         phone: '',
         address: '',
+        address_name: '',
+        latitude: null as number | null,
+        longitude: null as number | null,
         customer_type: 'normal' as CustomerType,
         credit_limit: '0',
     });
@@ -36,6 +40,9 @@ export function AddCustomerModal({ isOpen, onClose, customerToEdit }: AddCustome
                 email: customerToEdit.email || '',
                 phone: customerToEdit.phone || '',
                 address: customerToEdit.address || '',
+                address_name: customerToEdit.address_name || '',
+                latitude: customerToEdit.latitude || null,
+                longitude: customerToEdit.longitude || null,
                 customer_type: customerToEdit.customer_type || 'normal',
                 credit_limit: String(customerToEdit.credit_limit || '0'),
             });
@@ -45,6 +52,9 @@ export function AddCustomerModal({ isOpen, onClose, customerToEdit }: AddCustome
                 email: '',
                 phone: '',
                 address: '',
+                address_name: '',
+                latitude: null,
+                longitude: null,
                 customer_type: 'normal',
                 credit_limit: '0',
             });
@@ -120,22 +130,59 @@ export function AddCustomerModal({ isOpen, onClose, customerToEdit }: AddCustome
                                 <input
                                     required
                                     type="tel"
-                                    placeholder="07..."
+                                    placeholder="+254..."
                                     value={formData.phone}
-                                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                    onChange={e => {
+                                        let value = e.target.value;
+                                        // Auto-add prefix if missing
+                                        if (!value.startsWith('+254')) {
+                                            const stripped = value.replace(/^\+?254|^0+/, '');
+                                            value = `+254${stripped}`;
+                                        }
+                                        // Remove leading '0' after prefix
+                                        if (value.startsWith('+2540')) {
+                                            value = `+254${value.substring(5)}`;
+                                        }
+                                        setFormData({ ...formData, phone: value });
+                                    }}
                                     className="input-field pl-10"
                                 />
                             </div>
                         </div>
                     </div>
 
+                    <div className="space-y-4 pt-2 border-t border-border mt-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                            <MapIcon className="w-4 h-4 text-primary" />
+                            Delivery Location
+                        </div>
+
+                        <LocationPicker
+                            initialLocation={customerToEdit ? {
+                                lat: customerToEdit.latitude || -1.286389,
+                                lng: customerToEdit.longitude || 36.817223,
+                                address: customerToEdit.address_name || customerToEdit.address || ''
+                            } : undefined}
+                            onLocationSelect={(loc) => {
+                                setFormData(prev => ({
+                                    ...prev,
+                                    latitude: loc.lat,
+                                    longitude: loc.lng,
+                                    address_name: loc.address,
+                                    // Optionally sync address field if it's empty
+                                    address: prev.address || loc.address
+                                }));
+                            }}
+                        />
+                    </div>
+
                     <div className="space-y-2">
-                        <label className="text-sm font-medium">Address</label>
+                        <label className="text-sm font-medium">Digital Address / Landmarks</label>
                         <div className="relative">
                             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                             <input
                                 type="text"
-                                placeholder="Street, City..."
+                                placeholder="e.g. Near Westlands Mall, 3rd Floor"
                                 value={formData.address}
                                 onChange={e => setFormData({ ...formData, address: e.target.value })}
                                 className="input-field pl-10"

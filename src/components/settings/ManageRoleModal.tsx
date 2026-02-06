@@ -15,7 +15,7 @@ interface ManageRoleModalProps {
   selectedUserId?: string;
 }
 
-const roles: AppRole[] = ['admin', 'manager', 'clerk', 'sales_rep'];
+const roles: AppRole[] = ['admin', 'manager', 'clerk', 'sales_rep', 'delivery_agent'];
 
 export function ManageRoleModal({ isOpen, onClose, profiles, selectedUserId }: ManageRoleModalProps) {
   const [userId, setUserId] = useState<string>(selectedUserId || '');

@@ -14,9 +14,10 @@ interface AddProductModalProps {
     isOpen: boolean;
     onClose: () => void;
     productToEdit?: any;
+    defaultType?: 'finished_good' | 'semi_finished_good' | 'raw_material';
 }
 
-export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductModalProps) {
+export function AddProductModal({ isOpen, onClose, productToEdit, defaultType = 'finished_good' }: AddProductModalProps) {
     const { data: categories = [] } = useCategories();
     const createProduct = useCreateProduct();
     const updateProduct = useUpdateProduct();
@@ -40,7 +41,7 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
         price: '',
         initial_stock: '0',
         warehouse_location: 'Main Warehouse',
-        weight: ''
+        product_type: defaultType
     });
 
     useEffect(() => {
@@ -60,7 +61,8 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
                 price: String(variant?.price || product?.base_price || ''),
                 initial_stock: String(productToEdit.quantity || '0'),
                 warehouse_location: productToEdit.warehouse_location || 'Main Warehouse',
-                weight: String(variant?.weight || '0')
+                weight: String(variant?.weight || '0'),
+                product_type: product?.product_type || defaultType
             });
 
             if (product?.image_url) {
@@ -96,7 +98,9 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
             price: '',
             initial_stock: '0',
             warehouse_location: 'Main Warehouse',
-            weight: ''
+
+            weight: '',
+            product_type: defaultType
         });
         setImageFile(null);
         setImagePreview(null);
@@ -300,7 +304,26 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
                         )}
                     </div>
 
+
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Product Type</label>
+                            <select
+                                className="input-field w-full px-3 py-2 border rounded-md"
+                                value={formData.product_type}
+                                onChange={(e) => setFormData({ ...formData, product_type: e.target.value })}
+                            >
+                                <option value="finished_good">Finished Good (Saleable)</option>
+                                <option value="semi_finished_good">Semi-Finished (Intermediate)</option>
+                                <option value="raw_material">Raw Material (Traded)</option>
+                            </select>
+                            <p className="text-xs text-muted-foreground">
+                                {formData.product_type === 'finished_good' && "Standard product available for sale."}
+                                {formData.product_type === 'semi_finished_good' && "Used in recipes but not typically sold directly."}
+                                {formData.product_type === 'raw_material' && "Purchased item that can also be sold."}
+                            </p>
+                        </div>
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Product Name</label>
                             <div className="relative">
@@ -555,6 +578,6 @@ export function AddProductModal({ isOpen, onClose, productToEdit }: AddProductMo
                     </div>
                 </form>
             </DialogContent>
-        </Dialog>
+        </Dialog >
     );
 }

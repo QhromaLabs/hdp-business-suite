@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import {
   MapPin,
   Users,
@@ -12,12 +12,27 @@ import {
   Plus,
   Notebook,
   Calendar,
+  LocateFixed,
 } from 'lucide-react';
+import { useUserLocations, useRequestLocation, useRecentLocationHistory } from '@/hooks/useUserLocations';
+import L from 'leaflet';
 import { cn } from '@/lib/utils';
 import { useEmployees, useAttendanceToday } from '@/hooks/useEmployees';
 import { useSalesOrders, useTodaysSales, useUpdateSalesOrderStatus, useSalesFeedback } from '@/hooks/useSalesOrders';
 import { LogFieldNoteModal } from '@/components/field-sales/LogFieldNoteModal';
 import { CardGridSkeleton, PageHeaderSkeleton, StatsSkeleton } from '@/components/loading/PageSkeletons';
+
+// Fix Leaflet default icon paths
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -37,7 +52,17 @@ export default function FieldSales() {
   const { data: salesFeedback = [], isLoading: feedbackLoading } = useSalesFeedback();
   const updateStatus = useUpdateSalesOrderStatus();
 
+  const { data: userLocations = [] } = useUserLocations();
+  const { data: historyLocations = [] } = useRecentLocationHistory(); // Fetch history
+  const { mutate: requestLocation, isPending: isRequestingLocation } = useRequestLocation();
+
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [statusTab, setStatusTab] = useState<'reps' | 'history'>('reps'); // Tab state
+
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const markersRef = useRef<Record<string, L.Marker>>({});
+  const historyLayerRef = useRef<L.LayerGroup | null>(null);
 
   const fieldReps = useMemo(
     () => employees.filter(e => (e.department || '').toLowerCase().includes('sales')),
@@ -95,6 +120,210 @@ export default function FieldSales() {
 
   const handleApprove = (id: string) => updateStatus.mutate({ id, status: 'approved' });
   const handleDispatch = (id: string) => updateStatus.mutate({ id, status: 'dispatched' });
+
+  // Initialize Map
+  useEffect(() => {
+    if (mapContainerRef.current && !mapInstanceRef.current) {
+      mapInstanceRef.current = L.map(mapContainerRef.current).setView([-1.2921, 36.8219], 12);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(mapInstanceRef.current);
+
+      // Initialize history layer
+      historyLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
+    }
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        markersRef.current = {};
+        historyLayerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Cache for location names to avoid re-fetching
+  const [locationNames, setLocationNames] = useState<Record<string, string>>({});
+
+  // Helper to fetch address
+  const fetchLocationName = async (lat: number, lng: number, key: string) => {
+    if (locationNames[key]) return; // Already cached
+
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+      const data = await response.json();
+      setLocationNames(prev => ({ ...prev, [key]: data.display_name?.split(',')[0] || 'Unknown Location' })); // Just the first part for brevity
+    } catch (e) {
+      console.error("Geocoding error", e);
+    }
+  };
+
+  // Update History Markers (Small Dots)
+  useEffect(() => {
+    if (!mapInstanceRef.current || !historyLayerRef.current) return;
+
+    const layer = historyLayerRef.current;
+    layer.clearLayers(); // Clear old history to avoid duplicates
+
+    historyLocations.forEach(loc => {
+      // Don't draw history if it's the exact same as a current live marker to avoid clutter? 
+      // Eh, drawing it is fine, it's a history log.
+
+      const rep = employees.find(e => e.user_id === loc.user_id);
+      const repName = rep?.full_name || 'Unknown Agent';
+
+      L.circleMarker([loc.latitude, loc.longitude], {
+        radius: 4,
+        fillColor: '#94a3b8', // Grayish
+        color: '#fff',
+        weight: 1,
+        opacity: 0.8,
+        fillOpacity: 0.6
+      }).bindPopup(`
+               <div class="p-1">
+                 <p class="text-xs font-bold">${repName}</p>
+                 <p class="text-[10px] text-muted-foreground">${new Date(loc.timestamp).toLocaleTimeString()}</p>
+               </div>
+           `).addTo(layer);
+    });
+
+  }, [historyLocations, employees]);
+
+  // Update Live Markers
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    const map = mapInstanceRef.current;
+    const currentMarkers = markersRef.current;
+
+    // Active user IDs in the current update
+    const activeIds = new Set<string>();
+
+    userLocations.forEach(loc => {
+      const rep = employees.find(e => e.user_id === loc.user_id);
+      const repName = rep?.full_name || 'Unknown Agent';
+      const markerKey = loc.user_id;
+
+      // Fetch address if not known
+      const locationKey = `${loc.latitude},${loc.longitude}`;
+      if (!locationNames[locationKey]) {
+        fetchLocationName(loc.latitude, loc.longitude, locationKey);
+      }
+
+      const address = locationNames[locationKey] || `${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}`;
+
+      activeIds.add(markerKey);
+
+      // Create custom beautiful marker
+      const createCustomIcon = (initials: string) => L.divIcon({
+        className: 'bg-transparent border-0', // Remove default leaflet div styling
+        html: `
+          <div class="flex flex-col items-center justify-center w-full h-full drop-shadow-md filter">
+            <div class="w-10 h-10 rounded-full bg-[#FF6600] border-[3px] border-white flex items-center justify-center text-white font-bold text-sm relative z-10 box-border">
+              ${initials}
+            </div>
+            <div class="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[10px] border-t-[#FF6600] -mt-1 relative z-0"></div>
+          </div>
+        `,
+        iconSize: [40, 50],
+        iconAnchor: [20, 50], // Tip of the arrow (40px circle + ~10px arrow - overlap)
+        popupAnchor: [0, -45]
+      });
+
+      const initials = repName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+      const popupContent = `
+        <div class="p-3 min-w-[200px] font-sans">
+          <p class="font-bold text-base mb-1">${repName}</p>
+          <div class="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
+             <span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+             ${new Date(loc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </div>
+           <p class="text-sm border-t pt-2 mt-1">
+             📍 ${address}
+           </p>
+        </div>
+      `;
+
+      if (currentMarkers[markerKey]) {
+        // Update existing marker position
+        const marker = currentMarkers[markerKey];
+        marker.setLatLng([loc.latitude, loc.longitude]);
+        marker.setIcon(createCustomIcon(initials)); // Update icon in case initials changed
+        marker.setPopupContent(popupContent);
+      } else {
+        // Create new marker
+        const marker = L.marker([loc.latitude, loc.longitude], {
+          icon: createCustomIcon(initials)
+        })
+          .bindPopup(popupContent)
+          .addTo(map);
+
+        currentMarkers[markerKey] = marker;
+      }
+    });
+
+    // Remove markers for users no longer in the list
+    Object.keys(currentMarkers).forEach(key => {
+      if (!activeIds.has(key)) {
+        currentMarkers[key].remove();
+        delete currentMarkers[key];
+      }
+    });
+
+  }, [userLocations, employees, locationNames]);
+
+  // Auto-fit bounds
+  useEffect(() => {
+    if (!mapInstanceRef.current || userLocations.length === 0) return;
+
+    // Create bounds from all user locations
+    const bounds = L.latLngBounds(userLocations.map(l => [l.latitude, l.longitude]));
+    if (bounds.isValid()) {
+      mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+    }
+  }, [userLocations]);
+
+  // Rest of the map effects...
+
+  // Note: We move the Log Item to a sub-component to handle its own async fetch cleanly
+  const LocationLogItem = ({ loc, repName }: { loc: any, repName: string }) => {
+    const [address, setAddress] = useState<string>('Loading address...');
+
+    useEffect(() => {
+      const fetchAddr = async () => {
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.latitude}&lon=${loc.longitude}`);
+          const data = await res.json();
+          setAddress(data.display_name?.split(',').slice(0, 3).join(',') || 'Unknown location');
+        } catch {
+          setAddress(`${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)}`);
+        }
+      };
+
+      // Small delay to avoid hammering the API if list is huge (staggering could be better but this is MVP)
+      const timer = setTimeout(fetchAddr, Math.random() * 1000);
+      return () => clearTimeout(timer);
+    }, [loc.latitude, loc.longitude]);
+
+    const time = new Date(loc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const date = new Date(loc.timestamp).toLocaleDateString();
+
+    return (
+      <div className="flex gap-3 items-start p-3 bg-card/50 rounded-xl border border-border/30 text-sm hover:bg-card transition-colors">
+        <div className="mt-1 w-2 h-2 rounded-full bg-primary/50 shrink-0" />
+        <div>
+          <p className="font-semibold">{repName}</p>
+          <p className="text-xs text-muted-foreground">{date} at {time}</p>
+          <p className="text-[11px] text-muted-foreground font-medium mt-1 text-primary">
+            📍 {address}
+          </p>
+        </div>
+      </div>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -167,31 +396,24 @@ export default function FieldSales() {
                 <p className="text-sm text-muted-foreground">Live field activity & coverage</p>
               </div>
               <div className="flex gap-2">
-                <button className="h-9 px-4 rounded-lg bg-background border border-border text-xs font-medium hover:bg-muted transition-colors">Refresh Map</button>
+                <button
+                  onClick={() => {
+                    if (mapInstanceRef.current && userLocations.length > 0) {
+                      const bounds = L.latLngBounds(userLocations.map(l => [l.latitude, l.longitude]));
+                      if (bounds.isValid()) {
+                        mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
+                      }
+                    }
+                  }}
+                  className="h-9 px-4 rounded-lg bg-background border border-border text-xs font-medium hover:bg-muted transition-colors"
+                >
+                  Recenter Map
+                </button>
                 <button className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors premium-glow">Satellite</button>
               </div>
             </div>
-            <div className="flex-1 flex items-center justify-center relative">
-              {fieldReps.map((rep, idx) => (
-                <div
-                  key={rep.id}
-                  className="absolute group"
-                  style={{
-                    top: `${25 + (idx * 15) % 50}%`,
-                    left: `${30 + (idx * 18) % 50}%`,
-                  }}
-                >
-                  <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shadow-lg cursor-pointer relative">
-                    <Users className="w-4 h-4 text-white" />
-                    <div className="absolute inset-0 animate-ping rounded-full bg-primary/40 -z-10" />
-                  </div>
-                  <div className="absolute top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-card border p-2 rounded-lg shadow-xl min-w-[140px]">
-                    <p className="text-[10px] font-black uppercase text-foreground">{rep.full_name}</p>
-                    <p className="text-[8px] font-bold text-muted-foreground uppercase">{rep.department || 'Field'}</p>
-                  </div>
-                </div>
-              ))}
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground opacity-30">Active Intelligence Map</p>
+            <div className="flex-1 rounded-2xl overflow-hidden relative border border-border/50 z-0 h-[400px]">
+              <div ref={mapContainerRef} className="h-full w-full" />
             </div>
 
             <div className="mt-8 flex gap-4">
@@ -265,75 +487,111 @@ export default function FieldSales() {
               <h3 className="text-xl font-bold text-foreground">Field Status</h3>
               <p className="text-sm text-muted-foreground">Real-time force metrics</p>
             </div>
-            <button
-              onClick={() => setIsNoteModalOpen(true)}
-              className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
-            >
-              Broadcast Update
-            </button>
+            <div className='flex gap-2'>
+              <button
+                onClick={() => setStatusTab('reps')}
+                className={cn(
+                  "text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors",
+                  statusTab === 'reps' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                Reps
+              </button>
+              <button
+                onClick={() => setStatusTab('history')}
+                className={cn(
+                  "text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors",
+                  statusTab === 'history' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                Ping Log
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-4 flex-1">
-            {fieldReps.map((rep, idx) => {
-              const status = attendanceByEmployee[rep.id] || 'absent';
-              const repOrders = ordersByRep[rep.id];
-              const ordersToday = repOrders?.count || 0;
-              const salesValue = repOrders?.value || 0;
+          <div className="space-y-4 flex-1 overflow-y-auto max-h-[500px] pr-2">
+            {statusTab === 'reps' ? (
+              fieldReps.map((rep, idx) => {
+                const status = attendanceByEmployee[rep.id] || 'absent';
+                const repOrders = ordersByRep[rep.id];
+                const ordersToday = repOrders?.count || 0;
+                const salesValue = repOrders?.value || 0;
 
-              return (
-                <div key={rep.id} className="group p-5 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-4">
-                      <div className="relative">
-                        <div className="w-12 h-12 rounded-2xl bg-secondary flex items-center justify-center text-lg font-bold text-primary group-hover:scale-110 transition-transform shadow-inner">
-                          {rep.full_name.charAt(0)}
+                return (
+                  <div key={rep.id} className="group p-5 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-4">
+                        <div className="relative">
+                          <div className="w-12 h-12 rounded-2xl bg-secondary flex items-center justify-center text-lg font-bold text-primary group-hover:scale-110 transition-transform shadow-inner">
+                            {rep.full_name.charAt(0)}
+                          </div>
+                          <div className={cn(
+                            "absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-4 border-card",
+                            status === 'present' || status === 'field' ? 'bg-success' : status === 'leave' ? 'bg-warning' : 'bg-muted-foreground opacity-50'
+                          )} />
                         </div>
-                        <div className={cn(
-                          "absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-4 border-card",
-                          status === 'present' || status === 'field' ? 'bg-success' : status === 'leave' ? 'bg-warning' : 'bg-muted-foreground opacity-50'
-                        )} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{rep.full_name}</p>
-                        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mt-0.5">
-                          <MapPin className="w-3 h-3 text-primary" />
-                          {rep.department || 'Field Sales'}
-                        </p>
-                        {rep.phone && (
-                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                            <Phone className="w-3 h-3" /> {rep.phone}
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{rep.full_name}</p>
+                          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3 text-primary" />
+                            {rep.department || 'Field Sales'}
                           </p>
+                          {rep.phone && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                              <Phone className="w-3 h-3" /> {rep.phone}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-foreground">{formatCurrency(salesValue)}</p>
+                        <p className="text-xs text-muted-foreground">Current Shift</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border/50">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground">Active Orders</span>
+                        <span className="text-sm font-semibold text-foreground">{ordersToday}</span>
+                      </div>
+                      <div className="flex flex-col text-center">
+                        <span className="text-xs text-muted-foreground">Status</span>
+                        <span className={cn(
+                          'text-sm font-semibold',
+                          status === 'present' || status === 'field' ? 'text-success' : 'text-muted-foreground'
+                        )}>{status}</span>
+                      </div>
+                      <div className="flex flex-col text-right">
+                        <span className="text-xs text-muted-foreground">Call</span>
+                        <span className="text-sm font-semibold text-primary inline-flex items-center gap-1">
+                          <Phone className="w-3 h-3" /> Quick Dial
+                        </span>
+                        {rep.user_id && (
+                          <button
+                            onClick={() => requestLocation(rep.user_id!)}
+                            className="mt-2 text-xs font-medium text-muted-foreground hover:text-primary flex items-center justify-end gap-1 transition-colors"
+                            disabled={isRequestingLocation}
+                          >
+                            <LocateFixed className="w-3 h-3" /> Ping Location
+                          </button>
                         )}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-foreground">{formatCurrency(salesValue)}</p>
-                      <p className="text-xs text-muted-foreground">Current Shift</p>
-                    </div>
                   </div>
-
-                  <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border/50">
-                    <div className="flex flex-col">
-                      <span className="text-xs text-muted-foreground">Active Orders</span>
-                      <span className="text-sm font-semibold text-foreground">{ordersToday}</span>
-                    </div>
-                    <div className="flex flex-col text-center">
-                      <span className="text-xs text-muted-foreground">Status</span>
-                      <span className={cn(
-                        'text-sm font-semibold',
-                        status === 'present' || status === 'field' ? 'text-success' : 'text-muted-foreground'
-                      )}>{status}</span>
-                    </div>
-                    <div className="flex flex-col text-right">
-                      <span className="text-xs text-muted-foreground">Call</span>
-                      <span className="text-sm font-semibold text-primary inline-flex items-center gap-1">
-                        <Phone className="w-3 h-3" /> Quick Dial
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            ) : (
+              <div className="space-y-3">
+                {historyLocations.map((loc, idx) => {
+                  const rep = employees.find(e => e.user_id === loc.user_id);
+                  const repName = rep?.full_name || 'Unknown Agent';
+                  return <LocationLogItem key={loc.id || idx} loc={loc} repName={repName} />;
+                })}
+                {historyLocations.length === 0 && (
+                  <p className="text-center text-muted-foreground py-8">No recent pings.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -341,6 +599,7 @@ export default function FieldSales() {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h3 className="text-xl font-bold text-foreground tracking-tight">Order Desk</h3>
+
               <p className="text-xs text-muted-foreground">Awaiting field reconciliation</p>
             </div>
             <button className="h-10 w-10 rounded-xl bg-secondary/50 flex items-center justify-center hover:bg-primary hover:text-white transition-all">

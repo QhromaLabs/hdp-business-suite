@@ -1,7 +1,8 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import { useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { cn } from '@/lib/utils';
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -16,16 +17,21 @@ const pageTitles: Record<string, string> = {
   '/reports': 'Reports & Analytics',
   '/settings': 'Settings',
   '/profile': 'My Profile',
+  '/orders': 'All Orders',
 };
 
 export default function MainLayout() {
   const location = useLocation();
   const title = pageTitles[location.pathname] || 'HDP(K) ERP';
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar />
-      <div className="ml-64 min-h-screen flex flex-col">
+      <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+      <div className={cn(
+        "min-h-screen flex flex-col transition-all duration-300",
+        collapsed ? "ml-20" : "ml-64"
+      )}>
         <Header title={title} />
         <main className="flex-1 p-6">
           <Outlet />

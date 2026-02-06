@@ -16,6 +16,11 @@ import {
   LogOut,
   ClipboardList,
   ShoppingBag,
+  Truck,
+  Wallet,
+  Banknote,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -39,18 +44,25 @@ const navItems: NavItem[] = [
   { label: 'Categories', icon: Folder, path: '/categories' },
   { label: 'Manufacturing', icon: Factory, path: '/manufacturing', roles: ['admin', 'manager'] },
   { label: 'Accounting', icon: Calculator, path: '/accounting', roles: ['admin', 'manager'] },
-  { label: 'HR & Payroll', icon: UserCircle, path: '/hr', roles: ['admin', 'manager'] },
+  { label: 'Employees', icon: Users, path: '/hr', roles: ['admin', 'manager'] },
+  { label: 'Payroll', icon: Wallet, path: '/payroll', roles: ['admin', 'manager'] },
   { label: 'Field Sales', icon: MapPin, path: '/field-sales' },
+  { label: 'Commissions', icon: Banknote, path: '/commissions' },
+  { label: 'Deliveries', icon: Truck, path: '/deliveries' },
   { label: 'Audit', icon: ClipboardCheck, path: '/audit', roles: ['admin', 'manager'] },
   { label: 'Reports', icon: BarChart3, path: '/reports' },
   { label: 'Settings', icon: Settings, path: '/settings', roles: ['admin'] },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  collapsed: boolean;
+  setCollapsed: (collapsed: boolean) => void;
+}
+
+export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const { profile, userRole, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [collapsed, setCollapsed] = useState(false);
 
   const filteredNavItems = navItems.filter(
     item => !item.roles || item.roles.includes(userRole || '')
@@ -71,18 +83,29 @@ export default function Sidebar() {
       "fixed left-0 top-0 h-screen bg-sidebar flex flex-col transition-all duration-300 z-50",
       collapsed ? "w-20" : "w-64"
     )}>
-      {/* Logo */}
-      <div className="h-16 flex items-center justify-start border-b border-sidebar-border px-4">
-        <div className="flex items-center gap-3 w-full">
-          <div className="w-11 h-11 rounded-md bg-primary flex items-center justify-center rotate-[10deg] shadow-sm">
-            <span className="text-primary-foreground font-extrabold text-xl -rotate-[10deg]">H</span>
+      {/* Header with Logo and Collapse Toggle */}
+      <div className="h-16 flex items-center border-b border-sidebar-border px-4 relative">
+        <div className={cn(
+          "flex items-center transition-all duration-300 w-full",
+          collapsed ? "justify-center" : "justify-start gap-4"
+        )}>
+          <div className={cn(
+            "flex items-center justify-center transition-all duration-300",
+            collapsed ? "w-8 h-8" : "w-28 h-28"
+          )}>
+            <img src="/brand/logo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
-          {!collapsed && (
-            <div className="animate-fade-in">
-              <h1 className="text-sidebar-foreground font-bold text-lg">HDP(K) LTD</h1>
-              <p className="text-sidebar-muted text-xs">Enterprise ERP</p>
-            </div>
-          )}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className={cn(
+              "p-1.5 rounded-full hover:bg-sidebar-accent transition-all duration-300 flex items-center justify-center shadow-md",
+              collapsed
+                ? "absolute -right-3 top-6 bg-sidebar border border-sidebar-border z-[60] text-orange-500"
+                : "ml-auto text-orange-500 hover:rotate-180"
+            )}
+          >
+            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </button>
         </div>
       </div>
 
@@ -102,7 +125,10 @@ export default function Sidebar() {
                     isActive && "sidebar-link-active"
                   )}
                 >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
+                  <Icon className={cn(
+                    "flex-shrink-0 transition-transform duration-300",
+                    collapsed ? "w-[21px] h-[21px] scale-105" : "w-5 h-5"
+                  )} />
                   {!collapsed && <span className="truncate">{item.label}</span>}
                 </NavLink>
               </li>

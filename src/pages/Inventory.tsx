@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils';
 import { AddProductModal } from '@/components/inventory/AddProductModal';
 import { ProductDetailsModal } from '@/components/inventory/ProductDetailsModal';
 import { FilterBarSkeleton, PageHeaderSkeleton, StatsSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
+import { useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -42,6 +44,26 @@ export default function Inventory() {
   const { data: inventory = [], isLoading } = useInventory();
   const { data: categories = [] } = useCategories();
   const deleteProducts = useDeleteProducts();
+  const queryClient = useQueryClient();
+
+  // Realtime Sync for Inventory
+  useEffect(() => {
+    const tables = ['inventory', 'products', 'product_variants', 'categories'];
+    const channels = tables.map(table => {
+      return supabase
+        .channel(`realtime_${table}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+          queryClient.invalidateQueries({ queryKey: ['inventory'] });
+          queryClient.invalidateQueries({ queryKey: ['categories'] });
+          queryClient.invalidateQueries({ queryKey: ['products'] });
+        })
+        .subscribe();
+    });
+
+    return () => {
+      channels.forEach(ch => supabase.removeChannel(ch));
+    };
+  }, [queryClient]);
 
   const categoryNames = ['All', ...categories.map(c => c.name)];
 

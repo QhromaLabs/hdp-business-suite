@@ -37,6 +37,9 @@ import { Database } from '@/integrations/supabase/types';
 import { POSSkeleton } from '@/components/loading/PageSkeletons';
 import { useSettings } from '@/contexts/SettingsContext';
 import { calculateTotals } from '@/lib/tax';
+import { useCreateProductReturn } from '@/hooks/useReturns'; // Import the new hook
+import { Switch } from "@/components/ui/switch"; // Import Switch for toggle
+import { Textarea } from "@/components/ui/textarea"; // Import Textarea
 
 type PaymentMethod = Database['public']['Enums']['payment_method'];
 
@@ -90,6 +93,7 @@ export default function POS() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
   const [isCartExpanded, setIsCartExpanded] = useState(false);
+  const [globalDiscount, setGlobalDiscount] = useState(0);
   const [variantPopover, setVariantPopover] = useState<{
     productId: string;
     productName: string;
@@ -100,9 +104,31 @@ export default function POS() {
     productName: string;
     variants: any[];
   } | null>(null);
+  const [variantSelection, setVariantSelection] = useState<{
+    variantId: string;
+    quantity: number;
+  }>({ variantId: '', quantity: 1 });
   const [showNoCustomerAlert, setShowNoCustomerAlert] = useState(false);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+
   const createOrder = useCreateSalesOrder();
+  const createReturn = useCreateProductReturn(); // Initialize hook
+
+  // Return Mode State
+  const [isReturnMode, setIsReturnMode] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnDetails, setReturnDetails] = useState({
+    reason: 'damaged',
+    notes: '',
+  });
+
+  const returnReasons = [
+    { value: 'damaged', label: 'Damaged' },
+    { value: 'surplus', label: 'Surplus' },
+    { value: 'expired', label: 'Expired' },
+    { value: 'mistake', label: 'Order Mistake' },
+    { value: 'other', label: 'Other' },
+  ];
 
   const categoryNames = ['All', ...categories.map(c => c.name)];
 
@@ -123,10 +149,11 @@ export default function POS() {
 
   const cartTotals = useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const discount = cart.reduce((sum, item) => sum + item.discount, 0);
-    const { tax, total } = calculateTotals(subtotal, discount, taxEnabled);
-    return { subtotal, discount, tax, total };
-  }, [cart, taxEnabled]);
+    const itemDiscounts = cart.reduce((sum, item) => sum + item.discount, 0);
+    const totalDiscount = itemDiscounts + globalDiscount;
+    const { tax, total } = calculateTotals(subtotal, totalDiscount, taxEnabled);
+    return { subtotal, discount: totalDiscount, tax, total };
+  }, [cart, globalDiscount, taxEnabled]);
 
   const filteredCustomers = useMemo(() => {
     if (!customerSearchQuery.trim()) return customers;
@@ -209,6 +236,7 @@ export default function POS() {
   const clearCart = () => {
     setCart([]);
     setSelectedCustomer(null);
+    setGlobalDiscount(0);
   };
 
   const openVariantChooser = (item: any) => {
@@ -257,7 +285,12 @@ export default function POS() {
       setShowNoCustomerAlert(true);
       return;
     }
-    setShowPaymentModal(true);
+
+    if (isReturnMode) {
+      setShowReturnModal(true);
+    } else {
+      setShowPaymentModal(true);
+    }
   };
 
   const processPayment = async () => {
@@ -272,13 +305,38 @@ export default function POS() {
         })),
         payment_method: selectedPayment,
         is_credit_sale: selectedPayment === 'credit',
+        globalDiscount: globalDiscount,
       });
       clearCart();
       setShowPaymentModal(false);
     } catch (error: any) {
-      // Show specific error message from mutation (e.g., Credit Limit Exceeded)
       console.error('Payment processing error:', error);
-      // Toast is already handled in mutation onError, but we ensure it's logged here too if needed
+    }
+  };
+
+  const processReturn = async () => {
+    if (!selectedCustomer) {
+      toast.error('Customer is required for returns');
+      return;
+    }
+    try {
+      await createReturn.mutateAsync({
+        customerId: selectedCustomer.id,
+        items: cart.map(item => ({
+          variantId: item.variantId,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        reason: returnDetails.reason,
+        notes: returnDetails.notes,
+        refundMethod: selectedPayment,
+        refundAmount: cartTotals.total,
+      });
+      clearCart();
+      setShowReturnModal(false);
+      setReturnDetails({ reason: 'damaged', notes: '' });
+    } catch (error) {
+      console.error('Return processing error', error);
     }
   };
 
@@ -334,27 +392,49 @@ export default function POS() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Search & Categories */}
         <div className="space-y-5 mb-6">
-          <div className="flex gap-4">
-            <div className="relative flex-1 group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-              <input
-                type="text"
-                placeholder="Search products by name, SKU..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="input-field pl-12 bg-card/50 backdrop-blur-sm border-border/50 h-12"
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center space-x-2 bg-card p-2 rounded-lg border border-border/50">
+              <Switch
+                id="return-mode"
+                checked={isReturnMode}
+                onCheckedChange={(checked) => {
+                  setIsReturnMode(checked);
+                  if (checked) {
+                    toast('Return Mode Activated', {
+                      description: 'Items added will be processed as returns.',
+                      icon: <div className="w-2 h-2 rounded-full bg-violet-500" />
+                    });
+                  }
+                }}
+                className="data-[state=checked]:bg-violet-600"
               />
+              <Label htmlFor="return-mode" className={cn("font-bold cursor-pointer", isReturnMode ? "text-violet-600" : "text-muted-foreground")}>
+                Return Mode
+              </Label>
             </div>
-            <form onSubmit={handleBarcodeSubmit} className="relative w-56 group">
-              <Barcode className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-              <input
-                type="text"
-                placeholder="Scan barcode"
-                value={barcodeInput}
-                onChange={(e) => setBarcodeInput(e.target.value)}
-                className="input-field pl-12 h-12 font-mono bg-card/50 backdrop-blur-sm border-border/50"
-              />
-            </form>
+
+            <div className="flex gap-4 flex-1 justify-end">
+              <div className="relative flex-1 max-w-md group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search products by name, SKU..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="input-field pl-12 bg-card/50 backdrop-blur-sm border-border/50 h-12"
+                />
+              </div>
+              <form onSubmit={handleBarcodeSubmit} className="relative w-56 group">
+                <Barcode className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Scan barcode"
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  className="input-field pl-12 h-12 font-mono bg-card/50 backdrop-blur-sm border-border/50"
+                />
+              </form>
+            </div>
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mask-gradient-to-r">
@@ -449,29 +529,36 @@ export default function POS() {
             </div>
           )}
         </div>
+
       </div>
 
       {/* Cart Section */}
-      <div className="w-[400px] pos-cart-container">
+      <div className={cn("w-[400px] pos-cart-container transition-all duration-300", isReturnMode ? "ring-2 ring-violet-500/50 rounded-xl" : "")}>
         {/* Cart Header */}
-        <div className="p-4 border-b border-border/50 bg-accent/20">
+        <div className={cn("p-4 border-b border-border/50", isReturnMode ? "bg-violet-500/10" : "bg-accent/20")}>
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-foreground leading-none">Current Sale</h2>
+              <h2 className={cn("text-xl font-bold leading-none", isReturnMode ? "text-violet-600" : "text-foreground")}>
+                {isReturnMode ? 'Processing Return' : 'Current Sale'}
+              </h2>
               <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
                 {new Date().toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })}
               </p>
             </div>
 
             {selectedCustomer ? (
-              <div className="flex items-center gap-2 bg-primary/10 pl-3 pr-1 py-1 rounded-full border border-primary/20 animate-scale-in">
-                <User className="w-3.5 h-3.5 text-primary" />
-                <span className="text-[11px] font-bold text-primary truncate max-w-[100px]">
+              <div className={cn("flex items-center gap-2 pl-3 pr-1 py-1 rounded-full border animate-scale-in",
+                isReturnMode ? "bg-violet-500/10 border-violet-500/20" : "bg-primary/10 border-primary/20"
+              )}>
+                <User className={cn("w-3.5 h-3.5", isReturnMode ? "text-violet-600" : "text-primary")} />
+                <span className={cn("text-[11px] font-bold truncate max-w-[100px]", isReturnMode ? "text-violet-600" : "text-primary")}>
                   {selectedCustomer.name}
                 </span>
                 <button
                   onClick={() => setSelectedCustomer(null)}
-                  className="w-6 h-6 rounded-full flex items-center justify-center bg-primary text-primary-foreground hover:bg-primary/80 transition-colors"
+                  className={cn("w-6 h-6 rounded-full flex items-center justify-center text-white transition-colors",
+                    isReturnMode ? "bg-violet-600 hover:bg-violet-700" : "bg-primary hover:bg-primary/80"
+                  )}
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -479,7 +566,9 @@ export default function POS() {
             ) : (
               <button
                 onClick={() => setShowCustomerModal(true)}
-                className="h-10 w-10 border-2 border-dashed border-primary/30 rounded-full flex items-center justify-center text-primary hover:bg-primary/5 hover:border-primary/50 transition-all group"
+                className={cn("h-10 w-10 border-2 border-dashed rounded-full flex items-center justify-center transition-all group",
+                  isReturnMode ? "border-violet-500/30 text-violet-500 hover:bg-violet-500/5 hover:border-violet-500/50" : "border-primary/30 text-primary hover:bg-primary/5 hover:border-primary/50"
+                )}
                 title="Assign Customer"
               >
                 <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
@@ -607,6 +696,20 @@ export default function POS() {
                 <span className="font-semibold text-foreground">{formatCurrency(cartTotals.tax)}</span>
               </div>
             )}
+            <div className="flex justify-between items-center text-xs pt-2 border-t border-border/30">
+              <span className="text-muted-foreground font-bold">Total Discount</span>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground font-mono">KES</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={globalDiscount || ''}
+                  onChange={(e) => setGlobalDiscount(Math.max(0, Number(e.target.value)))}
+                  placeholder="0.00"
+                  className="w-24 h-8 text-right bg-transparent border-b border-muted hover:border-primary focus:border-primary focus:outline-none font-bold transition-colors"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -621,7 +724,11 @@ export default function POS() {
                   onClick={() => setSelectedPayment(method.value)}
                   className={cn(
                     "flex flex-col items-center justify-center p-2 rounded-xl border border-border transition-all",
-                    selectedPayment === method.value ? "border-primary bg-primary/5 text-primary shadow-sm ring-1 ring-primary/20" : "hover:border-primary/30 hover:bg-accent"
+                    selectedPayment === method.value
+                      ? isReturnMode
+                        ? "border-violet-600 bg-violet-50 text-violet-700 shadow-sm ring-1 ring-violet-200"
+                        : "border-primary bg-primary/5 text-primary shadow-sm ring-1 ring-primary/20"
+                      : "hover:border-primary/30 hover:bg-accent"
                   )}
                 >
                   <Icon className="w-5 h-5 mb-1" />
@@ -633,11 +740,13 @@ export default function POS() {
         </div>
 
         {/* Fixed Totals & Pay */}
-        <div className="p-5 border-t border-border/50 bg-card shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)]">
+        <div className="p-4 bg-card border-t border-border/30">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Total Payable</p>
-              <p className="text-2xl font-black text-primary tracking-tight leading-none">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">
+                {isReturnMode ? 'Total Refresh' : 'Total Payable'}
+              </p>
+              <p className={cn("text-2xl font-black tracking-tight leading-none", isReturnMode ? "text-violet-600" : "text-primary")}>
                 {formatCurrency(cartTotals.total)}
               </p>
             </div>
@@ -652,324 +761,399 @@ export default function POS() {
 
           <button
             onClick={handleCheckout}
-            className="w-full h-14 bg-primary text-primary-foreground rounded-2xl font-black text-lg shadow-lg premium-glow hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50 disabled:grayscale"
-            disabled={cart.length === 0 || createOrder.isPending}
+            className={cn("w-full h-14 rounded-2xl font-black text-lg shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50 disabled:grayscale",
+              isReturnMode ? "bg-violet-600 hover:bg-violet-700 text-white shadow-violet-500/20" : "bg-primary text-primary-foreground premium-glow"
+            )}
+            disabled={cart.length === 0 || createOrder.isPending || createReturn.isPending}
           >
-            {createOrder.isPending ? (
+            {createOrder.isPending || createReturn.isPending ? (
               <Loader2 className="w-6 h-6 animate-spin mx-auto" />
             ) : (
-              'PAY NOW'
+              isReturnMode ? 'PROCESS RETURN' : 'PAY NOW'
             )}
           </button>
         </div>
       </div>
 
+
       {/* Customer Selection Modal */}
-      {variantModal && (
-        <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm z-50 flex items-start justify-center pt-16">
-          <div className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden transform transition-all duration-150 ease-out origin-top animate-slide-down">
-            <div className="p-5 border-b border-border flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase text-muted-foreground">Select variant</p>
-                <h3 className="text-lg font-semibold text-foreground">{variantModal.productName}</h3>
-              </div>
-              <button
-                onClick={() => setVariantModal(null)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto scrollbar-hide pr-2">
-                {variantModal.variants.map(v => {
-                  const isOutOfStock = v.quantity <= 0;
-                  const isSelected = variantSelection.variantId === v.variant?.id;
-
-                  return (
-                    <button
-                      key={v.variant?.id}
-                      disabled={isOutOfStock}
-                      onClick={() => setVariantSelection(prev => ({ ...prev, variantId: v.variant?.id }))}
-                      className={cn(
-                        "flex flex-col p-4 rounded-2xl border transition-all text-left group relative",
-                        isSelected
-                          ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                          : "border-border/50 bg-card hover:border-primary/30 hover:bg-accent/5",
-                        isOutOfStock && "opacity-50 grayscale cursor-not-allowed"
-                      )}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <span className={cn(
-                          "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest",
-                          v.quantity > 50 ? "bg-success/10 text-success" : v.quantity > 0 ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive"
-                        )}>
-                          {v.quantity <= 0 ? 'Out of Stock' : `${v.quantity} Left`}
-                        </span>
-                        {isSelected && (
-                          <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center animate-scale-in">
-                            <Check className="w-3 h-3 text-primary-foreground" />
-                          </div>
-                        )}
-                      </div>
-
-                      <p className="font-bold text-foreground text-sm leading-tight mb-1">{v.variant?.variant_name}</p>
-                      <p className="text-[10px] text-muted-foreground font-mono mb-3 uppercase tracking-tighter opacity-70">{v.variant?.sku}</p>
-
-                      <p className="mt-auto text-lg font-black text-primary">
-                        {formatCurrency(Number(v.variant?.price))}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Quantity Selector */}
-              <div className="mt-6 pt-6 border-t border-border flex items-center justify-between">
+      {
+        variantModal && (
+          <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm z-50 flex items-start justify-center pt-16">
+            <div className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden transform transition-all duration-150 ease-out origin-top animate-slide-down">
+              <div className="p-5 border-b border-border flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-muted-foreground uppercase mb-1">Quantity</p>
-                  <div className="flex items-center gap-4">
-                    <button
-                      type="button"
-                      className="w-12 h-12 rounded-xl border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-all active:scale-90"
-                      onClick={() => setVariantSelection(prev => ({ ...prev, quantity: Math.max(1, prev.quantity - 1) }))}
-                    >
-                      <Minus className="w-5 h-5" />
-                    </button>
-                    <span className="text-xl font-black min-w-[30px] text-center">{variantSelection.quantity}</span>
-                    <button
-                      type="button"
-                      className="w-12 h-12 rounded-xl border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-all active:scale-90"
-                      onClick={() => setVariantSelection(prev => ({ ...prev, quantity: prev.quantity + 1 }))}
-                    >
-                      <Plus className="w-5 h-5" />
-                    </button>
-                  </div>
+                  <p className="text-xs uppercase text-muted-foreground">Select variant</p>
+                  <h3 className="text-lg font-semibold text-foreground">{variantModal.productName}</h3>
                 </div>
-
                 <button
-                  onClick={confirmVariantSelection}
-                  className="px-8 py-4 bg-primary text-primary-foreground rounded-2xl font-black shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all premium-glow"
-                >
-                  ADD TO CART
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCustomerModal && (
-        <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl border border-border w-full max-w-lg max-h-[80vh] overflow-hidden animate-scale-in">
-            <div className="p-4 border-b border-border flex items-center justify-between bg-muted/30">
-              <div className="flex items-center gap-2">
-                <User className="w-5 h-5 text-primary" />
-                <h3 className="text-lg font-semibold text-foreground">Select Customer</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowQuickAdd(!showQuickAdd)}
-                  className="p-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-all flex items-center gap-2 text-xs font-bold"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  {showQuickAdd ? 'Back to List' : 'Quick Add'}
-                </button>
-                <button
-                  onClick={() => setShowCustomerModal(false)}
-                  className="text-muted-foreground hover:text-foreground p-1"
+                  onClick={() => setVariantModal(null)}
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-            </div>
+              <div className="p-6">
+                <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto scrollbar-hide pr-2">
+                  {variantModal.variants.map(v => {
+                    const isOutOfStock = v.quantity <= 0;
+                    const isSelected = variantSelection.variantId === v.variant?.id;
 
-            {!showQuickAdd && (
-              <div className="p-4 border-b border-border/50">
-                <div className="relative group">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                  <input
-                    type="text"
-                    placeholder="Search customers by name or phone..."
-                    value={customerSearchQuery}
-                    onChange={(e) => setCustomerSearchQuery(e.target.value)}
-                    className="input-field pl-10 h-10 text-sm bg-muted/30"
-                    autoFocus
-                  />
+                    return (
+                      <button
+                        key={v.variant?.id}
+                        disabled={isOutOfStock}
+                        onClick={() => setVariantSelection(prev => ({ ...prev, variantId: v.variant?.id }))}
+                        className={cn(
+                          "flex flex-col p-4 rounded-2xl border transition-all text-left group relative",
+                          isSelected
+                            ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                            : "border-border/50 bg-card hover:border-primary/30 hover:bg-accent/5",
+                          isOutOfStock && "opacity-50 grayscale cursor-not-allowed"
+                        )}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <span className={cn(
+                            "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest",
+                            v.quantity > 50 ? "bg-success/10 text-success" : v.quantity > 0 ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive"
+                          )}>
+                            {v.quantity <= 0 ? 'Out of Stock' : `${v.quantity} Left`}
+                          </span>
+                          {isSelected && (
+                            <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center animate-scale-in">
+                              <Check className="w-3 h-3 text-primary-foreground" />
+                            </div>
+                          )}
+                        </div>
+
+                        <p className="font-bold text-foreground text-sm leading-tight mb-1">{v.variant?.variant_name}</p>
+                        <p className="text-[10px] text-muted-foreground font-mono mb-3 uppercase tracking-tighter opacity-70">{v.variant?.sku}</p>
+
+                        <p className="mt-auto text-lg font-black text-primary">
+                          {formatCurrency(Number(v.variant?.price))}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Quantity Selector */}
+                <div className="mt-6 pt-6 border-t border-border flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-muted-foreground uppercase mb-1">Quantity</p>
+                    <div className="flex items-center gap-4">
+                      <button
+                        type="button"
+                        className="w-12 h-12 rounded-xl border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-all active:scale-90"
+                        onClick={() => setVariantSelection(prev => ({ ...prev, quantity: Math.max(1, prev.quantity - 1) }))}
+                      >
+                        <Minus className="w-5 h-5" />
+                      </button>
+                      <span className="text-xl font-black min-w-[30px] text-center">{variantSelection.quantity}</span>
+                      <button
+                        type="button"
+                        className="w-12 h-12 rounded-xl border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-all active:scale-90"
+                        onClick={() => setVariantSelection(prev => ({ ...prev, quantity: prev.quantity + 1 }))}
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={confirmVariantSelection}
+                    className="px-8 py-4 bg-primary text-primary-foreground rounded-2xl font-black shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all premium-glow"
+                  >
+                    ADD TO CART
+                  </button>
                 </div>
               </div>
-            )}
+            </div>
+          </div>
+        )}
 
-            {showQuickAdd ? (
-              <form onSubmit={handleQuickAdd} className="p-6 space-y-4 animate-slide-up">
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Full Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={newCustomer.name}
-                      onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
-                      placeholder="Enter customer name"
-                      className="input-field"
-                      autoFocus
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Phone Number (Optional)</label>
-                    <input
-                      type="tel"
-                      value={newCustomer.phone}
-                      onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
-                      placeholder="e.g. 0712345678"
-                      className="input-field font-mono"
-                    />
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={createCustomer.isPending || !newCustomer.name}
-                  className="w-full py-3.5 bg-primary text-primary-foreground rounded-xl font-black shadow-lg hover:scale-[1.01] transition-all disabled:opacity-50"
-                >
-                  {createCustomer.isPending ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'CREATE & SELECT'}
-                </button>
-              </form>
-            ) : (
-              <div className="p-4 overflow-y-auto max-h-96">
-                {filteredCustomers.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">
-                    {customerSearchQuery ? 'No customers match your search' : 'No customers found'}
-                  </p>
-                ) : (
-                  <div className="space-y-1">
-                    {filteredCustomers.map((customer) => (
+
+      {/* Return Details Modal */}
+      {
+        showReturnModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-card rounded-2xl border border-border w-full max-w-md shadow-2xl animate-scale-in overflow-hidden">
+              <div className="bg-violet-600 p-4 text-white flex justify-between items-center">
+                <h3 className="font-bold text-lg">Confirm Return</h3>
+                <button onClick={() => setShowReturnModal(false)} className="hover:bg-violet-700 p-1 rounded-full"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="space-y-2">
+                  <Label>Return Reason</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {returnReasons.map(r => (
                       <button
-                        key={customer.id}
-                        onClick={() => {
-                          setSelectedCustomer({
-                            id: customer.id,
-                            name: customer.name,
-                            phone: customer.phone,
-                            customer_type: customer.customer_type,
-                            credit_balance: Number(customer.credit_balance),
-                          });
-                          setShowCustomerModal(false);
-                        }}
-                        className="w-full p-3.5 rounded-xl border border-transparent hover:border-primary/20 hover:bg-primary/5 transition-all text-left flex items-center justify-between group"
+                        key={r.value}
+                        onClick={() => setReturnDetails(prev => ({ ...prev, reason: r.value }))}
+                        className={cn(
+                          "px-3 py-2 rounded-lg text-sm border font-medium transition-all",
+                          returnDetails.reason === r.value
+                            ? "bg-violet-100 text-violet-700 border-violet-500"
+                            : "hover:bg-accent border-border"
+                        )}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                            <User className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-foreground text-sm">{customer.name}</p>
-                            <p className="text-[11px] text-muted-foreground">{customer.phone || 'No phone'}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <span className={cn(
-                            "text-[10px] font-black uppercase px-2 py-0.5 rounded-md",
-                            customer.customer_type === 'consignment' ? 'bg-warning/10 text-warning' :
-                              customer.customer_type === 'marketplace' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
-                          )}>
-                            {customer.customer_type}
-                          </span>
-                          <p className="text-[11px] font-bold text-primary mt-1">
-                            {formatCurrency(Number(customer.credit_balance))}
-                          </p>
-                        </div>
+                        {r.label}
                       </button>
                     ))}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+                </div>
 
-      {/* Payment Confirmation Modal */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl border border-border w-full max-w-md animate-scale-in">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4">
-                <Check className="w-8 h-8 text-success" />
+                <div className="space-y-2">
+                  <Label>Additional Notes (Required)</Label>
+                  <Textarea
+                    placeholder="Explain the condition, defects, or reason for return..."
+                    value={returnDetails.notes}
+                    onChange={(e) => setReturnDetails(prev => ({ ...prev, notes: e.target.value }))}
+                    className="min-h-[100px] bg-accent/20"
+                  />
+                </div>
+
+                <div className="p-4 bg-muted/30 rounded-xl space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span>Refund Amount:</span>
+                    <span className="font-bold">{formatCurrency(cartTotals.total)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>Refund Method:</span>
+                    <span className="font-bold uppercase text-violet-600">{selectedPayment}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={processReturn}
+                  disabled={!returnDetails.notes || createReturn.isPending}
+                  className="w-full py-4 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold transition-all disabled:opacity-50"
+                >
+                  {createReturn.isPending ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'CONFIRM RETURN'}
+                </button>
               </div>
-              <h3 className="text-xl font-bold text-foreground mb-2">Confirm Payment</h3>
-              <p className="text-muted-foreground">
-                Total: <span className="text-2xl font-bold text-primary">{formatCurrency(cartTotals.total)}</span>
-              </p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Payment Method: {paymentMethods.find(m => m.value === selectedPayment)?.label}
-              </p>
-              {selectedCustomer && (
-                <p className="text-sm text-muted-foreground mt-1">
-                  Customer: {selectedCustomer.name}
-                </p>
+            </div>
+          </div>
+        )
+      }
+
+      {
+        showCustomerModal && (
+          <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-card rounded-2xl border border-border w-full max-w-lg max-h-[80vh] overflow-hidden animate-scale-in">
+              <div className="p-4 border-b border-border flex items-center justify-between bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <User className="w-5 h-5 text-primary" />
+                  <h3 className="text-lg font-semibold text-foreground">Select Customer</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowQuickAdd(!showQuickAdd)}
+                    className="p-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-all flex items-center gap-2 text-xs font-bold"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    {showQuickAdd ? 'Back to List' : 'Quick Add'}
+                  </button>
+                  <button
+                    onClick={() => setShowCustomerModal(false)}
+                    className="text-muted-foreground hover:text-foreground p-1"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {!showQuickAdd && (
+                <div className="p-4 border-b border-border/50">
+                  <div className="relative group">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                    <input
+                      type="text"
+                      placeholder="Search customers by name or phone..."
+                      value={customerSearchQuery}
+                      onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                      className="input-field pl-10 h-10 text-sm bg-muted/30"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+              )}
+
+              {showQuickAdd ? (
+                <form onSubmit={handleQuickAdd} className="p-6 space-y-4 animate-slide-up">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Full Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={newCustomer.name}
+                        onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                        placeholder="Enter customer name"
+                        className="input-field"
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Phone Number (Optional)</label>
+                      <input
+                        type="tel"
+                        value={newCustomer.phone}
+                        onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                        placeholder="e.g. 0712345678"
+                        className="input-field font-mono"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={createCustomer.isPending || !newCustomer.name}
+                    className="w-full py-3.5 bg-primary text-primary-foreground rounded-xl font-black shadow-lg hover:scale-[1.01] transition-all disabled:opacity-50"
+                  >
+                    {createCustomer.isPending ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'CREATE & SELECT'}
+                  </button>
+                </form>
+              ) : (
+                <div className="p-4 overflow-y-auto max-h-96">
+                  {filteredCustomers.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">
+                      {customerSearchQuery ? 'No customers match your search' : 'No customers found'}
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {filteredCustomers.map((customer) => (
+                        <button
+                          key={customer.id}
+                          onClick={() => {
+                            setSelectedCustomer({
+                              id: customer.id,
+                              name: customer.name,
+                              phone: customer.phone,
+                              customer_type: customer.customer_type,
+                              credit_balance: Number(customer.credit_balance),
+                            });
+                            setShowCustomerModal(false);
+                          }}
+                          className="w-full p-3.5 rounded-xl border border-transparent hover:border-primary/20 hover:bg-primary/5 transition-all text-left flex items-center justify-between group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                              <User className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-foreground text-sm">{customer.name}</p>
+                              <p className="text-[11px] text-muted-foreground">{customer.phone || 'No phone'}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className={cn(
+                              "text-[10px] font-black uppercase px-2 py-0.5 rounded-md",
+                              customer.customer_type === 'consignment' ? 'bg-warning/10 text-warning' :
+                                customer.customer_type === 'marketplace' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
+                            )}>
+                              {customer.customer_type}
+                            </span>
+                            <p className="text-[11px] font-bold text-primary mt-1">
+                              {formatCurrency(Number(customer.credit_balance))}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
-            <div className="p-4 border-t border-border flex gap-3">
-              <button
-                onClick={() => setShowPaymentModal(false)}
-                className="btn-secondary flex-1"
-                disabled={createOrder.isPending}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={processPayment}
-                className="btn-primary flex-1"
-                disabled={createOrder.isPending}
-              >
-                {createOrder.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
-              </button>
+          </div>
+        )
+      }
+
+      {/* Payment Confirmation Modal */}
+      {
+        showPaymentModal && (
+          <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-card rounded-2xl border border-border w-full max-w-md animate-scale-in">
+              <div className="p-6 text-center">
+                <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4">
+                  <Check className="w-8 h-8 text-success" />
+                </div>
+                <h3 className="text-xl font-bold text-foreground mb-2">Confirm Payment</h3>
+                <p className="text-muted-foreground">
+                  Total: <span className="text-2xl font-bold text-primary">{formatCurrency(cartTotals.total)}</span>
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Payment Method: {paymentMethods.find(m => m.value === selectedPayment)?.label}
+                </p>
+                {selectedCustomer && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Customer: {selectedCustomer.name}
+                  </p>
+                )}
+              </div>
+              <div className="p-4 border-t border-border flex gap-3">
+                <button
+                  onClick={() => setShowPaymentModal(false)}
+                  className="btn-secondary flex-1"
+                  disabled={createOrder.isPending}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={processPayment}
+                  className="btn-primary flex-1"
+                  disabled={createOrder.isPending}
+                >
+                  {createOrder.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* No Customer Alert */}
-      {showNoCustomerAlert && (
-        <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl border border-border w-full max-w-sm p-6 shadow-2xl animate-scale-in">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <UserPlus className="w-6 h-6 text-primary" />
-            </div>
-            <h3 className="text-xl font-bold text-foreground mb-2">No Customer Assigned</h3>
-            <p className="text-sm text-muted-foreground mb-6">
-              Would you like to assign a customer to this sale for better record keeping, or proceed as a walk-in guest?
-            </p>
-            <div className="space-y-3">
-              <button
-                onClick={() => {
-                  setShowNoCustomerAlert(false);
-                  setShowCustomerModal(true);
-                }}
-                className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold shadow-lg hover:scale-[1.01] transition-all flex items-center justify-center gap-2"
-              >
-                <User className="w-4 h-4" />
-                Select Customer
-              </button>
-              <button
-                onClick={() => {
-                  setShowNoCustomerAlert(false);
-                  setShowPaymentModal(true);
-                }}
-                className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-bold hover:bg-secondary/80 transition-all"
-              >
-                Proceed as Walk-in
-              </button>
-              <button
-                onClick={() => setShowNoCustomerAlert(false)}
-                className="w-full py-2.5 text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
-              >
-                Go back to cart
-              </button>
+      {
+        showNoCustomerAlert && (
+          <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+            <div className="bg-card rounded-2xl border border-border w-full max-w-sm p-6 shadow-2xl animate-scale-in">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                <UserPlus className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-bold text-foreground mb-2">No Customer Assigned</h3>
+              <p className="text-sm text-muted-foreground mb-6">
+                Would you like to assign a customer to this sale for better record keeping, or proceed as a walk-in guest?
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    setShowNoCustomerAlert(false);
+                    setShowCustomerModal(true);
+                  }}
+                  className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold shadow-lg hover:scale-[1.01] transition-all flex items-center justify-center gap-2"
+                >
+                  <User className="w-4 h-4" />
+                  Select Customer
+                </button>
+                <button
+                  onClick={() => {
+                    setShowNoCustomerAlert(false);
+                    setShowPaymentModal(true);
+                  }}
+                  className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-bold hover:bg-secondary/80 transition-all"
+                >
+                  Proceed as Walk-in
+                </button>
+                <button
+                  onClick={() => setShowNoCustomerAlert(false)}
+                  className="w-full py-2.5 text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
+                >
+                  Go back to cart
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }

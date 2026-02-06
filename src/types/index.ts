@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'manager' | 'clerk' | 'sales_rep';
+export type UserRole = 'admin' | 'manager' | 'clerk' | 'sales_rep' | 'delivery_agent';
 
 export interface User {
   id: string;
@@ -18,6 +18,7 @@ export interface Product {
   price: number;
   cost: number;
   stock: number;
+  product_type?: 'finished_good' | 'semi_finished_good' | 'raw_material';
   variants?: ProductVariant[];
   image?: string;
 }

@@ -21,12 +21,16 @@ import Manufacturing from "@/pages/Manufacturing";
 import Accounting from "./pages/Accounting";
 import HR from "./pages/HR";
 import FieldSales from "./pages/FieldSales";
+import Deliveries from "./pages/Deliveries";
 import Audit from "./pages/Audit";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Profile from "./pages/Profile";
+
 import Orders from "./pages/Orders";
+import Commissions from "./pages/Commissions";
+import Payroll from "./pages/Payroll";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -99,11 +103,15 @@ function AppRoutes() {
         <Route path="accounting" element={<Accounting />} />
         <Route path="hr" element={<HR />} />
         <Route path="field-sales" element={<FieldSales />} />
+        <Route path="deliveries" element={<Deliveries />} />
         <Route path="audit" element={<Audit />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<Settings />} />
         <Route path="profile" element={<Profile />} />
+
         <Route path="orders" element={<Orders />} />
+        <Route path="commissions" element={<Commissions />} />
+        <Route path="payroll" element={<Payroll />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

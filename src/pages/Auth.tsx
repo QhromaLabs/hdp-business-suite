@@ -82,14 +82,12 @@ export default function Auth() {
           navigate('/dashboard');
         }
       } else {
-        // Verify email exists in employees table
-        const { data: employee, error: empError } = await supabase
-          .from('employees')
-          .select('id')
-          .eq('email', email)
-          .maybeSingle();
+        // Verify email exists in employees table via secure RPC
+        const { data: exists, error: rpcError } = await supabase
+          .rpc('check_employee_email', { _email: email });
 
-        if (empError) {
+        if (rpcError) {
+          console.error('RPC Error:', rpcError);
           toast.error('Verification failed', {
             description: 'Could not verify employee status. Please try again.',
           });
@@ -97,7 +95,7 @@ export default function Auth() {
           return;
         }
 
-        if (!employee) {
+        if (!exists) {
           toast.error('Access Denied', {
             description: 'This email is not authorized to create an account. Please contact your administrator.',
           });
@@ -142,15 +140,12 @@ export default function Auth() {
       {/* Left Panel - Branding */}
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-primary/10" />
-        <div className="relative z-10">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-glow">
-              <span className="text-primary-foreground font-bold text-2xl">H</span>
-            </div>
-            <div>
-              <h1 className="text-sidebar-foreground text-2xl font-bold">HDP(K) LTD</h1>
-              <p className="text-sidebar-muted text-sm">Manufacturing & Distribution</p>
-            </div>
+        <div className="flex items-center gap-4">
+          <div className="w-40 h-40 flex items-center justify-start">
+            <img src="/brand/logo.png" alt="HDPK Logo" className="w-full h-full object-contain" />
+          </div>
+          <div>
+            <h1 className="text-sidebar-foreground text-xs font-bold whitespace-nowrap">HDP(K) LTD</h1>
           </div>
         </div>
 
@@ -267,7 +262,7 @@ export default function Auth() {
                   id="email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(e.target.value.trim())}
                   placeholder="you@hdpk.co.ke"
                   className={cn(
                     "input-field pl-11",

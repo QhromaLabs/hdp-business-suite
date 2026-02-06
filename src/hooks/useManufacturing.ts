@@ -7,6 +7,7 @@ export interface RawMaterial {
   name: string;
   unit: string;
   unit_cost: number;
+  current_cost: number;
   quantity_in_stock: number;
   reorder_level?: number;
   description?: string;
@@ -26,6 +27,9 @@ interface RecipeItem {
   id: string;
   material_variant_id: string | null;  // Old link to product_variants
   raw_material_id: string | null;      // New link to raw_materials
+  item_type?: 'raw_material' | 'service' | 'overhead';
+  unit_cost?: number;
+  description?: string;
   quantity: number;
   material_variant?: { // Joined data
     id: string;
@@ -46,6 +50,7 @@ export interface Recipe {
   yield_quantity: number;
   labor_cost?: number;
   machine_cost?: number;
+  manufacturing_markup?: number;
   items?: RecipeItem[];
   // Joined
   product_variant?: {
@@ -57,7 +62,8 @@ export interface Recipe {
 export interface ProductionBatch {
   id: string;
   recipe_id: string;
-  quantity: number;
+  planned_quantity: number;
+  actual_quantity?: number;
   status: 'planned' | 'in_progress' | 'completed' | 'cancelled' | 'paused';
   start_date: string;
   end_date?: string;
@@ -71,7 +77,7 @@ export function useProductionBatches() {
     queryKey: ['production_batches'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('production_batches')
+        .from('production_runs')
         .select(`
           *,
           recipe:recipes(
@@ -152,9 +158,12 @@ export function useCreateRecipe() {
       if (recipe.items.length > 0) {
         const itemsData = recipe.items.map(item => ({
           recipe_id: recipeId,
-          material_variant_id: item.material_variant_id || null, // Optional now
-          raw_material_id: item.raw_material_id || null,         // New field
-          quantity: item.quantity
+          material_variant_id: item.material_variant_id || null,
+          raw_material_id: item.raw_material_id || null,
+          quantity: item.quantity,
+          item_type: item.item_type || 'raw_material',
+          unit_cost: item.unit_cost || 0,
+          description: item.description || null
         }));
 
         const { error: itemsError } = await supabase
@@ -186,7 +195,14 @@ export function useUpdateRecipe() {
       yield_quantity: number;
       labor_cost?: number;
       machine_cost?: number;
-      items: { material_variant_id?: string; raw_material_id?: string; quantity: number }[]
+      items: {
+        material_variant_id?: string;
+        raw_material_id?: string;
+        quantity: number;
+        item_type?: 'raw_material' | 'service' | 'overhead';
+        unit_cost?: number;
+        description?: string;
+      }[]
     }) => {
       // 1. Update Recipe Details
       const { error: recipeError } = await supabase
@@ -215,7 +231,10 @@ export function useUpdateRecipe() {
           recipe_id: recipe.id,
           material_variant_id: item.material_variant_id || null,
           raw_material_id: item.raw_material_id || null,
-          quantity: item.quantity
+          quantity: item.quantity,
+          item_type: item.item_type || 'raw_material',
+          unit_cost: item.unit_cost || 0,
+          description: item.description || null
         }));
 
         const { error: itemsError } = await supabase
@@ -242,10 +261,10 @@ export function useCreateBatch() {
   return useMutation({
     mutationFn: async (batch: { recipe_id: string; quantity: number; notes?: string }) => {
       const { data, error } = await supabase
-        .from('production_batches')
+        .from('production_runs')
         .insert({
           recipe_id: batch.recipe_id,
-          quantity: batch.quantity,
+          planned_quantity: batch.quantity,
           status: 'planned',
           notes: batch.notes,
           start_date: new Date().toISOString()
@@ -271,9 +290,9 @@ export function useUpdateBatch() {
   return useMutation({
     mutationFn: async (batch: { id: string; quantity: number; notes?: string }) => {
       const { data, error } = await supabase
-        .from('production_batches')
+        .from('production_runs')
         .update({
-          quantity: batch.quantity,
+          planned_quantity: batch.quantity,
           notes: batch.notes
         })
         .eq('id', batch.id)
@@ -298,7 +317,7 @@ export function useUpdateBatchStatus() {
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: 'planned' | 'in_progress' | 'paused' | 'completed' | 'cancelled' }) => {
       const { error } = await supabase
-        .from('production_batches')
+        .from('production_runs')
         .update({ status, updated_at: new Date().toISOString() })
         .eq('id', id);
 
@@ -319,7 +338,7 @@ export function useDeleteBatch() {
   return useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
-        .from('production_batches')
+        .from('production_runs')
         .delete()
         .eq('id', id);
       if (error) throw error;
@@ -340,7 +359,7 @@ export function useCompleteBatch() {
     mutationFn: async (batchId: string) => {
       // 1. Get Batch Info
       const { data: batch, error: batchError } = await supabase
-        .from('production_batches')
+        .from('production_runs')
         .select('*')
         .eq('id', batchId)
         .single();
@@ -359,7 +378,7 @@ export function useCompleteBatch() {
 
       if (recipe.recipe_items && recipe.recipe_items.length > 0) {
         for (const item of recipe.recipe_items) {
-          const qtyToDeduct = item.quantity * batch.quantity;
+          const qtyToDeduct = item.quantity * (batch.actual_quantity || batch.planned_quantity);
           let unitCost = 0;
           let stockUpdated = false;
 
@@ -418,12 +437,12 @@ export function useCompleteBatch() {
       }
 
       // 4. Calculate Total Production Cost
-      const laborCost = (recipe.labor_cost || 0) * batch.quantity;
-      const machineCost = (recipe.machine_cost || 0) * batch.quantity;
+      const laborCost = (recipe.labor_cost || 0) * (batch.actual_quantity || batch.planned_quantity);
+      const machineCost = (recipe.machine_cost || 0) * (batch.actual_quantity || batch.planned_quantity);
       const totalProductionCost = totalMaterialCost + laborCost + machineCost;
 
       // 5. Add Finished Product (Same as before)
-      const qtyToAdd = batch.quantity * recipe.yield_quantity;
+      const qtyToAdd = (batch.actual_quantity || batch.planned_quantity) * recipe.yield_quantity;
       const { data: prodInv, error: prodInvError } = await supabase
         .from('inventory')
         .select('id, quantity, warehouse_location')
@@ -465,11 +484,12 @@ export function useCompleteBatch() {
 
       // 6. Complete Batch & Save Cost
       const { error: completeError } = await supabase
-        .from('production_batches')
+        .from('production_runs')
         .update({
           status: 'completed',
           end_date: new Date().toISOString(),
-          production_cost: totalProductionCost
+          production_cost: totalProductionCost,
+          actual_quantity: batch.actual_quantity || batch.planned_quantity
         })
         .eq('id', batchId);
 
@@ -736,10 +756,11 @@ export function useMonthlyProductionValue() {
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
       const { data, error } = await supabase
-        .from('production_batches')
+        .from('production_runs')
         .select(`
           id,
-          quantity,
+          planned_quantity,
+          actual_quantity,
           status,
           end_date,
           recipe:recipes(
@@ -759,7 +780,7 @@ export function useMonthlyProductionValue() {
       const totalValue = (data || []).reduce((sum, batch) => {
         const yieldQty = batch.recipe?.yield_quantity || 1;
         const costPrice = batch.recipe?.product_variant?.cost_price || 0;
-        const producedQty = batch.quantity * yieldQty;
+        const producedQty = (batch.actual_quantity || batch.planned_quantity) * yieldQty;
         return sum + (producedQty * costPrice);
       }, 0);
 
@@ -777,10 +798,11 @@ export function useYearlyProductionValue() {
       const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59).toISOString();
 
       const { data, error } = await supabase
-        .from('production_batches')
+        .from('production_runs')
         .select(`
           id,
-          quantity,
+          planned_quantity,
+          actual_quantity,
           status,
           end_date,
           recipe:recipes(
@@ -800,7 +822,7 @@ export function useYearlyProductionValue() {
       const totalValue = (data || []).reduce((sum, batch) => {
         const yieldQty = batch.recipe?.yield_quantity || 1;
         const costPrice = batch.recipe?.product_variant?.cost_price || 0;
-        const producedQty = batch.quantity * yieldQty;
+        const producedQty = (batch.actual_quantity || batch.planned_quantity) * yieldQty;
         return sum + (producedQty * costPrice);
       }, 0);
 

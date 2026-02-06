@@ -138,6 +138,7 @@ export function useCreateProduct() {
       cost_price: number;
       image_url?: string;
       attributes?: Record<string, any>;
+      product_type?: 'finished_good' | 'semi_finished_good' | 'raw_material';
     }) => {
       const { data, error } = await supabase
         .from('products')

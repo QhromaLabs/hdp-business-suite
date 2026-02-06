@@ -12,7 +12,7 @@ import {
   Receipt,
   Copy,
 } from 'lucide-react';
-import { useUserRoles, useRemoveUserRole, useUpsertUserRole, ProfileWithRole, AppRole } from '@/hooks/useSettings';
+import { useUserRoles, useRemoveUserRole, useUpsertUserRole, useDeleteUser, ProfileWithRole, AppRole } from '@/hooks/useSettings';
 import { ManageRoleModal } from '@/components/settings/ManageRoleModal';
 import { EditProfileModal } from '@/components/settings/EditProfileModal';
 import { CardGridSkeleton, FormCardSkeleton, PageHeaderSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
@@ -23,6 +23,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Loader2, Trash2, Plus, AlertTriangle } from 'lucide-react';
+import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
 import { useEffect } from 'react';
 
 function IpManagementSection() {
@@ -211,11 +212,17 @@ export default function Settings() {
   const { data: profiles = [], isLoading } = useUserRoles();
   const removeRole = useRemoveUserRole();
   const upsertRole = useUpsertUserRole();
+  const deleteUser = useDeleteUser();
   const { taxEnabled, setTaxEnabled } = useSettings();
   const deviceLink = typeof window !== 'undefined' ? `${window.location.origin}/device-id` : '/device-id';
   const [selectedProfile, setSelectedProfile] = useState<ProfileWithRole | null>(null);
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; userId: string | null }>({
+    isOpen: false,
+    userId: null,
+  });
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<AppRole | 'all'>('all');
   const [notificationPrefs, setNotificationPrefs] = useState({
@@ -327,15 +334,15 @@ export default function Settings() {
                   >
                     Edit
                   </button>
-                  {profile.role && (
-                    <button
-                      className="h-8 w-8 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors disabled:opacity-60"
-                      onClick={() => removeRole.mutate({ user_id: profile.id })}
-                      disabled={removeRole.isPending}
-                    >
-                      ×
-                    </button>
-                  )}
+                  {/* Delete Button (Permanent) */}
+                  <button
+                    className="h-8 w-8 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors"
+                    onClick={() => setDeleteConfirmation({ isOpen: true, userId: profile.id })}
+                    title="Permanently Delete User"
+                  >
+                    <span className="sr-only">Delete</span>
+                    ×
+                  </button>
                 </div>
               </div>
             ))}
@@ -469,6 +476,20 @@ export default function Settings() {
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
         profile={selectedProfile}
+      />
+
+      <ConfirmDeleteDialog
+        isOpen={deleteConfirmation.isOpen}
+        onClose={() => setDeleteConfirmation({ isOpen: false, userId: null })}
+        onConfirm={() => {
+          if (deleteConfirmation.userId) {
+            deleteUser.mutate(deleteConfirmation.userId);
+            setDeleteConfirmation({ isOpen: false, userId: null });
+          }
+        }}
+        isDeleting={deleteUser.isPending}
+        title="Delete User Account?"
+        description="This will permanently delete the user's login access and associated profile. They will need to sign up again to access the system."
       />
     </div>
   );

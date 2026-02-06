@@ -11,7 +11,7 @@ export interface Employee {
   phone: string | null;
   department: string | null;
   position: string | null;
-  role: 'admin' | 'manager' | 'clerk' | 'sales_rep' | null;
+  role: 'admin' | 'manager' | 'clerk' | 'sales_rep' | 'delivery_agent' | null;
   basic_salary: number;
   hire_date: string | null;
   is_active: boolean;
@@ -101,15 +101,26 @@ export function usePayrollSummary() {
   });
 }
 
-export function usePayrollEntries() {
+export interface DateRange {
+  from: Date;
+  to: Date;
+}
+
+export function usePayrollEntries(dateRange?: DateRange) {
   return useQuery({
-    queryKey: ['payroll'],
+    queryKey: ['payroll', dateRange],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('payroll')
-        .select('*, employee:employees(*)')
-        .order('pay_period_end', { ascending: false })
-        .limit(25);
+        .select('*, employee:employees(*)');
+
+      if (dateRange) {
+        const fromDate = dateRange.from.toISOString();
+        const toDate = dateRange.to.toISOString();
+        query = query.gte('pay_period_end', fromDate).lte('pay_period_end', toDate);
+      }
+
+      const { data, error } = await query.order('pay_period_end', { ascending: false });
 
       if (error) throw error;
       return data as unknown as Payroll[];
@@ -219,13 +230,31 @@ export function useUpdateEmployee() {
 
   return useMutation({
     mutationFn: async (employee: Partial<Employee> & { id: string }) => {
-      const { id, ...updates } = employee;
+      const { id, user_id, role, ...updates } = employee;
+
+      // 1. Update Employee Record
       const { error } = await supabase
-        .from('employees')
-        .update({ ...updates, updated_at: new Date().toISOString() })
+        .from('employees') // @ts-ignore
+        .update({ ...updates, role: role, updated_at: new Date().toISOString() })
         .eq('id', id);
 
       if (error) throw error;
+
+      // 2. Sync Role to User Roles (if user exists)
+      if (user_id && role) {
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .upsert({
+            user_id: user_id,
+            role: role
+          }, { onConflict: 'user_id' });
+
+        if (roleError) {
+          console.error("Failed to sync role:", roleError);
+          toast.error("Employee updated, but failed to sync system role.");
+        }
+      }
+
       return employee;
     },
     onSuccess: () => {
@@ -301,11 +330,11 @@ export function useRunPayroll() {
   });
 }
 
-export function useMarkLeaveAndRole(defaultRole: 'clerk' | 'admin' | 'manager' | 'sales_rep' = 'clerk') {
+export function useMarkLeaveAndRole(defaultRole: 'clerk' | 'admin' | 'manager' | 'sales_rep' | 'delivery_agent' = 'clerk') {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ employee_id, user_id, role, reason, status }: { employee_id: string; user_id?: string | null; role?: 'clerk' | 'admin' | 'manager' | 'sales_rep'; reason?: string; status?: string }) => {
+    mutationFn: async ({ employee_id, user_id, role, reason, status }: { employee_id: string; user_id?: string | null; role?: 'clerk' | 'admin' | 'manager' | 'sales_rep' | 'delivery_agent'; reason?: string; status?: string }) => {
       const today = new Date().toISOString().split('T')[0];
 
       const { error: attendanceError } = await supabase

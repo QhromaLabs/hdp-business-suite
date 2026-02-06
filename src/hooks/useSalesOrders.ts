@@ -22,8 +22,16 @@ export interface SalesOrder {
   is_credit_sale: boolean;
   notes: string | null;
   created_at: string;
-  customer?: { name: string; phone: string };
+  customer?: { name: string; phone: string; address_name?: string; latitude?: number; longitude?: number };
+  address_name?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  delivery_agent_id?: string | null;
+  dispatched_at?: string | null;
+  delivery_accepted_at?: string | null;
+  delivery_completed_at?: string | null;
 }
+
 
 export interface SalesOrderItem {
   id: string;
@@ -67,7 +75,7 @@ export function useSalesOrders(
         .from('sales_orders')
         .select(`
           *,
-          customer:customers(name, phone)
+          customer:customers(name, phone, address_name, latitude, longitude, address)
         `, { count: 'exact' })
         .order('created_at', { ascending: false });
 
@@ -217,10 +225,12 @@ export function useCreateSalesOrder() {
       payment_method: PaymentMethod;
       is_credit_sale?: boolean;
       notes?: string;
+      globalDiscount?: number;
     }) => {
       const subtotal = order.items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
-      const discount = order.items.reduce((sum, item) => sum + (item.discount || 0), 0);
-      const { tax, total } = calculateTotals(subtotal, discount, taxEnabled);
+      const itemDiscounts = order.items.reduce((sum, item) => sum + (item.discount || 0), 0);
+      const totalDiscount = itemDiscounts + (order.globalDiscount || 0);
+      const { tax, total } = calculateTotals(subtotal, totalDiscount, taxEnabled);
 
       // 1. Validate Credit Limit (if credit sale)
       if (order.is_credit_sale && order.customer_id) {
@@ -252,7 +262,7 @@ export function useCreateSalesOrder() {
           customer_id: order.customer_id,
           status: 'pending',
           subtotal,
-          discount_amount: discount,
+          discount_amount: totalDiscount,
           tax_amount: tax,
           total_amount: total,
           payment_method: order.payment_method,
@@ -364,8 +374,27 @@ export function useUpdateSalesOrderStatus() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: OrderStatus }) => {
+    mutationFn: async ({
+      id,
+      status,
+      delivery_agent_id,
+      latitude,
+      longitude,
+      address_name
+    }: {
+      id: string;
+      status: OrderStatus;
+      delivery_agent_id?: string;
+      latitude?: number;
+      longitude?: number;
+      address_name?: string;
+    }) => {
       const updates: Record<string, any> = { status };
+      if (delivery_agent_id) updates.delivery_agent_id = delivery_agent_id;
+      if (latitude !== undefined) updates.latitude = latitude;
+      if (longitude !== undefined) updates.longitude = longitude;
+      if (address_name) updates.address_name = address_name;
+
       const now = new Date().toISOString();
       if (status === 'approved') {
         updates.approved_at = now;

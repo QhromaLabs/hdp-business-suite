@@ -13,6 +13,7 @@ import { useCustomer } from '@/hooks/useCustomers';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import { LocationPicker } from '../deliveries/LocationPicker';
 import RecordCustomerPaymentModal from './RecordCustomerPaymentModal';
 
 interface AdvancedCustomerModalProps {
@@ -24,6 +25,8 @@ interface AdvancedCustomerModalProps {
 export function AdvancedCustomerModal({ isOpen, onClose, customer }: AdvancedCustomerModalProps) {
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState('overview');
+    const [savingLocation, setSavingLocation] = useState(false);
+    const [tempLocation, setTempLocation] = useState<{ lat: number, lng: number, address: string } | null>(null);
     const { data: currentCustomer, isLoading: customerLoading } = useCustomer(customer?.id);
     const { data: history, isLoading: historyLoading } = useCustomerHistory(customer?.id);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -39,6 +42,31 @@ export function AdvancedCustomerModal({ isOpen, onClose, customer }: AdvancedCus
     const [loading, setLoading] = useState(false);
 
     if (!displayCustomer) return null;
+
+    const handleSaveLocation = async () => {
+        if (!tempLocation) return;
+        setSavingLocation(true);
+        try {
+            const { error } = await supabase
+                .from('customers')
+                .update({
+                    latitude: tempLocation.lat,
+                    longitude: tempLocation.lng,
+                    address_name: tempLocation.address
+                })
+                .eq('id', displayCustomer.id);
+
+            if (error) throw error;
+
+            toast.success("Delivery location updated successfully");
+            queryClient.invalidateQueries({ queryKey: ['customers'] });
+            queryClient.invalidateQueries({ queryKey: ['customer', displayCustomer.id] });
+        } catch (e: any) {
+            toast.error("Failed to update location: " + e.message);
+        } finally {
+            setSavingLocation(false);
+        }
+    };
 
     const handleAdjustment = async () => {
         if (!adjAmount || !adjReason) return toast.error("Please provide amount and reason");
@@ -112,8 +140,8 @@ export function AdvancedCustomerModal({ isOpen, onClose, customer }: AdvancedCus
                 </div>
 
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="flex p-2 bg-muted/20 border-b border-border gap-1 shrink-0">
-                        {['overview', 'financials', 'history'].map(tab => (
+                    <div className="flex p-2 bg-muted/20 border-b border-border gap-1 shrink-0 overflow-x-auto">
+                        {['overview', 'location', 'financials', 'history'].map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -247,11 +275,13 @@ export function AdvancedCustomerModal({ isOpen, onClose, customer }: AdvancedCus
                                             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border 
                                                 ${item.type === 'purchase' ? 'bg-orange-50 text-orange-600 border-orange-100' :
                                                     item.type === 'payment' ? 'bg-green-50 text-green-600 border-green-100' :
-                                                        'bg-gray-50 text-gray-600 border-gray-100'
+                                                        item.type === 'return' ? 'bg-purple-50 text-purple-600 border-purple-100' :
+                                                            'bg-gray-50 text-gray-600 border-gray-100'
                                                 }`}>
                                                 {item.type === 'purchase' && <CreditCard className="w-5 h-5" />}
                                                 {item.type === 'payment' && <DollarSign className="w-5 h-5" />}
                                                 {item.type === 'adjustment' && <Activity className="w-5 h-5" />}
+                                                {item.type === 'return' && <History className="w-5 h-5" />}
                                             </div>
                                             <div className="flex-1">
                                                 <div className="flex justify-between items-start">
@@ -263,9 +293,9 @@ export function AdvancedCustomerModal({ isOpen, onClose, customer }: AdvancedCus
                                                         </p>
                                                     </div>
                                                     <div className={`font-bold text-sm text-right ${item.type === 'purchase' || (item.type === 'adjustment' && item.amount > 0) ? 'text-red-500' :
-                                                        item.type === 'payment' || (item.type === 'adjustment' && item.amount < 0) ? 'text-green-600' : ''
+                                                        item.type === 'payment' || (item.type === 'adjustment' && item.amount < 0) || item.type === 'return' ? 'text-green-600' : ''
                                                         }`}>
-                                                        {item.type === 'payment' ? '-' : '+'}{Math.abs(item.amount).toLocaleString()}
+                                                        {item.type === 'payment' || item.type === 'return' ? '-' : '+'}{Math.abs(item.amount).toLocaleString()}
                                                     </div>
                                                 </div>
                                                 {item.status && (
@@ -280,6 +310,45 @@ export function AdvancedCustomerModal({ isOpen, onClose, customer }: AdvancedCus
                                         </div>
                                     ))
                                 )}
+                            </div>
+                        )}
+
+                        {/* LOCATION TAB */}
+                        {activeTab === 'location' && (
+                            <div className="space-y-6 animate-fade-in">
+                                <div className="bg-muted/30 p-5 rounded-2xl border border-border">
+                                    <h4 className="font-semibold mb-4 flex items-center gap-2">
+                                        <MapPin className="w-4 h-4 text-primary" />
+                                        Delivery Coordinates
+                                    </h4>
+                                    <p className="text-sm text-muted-foreground mb-6">
+                                        Search for the customer's area or drag the pin to their exact delivery spot. This helps delivery agents navigate precisely.
+                                    </p>
+
+                                    <LocationPicker
+                                        initialLocation={{
+                                            lat: displayCustomer.latitude || -1.286389,
+                                            lng: displayCustomer.longitude || 36.817223,
+                                            address: displayCustomer.address_name || displayCustomer.address || ''
+                                        }}
+                                        onLocationSelect={(loc) => setTempLocation(loc)}
+                                    />
+
+                                    <div className="mt-6 flex justify-end">
+                                        <button
+                                            onClick={handleSaveLocation}
+                                            disabled={savingLocation || !tempLocation}
+                                            className="px-8 py-2.5 bg-primary text-primary-foreground rounded-xl font-black shadow-lg shadow-primary/20 hover:opacity-90 disabled:opacity-50 transition-all flex items-center gap-2"
+                                        >
+                                            {savingLocation ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <CheckCircle className="w-4 h-4 text-white" />
+                                            )}
+                                            Save Delivery Spot
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>

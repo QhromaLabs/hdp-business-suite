@@ -7,7 +7,7 @@
 -- 1. ENUMS
 -- =============================================
 
-CREATE TYPE public.app_role AS ENUM ('admin', 'manager', 'clerk', 'sales_rep');
+CREATE TYPE public.app_role AS ENUM ('admin', 'manager', 'clerk', 'sales_rep', 'delivery_agent');
 CREATE TYPE public.customer_type AS ENUM ('normal', 'consignment', 'credit');
 CREATE TYPE public.order_status AS ENUM ('pending', 'approved', 'dispatched', 'delivered', 'cancelled');
 CREATE TYPE public.payment_method AS ENUM ('cash', 'bank_transfer', 'mobile_money', 'credit');
@@ -208,6 +208,7 @@ CREATE TABLE public.employees (
     position TEXT,
     basic_salary NUMERIC DEFAULT 0,
     hire_date DATE,
+    role text CONSTRAINT employees_role_check CHECK (role IN ('admin', 'manager', 'clerk', 'sales_rep', 'delivery_agent')),
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -607,6 +608,7 @@ CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING
 -- User roles
 CREATE POLICY "Users can view own role" ON public.user_roles FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Admins can view all roles" ON public.user_roles FOR SELECT USING (has_role(auth.uid(), 'admin'));
+CREATE POLICY "Managers can view all roles" ON public.user_roles FOR SELECT USING (has_role(auth.uid(), 'manager'));
 CREATE POLICY "Admins can manage roles" ON public.user_roles FOR ALL USING (has_role(auth.uid(), 'admin'));
 
 -- Product categories
@@ -749,3 +751,88 @@ After running this schema, configure the following in Supabase Dashboard:
 4. STORAGE (if needed):
    Create buckets in Storage section for file uploads
 */
+-- Function to verify delivery agent phone number for login
+CREATE OR REPLACE FUNCTION public.verify_delivery_agent_phone(_phone text)
+RETURNS TABLE (
+  id uuid,
+  full_name text,
+  phone text,
+  role public.app_role,
+  is_active boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT e.id, e.full_name, e.phone, e.role, e.is_active
+  FROM public.employees e
+  WHERE e.phone = _phone
+  AND e.is_active = true
+  AND e.role = 'delivery_agent';
+END;
+$$;
+
+-- Grant execution to accessible roles (including anon for login)
+GRANT EXECUTE ON FUNCTION public.verify_delivery_agent_phone(text) TO anon, authenticated, service_role;
+-- Add delivery_agent_id column to sales_orders table
+-- This allows tracking which employee (delivery agent) is assigned to deliver the order
+
+ALTER TABLE "public"."sales_orders" 
+ADD COLUMN "delivery_agent_id" UUID REFERENCES "public"."employees"("id") ON DELETE SET NULL;
+
+-- Add index for performance when querying orders by delivery agent
+CREATE INDEX IF NOT EXISTS "idx_sales_orders_delivery_agent" 
+ON "public"."sales_orders"("delivery_agent_id");
+
+-- Add comment documenting the column
+COMMENT ON COLUMN "public"."sales_orders"."delivery_agent_id" 
+IS 'The employee ID of the delivery agent assigned to deliver this order. References employees table.';
+-- Create RPC function to get orders assigned to a delivery agent by phone number
+-- This allows the delivery app to fetch orders for the logged-in agent
+
+CREATE OR REPLACE FUNCTION public.get_orders_by_delivery_phone(_phone text)
+RETURNS TABLE (
+  id uuid,
+  order_number text,
+  customer_id uuid,
+  status text,
+  total_amount numeric,
+  delivery_address text,
+  latitude numeric,
+  longitude numeric,
+  address_name text,
+  dispatched_at timestamptz,
+  created_at timestamptz
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT 
+    so.id,
+    so.order_number,
+    so.customer_id,
+    so.status::text,
+    so.total_amount,
+    so.delivery_address,
+    so.latitude,
+    so.longitude,
+    so.address_name,
+    so.dispatched_at,
+    so.created_at
+  FROM sales_orders so
+  INNER JOIN employees e ON so.delivery_agent_id = e.id
+  WHERE e.phone = _phone
+    AND so.status IN ('dispatched')
+  ORDER BY so.dispatched_at DESC;
+$$;
+
+-- Grant execute permissions to allow delivery app (authenticated and anon) to call this function
+GRANT EXECUTE ON FUNCTION public.get_orders_by_delivery_phone(text) TO anon, authenticated, service_role;
+
+-- Add comment documenting the function
+COMMENT ON FUNCTION public.get_orders_by_delivery_phone(text) 
+IS 'Returns orders assigned to a delivery agent by their phone number. Used by the delivery mobile app.';

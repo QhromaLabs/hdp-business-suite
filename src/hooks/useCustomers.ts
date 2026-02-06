@@ -12,6 +12,9 @@ export interface Customer {
   email: string | null;
   phone: string | null;
   address: string | null;
+  address_name: string | null;
+  latitude: number | null;
+  longitude: number | null;
   customer_type: CustomerType;
   credit_limit: number;
   credit_balance: number;
@@ -60,7 +63,17 @@ export function useCreateCustomer() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (customer: { name: string; email?: string; phone?: string; address?: string; customer_type: CustomerType; credit_limit?: number }) => {
+    mutationFn: async (customer: {
+      name: string;
+      email?: string;
+      phone?: string;
+      address?: string;
+      address_name?: string;
+      latitude?: number;
+      longitude?: number;
+      customer_type: CustomerType;
+      credit_limit?: number
+    }) => {
       const { data, error } = await supabase
         .from('customers')
         .insert([{
@@ -68,6 +81,9 @@ export function useCreateCustomer() {
           email: customer.email,
           phone: customer.phone,
           address: customer.address,
+          address_name: customer.address_name,
+          latitude: customer.latitude,
+          longitude: customer.longitude,
           customer_type: customer.customer_type,
           credit_limit: customer.credit_limit || 0,
         }])
@@ -91,7 +107,18 @@ export function useUpdateCustomer() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (customer: { id: string; name: string; email?: string; phone?: string; address?: string; customer_type: CustomerType; credit_limit?: number }) => {
+    mutationFn: async (customer: {
+      id: string;
+      name: string;
+      email?: string;
+      phone?: string;
+      address?: string;
+      address_name?: string;
+      latitude?: number;
+      longitude?: number;
+      customer_type: CustomerType;
+      credit_limit?: number
+    }) => {
       const { data, error } = await supabase
         .from('customers')
         .update({
@@ -99,6 +126,9 @@ export function useUpdateCustomer() {
           email: customer.email,
           phone: customer.phone,
           address: customer.address,
+          address_name: customer.address_name,
+          latitude: customer.latitude,
+          longitude: customer.longitude,
           customer_type: customer.customer_type,
           credit_limit: customer.credit_limit || 0,
         })
@@ -111,6 +141,7 @@ export function useUpdateCustomer() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['active_deliveries'] });
       toast.success('Customer updated successfully');
     },
     onError: (error) => {

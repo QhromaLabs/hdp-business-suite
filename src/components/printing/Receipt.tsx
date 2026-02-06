@@ -39,10 +39,11 @@ export const ReceiptContent = ({ order, items, settings }: ReceiptProps) => {
             color: 'black',
             backgroundColor: 'white',
         }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginBottom: '15px', gap: '5px' }}>
+                <img src="/brand/logo.png" alt="Logo" style={{ width: '75mm', height: 'auto' }} />
+                <span style={{ fontSize: '10px', fontWeight: 'bold' }}>{settings?.storeName || 'HDP(K) LTD'}</span>
+            </div>
             <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-                <h2 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 5px 0' }}>
-                    {settings?.storeName || 'HDPK K LTD'}
-                </h2>
                 <p style={{ margin: '2px 0', fontSize: '10px' }}>
                     {settings?.storeAddress || 'P.O BOX 45678-00200 NAIROBI'}
                 </p>
@@ -95,19 +96,23 @@ export const ReceiptContent = ({ order, items, settings }: ReceiptProps) => {
                 <span>{formatCurrency(subtotal)}</span>
             </div>
 
-            {settings?.taxEnabled && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '10px' }}>
-                    <span>VAT:</span>
-                    <span>{formatCurrency(taxAmount)}</span>
-                </div>
-            )}
+            {
+                settings?.taxEnabled && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '10px' }}>
+                        <span>VAT:</span>
+                        <span>{formatCurrency(taxAmount)}</span>
+                    </div>
+                )
+            }
 
-            {Number(order.discount_amount) > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '10px' }}>
-                    <span>Discount:</span>
-                    <span>-{formatCurrency(Number(order.discount_amount))}</span>
-                </div>
-            )}
+            {
+                Number(order.discount_amount) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '10px' }}>
+                        <span>Discount:</span>
+                        <span>-{formatCurrency(Number(order.discount_amount))}</span>
+                    </div>
+                )
+            }
 
             <div style={{
                 display: 'flex',
@@ -127,6 +132,6 @@ export const ReceiptContent = ({ order, items, settings }: ReceiptProps) => {
                 <p style={{ margin: '5px 0' }}>Thank you for shopping with us!</p>
                 <p style={{ margin: '2px 0' }}>Powered by Qraft</p>
             </div>
-        </div>
+        </div >
     );
 };
