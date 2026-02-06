@@ -27,6 +27,7 @@ import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Profile from "./pages/Profile";
+import Changelog from "./pages/Changelog";
 
 import Orders from "./pages/Orders";
 import Commissions from "./pages/Commissions";
@@ -84,6 +85,7 @@ function AppRoutes() {
       />
       <Route path="/device-id" element={<DeviceId />} />
       <Route path="/my-ip" element={<MyIp />} />
+      <Route path="/changelog06/02/26" element={<Changelog />} />
       <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
       <Route
         path="/"
