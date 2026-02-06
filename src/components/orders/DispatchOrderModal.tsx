@@ -128,6 +128,14 @@ export function DispatchOrderModal({ isOpen, onClose, order }: DispatchOrderModa
                             onLocationSelect={(loc) => setLocation(loc)}
                         />
                     </div>
+
+                    {/* Order Notes Display */}
+                    {order.notes && (
+                        <div className="p-3 rounded-xl bg-orange-50/50 border border-orange-100/50">
+                            <label className="text-xs font-black text-orange-600/80 uppercase mb-1 block">Customer / Order Notes</label>
+                            <p className="text-sm font-medium text-foreground italic">"{order.notes}"</p>
+                        </div>
+                    )}
                 </div>
 
                 <DialogFooter className="gap-2 sm:gap-0">

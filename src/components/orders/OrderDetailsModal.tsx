@@ -364,6 +364,16 @@ export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
                         </div>
                     </div>
 
+                    {order.notes && (
+                        <div className="p-4 rounded-2xl bg-orange-50/50 border border-orange-100">
+                            <p className="text-[10px] font-black uppercase text-orange-600 tracking-widest mb-2 flex items-center gap-2">
+                                <FileText className="w-3 h-3" />
+                                Instructions / Notes
+                            </p>
+                            <p className="text-sm font-medium text-foreground italic">"{order.notes}"</p>
+                        </div>
+                    )}
+
                     <div>
                         <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-4">Items Summary</p>
                         <div className="rounded-2xl border border-border/50 overflow-hidden bg-muted/10">

@@ -4,9 +4,11 @@ import 'package:hdp_k_sales/main.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hdp_k_sales/pages/customer_details_page.dart';
 
 class CRMPage extends StatefulWidget {
-  const CRMPage({super.key});
+  final Function(int)? onTabChange;
+  const CRMPage({super.key, this.onTabChange});
 
   @override
   State<CRMPage> createState() => _CRMPageState();
@@ -257,10 +259,23 @@ class _CRMPageState extends State<CRMPage> {
                           final dist = c['distance'] as double?;
 
                           return Card(
+                            color: Colors.white,
+                            elevation: 0,
                             margin: const EdgeInsets.only(bottom: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(color: Colors.grey[200]!),
+                            ),
                             child: InkWell(
-                              onTap: () => _showFeedbackModal(c),
+                              onTap: () {
+                                Navigator.push(
+                                  context, 
+                                  MaterialPageRoute(builder: (_) => CustomerDetailsPage(
+                                    customer: c,
+                                    onTabChange: widget.onTabChange,
+                                  ))
+                                );
+                              },
                               borderRadius: BorderRadius.circular(16),
                               child: Padding(
                                 padding: const EdgeInsets.all(16),
@@ -284,21 +299,39 @@ class _CRMPageState extends State<CRMPage> {
                                     const SizedBox(height: 4),
                                     Text(c['phone'] ?? 'No phone', style: GoogleFonts.inter(color: Colors.grey, fontSize: 13)),
                                     const SizedBox(height: 12),
+                                    const SizedBox(height: 12),
                                     Row(
                                       children: [
-                                        if (balance > 0)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(8)),
-                                            child: Text('Balance: ${NumberFormat.simpleCurrency(name: 'KES ').format(balance)}', style: GoogleFonts.inter(fontSize: 12, color: Colors.red[700], fontWeight: FontWeight.bold)),
+                                        // Removed Balance Display as per request
+                                        // Added prominent location indicator if available
+                                        if (c['address'] != null || dist != null)
+                                          Expanded(
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    c['address'] ?? (dist != null ? '${(dist / 1000).toStringAsFixed(1)} km away' : 'Location available'),
+                                                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                                                      style: GoogleFonts.inter(fontSize: 13, color: Colors.grey[700]),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                        const Spacer(),
-                                        TextButton.icon(
-                                          onPressed: () => _showFeedbackModal(c),
-                                          icon: const Icon(Icons.edit_note, size: 18),
-                                          label: const Text('Log Visit'),
-                                          style: TextButton.styleFrom(foregroundColor: const Color(0xFFFF6600)),
-                                        ),
+                                        
+                                        if (c['address'] == null && dist == null)
+                                           Text("No location info", style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[400])),
+
+                                        if (c['address'] != null || dist != null) // Only spacer if we have content on left
+                                          const SizedBox(width: 8),
+
+                                        // Keep "Log Visit" as a quick action or remove if it is in details? 
+                                        // User said "opens the customer info... below is log history".
+                                        // The action can be inside.
+                                        // Let's keep a chevron to indicate navigation.
+                                        const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
                                       ],
                                     ),
                                   ],
@@ -310,6 +343,15 @@ class _CRMPageState extends State<CRMPage> {
                       ),
           ),
         ],
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          widget.onTabChange?.call(1); // POS Tab
+        },
+        backgroundColor: const Color(0xFFFF6600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+        child: const Icon(Icons.add, color: Colors.white, size: 28),
       ),
     );
   }

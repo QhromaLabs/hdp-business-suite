@@ -52,7 +52,14 @@ class _WalletPageState extends State<WalletPage> {
           .from('employees')
           .select('id')
           .eq('user_id', user?.id ?? '')
-          .single();
+          .maybeSingle(); // Changed from single() to maybeSingle()
+      
+      if (employeeRes == null) {
+          if (mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile not linked. Please contact admin.')));
+          }
+          return;
+      }
       
       final employeeId = employeeRes['id'];
 
@@ -60,7 +67,6 @@ class _WalletPageState extends State<WalletPage> {
       final commissionsRes = await supabase
           .from('sales_commissions')
           .select('amount, created_at, order_id, status')
-          .eq('sales_agent_id', employeeId)
           .order('created_at', ascending: false);
       
       // 2. Fetch Withdrawals (Debits)

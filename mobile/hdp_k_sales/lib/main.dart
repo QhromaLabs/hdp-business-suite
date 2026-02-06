@@ -7,6 +7,9 @@ import 'package:hdp_k_sales/pages/pos_page.dart';
 import 'package:hdp_k_sales/pages/signup_page.dart';
 import 'package:hdp_k_sales/pages/crm_page.dart';
 import 'package:hdp_k_sales/pages/wallet_page.dart';
+import 'package:hdp_k_sales/pages/analytics_page.dart';
+import 'package:hdp_k_sales/pages/settings_page.dart';
+import 'package:hdp_k_sales/pages/main_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,15 +42,16 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Roboto', // Default, we can use Google Fonts later
       ),
-      initialRoute: '/',
+      home: const MainScreen(),
       routes: {
-        '/': (context) => const SplashPage(),
         '/login': (context) => const LoginPage(),
-        '/home': (context) => const HomePage(),
+        '/home': (context) => const MainScreen(), // Redirects to MainScreen now
         '/pos': (context) => const POSPage(),
         '/signup': (context) => const SignUpPage(),
         '/crm': (context) => const CRMPage(),
         '/wallet': (context) => const WalletPage(),
+        '/analytics': (context) => const AnalyticsPage(),
+        '/settings': (context) => const SettingsPage(),
       },
     );
   }

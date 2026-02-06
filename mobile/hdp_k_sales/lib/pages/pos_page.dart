@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:hdp_k_sales/main.dart';
+import 'package:hdp_k_sales/main.dart'; // for supabase client
+import 'package:hdp_k_sales/services/ping_service.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class POSPage extends StatefulWidget {
-  const POSPage({super.key});
+  final Function(int)? onTabChange;
+  
+  const POSPage({super.key, this.onTabChange});
 
   @override
   State<POSPage> createState() => _POSPageState();
@@ -26,6 +29,11 @@ class _POSPageState extends State<POSPage> {
   String? _selectedCategoryId;
   Map<String, dynamic>? _selectedCustomer;
   String _paymentMethod = 'cash';
+  final TextEditingController _discountController = TextEditingController();
+  final TextEditingController _orderNotesController = TextEditingController();
+  double _discountAmount = 0.0;
+  String? _employeeId;
+  String? _employeeName;
 
   // Cart: Key: variant_id, Value: quantity
   final Map<String, int> cart = {}; 
@@ -61,6 +69,20 @@ class _POSPageState extends State<POSPage> {
           .select('id, name, phone, customer_type, credit_balance, credit_limit')
           .eq('is_active', true)
           .order('name');
+          
+      // 4. Fetch Employee ID
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final empRes = await supabase
+           .from('employees')
+           .select('id, full_name')
+           .eq('user_id', user.id)
+           .maybeSingle();
+        if (empRes != null) {
+          _employeeId = empRes['id'];
+          _employeeName = empRes['full_name'];
+        }
+      }
 
       if (mounted) {
         setState(() {
@@ -324,6 +346,59 @@ class _POSPageState extends State<POSPage> {
               const Divider(),
               const SizedBox(height: 16),
 
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Subtotal', style: GoogleFonts.inter(fontSize: 14, color: Colors.grey[600])),
+                  Text(currencyFormat.format(_total), style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              
+              // Discount Input
+              Row(
+                children: [
+                   Expanded(
+                     child: TextField(
+                       controller: _discountController,
+                       keyboardType: TextInputType.number,
+                       decoration: InputDecoration(
+                         labelText: 'Discount Amount',
+                         isDense: true,
+                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                         prefixText: 'KES ',
+                       ),
+                       onChanged: (val) {
+                         setSheetState(() {
+                           _discountAmount = double.tryParse(val) ?? 0.0;
+                         });
+                       },
+                     ),
+                   ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              
+              const Divider(),
+              const SizedBox(height: 16),
+
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // Order Notes
+              TextField(
+                controller: _orderNotesController,
+                decoration: InputDecoration(
+                  labelText: 'Order Notes / Instructions',
+                  alignLabelWithHint: true,
+                  isDense: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: const Icon(Icons.note_alt_outlined, size: 18),
+                ),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 16),
+
               // Payment Method
               Text('Payment Method', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
@@ -334,7 +409,7 @@ class _POSPageState extends State<POSPage> {
                   _paymentChip('Cash', 'cash', setSheetState),
                   _paymentChip('M-Pesa', 'till', setSheetState),
                   _paymentChip('Bank', 'nat', setSheetState),
-                  _paymentChip('Credit', 'credit', setSheetState),
+                  _paymentChip('Credit', 'credit', setSheetState, enabled: _selectedCustomer != null),
                 ],
               ),
               const SizedBox(height: 24),
@@ -344,7 +419,14 @@ class _POSPageState extends State<POSPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Total Amount', style: GoogleFonts.inter(fontSize: 16, color: Colors.grey[600])),
-                  Text(currencyFormat.format(_total), style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: const Color(0xFFFF6600))),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (_discountAmount > 0)
+                        Text(currencyFormat.format(_total), style: GoogleFonts.inter(fontSize: 14, decoration: TextDecoration.lineThrough, color: Colors.grey)),
+                      Text(currencyFormat.format(_totalAfterDiscount), style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: const Color(0xFFFF6600))),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 24),
@@ -352,9 +434,10 @@ class _POSPageState extends State<POSPage> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isCheckingOut || _selectedCustomer == null ? null : () async {
-                    Navigator.pop(ctx); // Close sheet
+                  onPressed: _isCheckingOut || (_paymentMethod == 'credit' && _selectedCustomer == null) ? null : () async {
+                    // Navigator.pop(ctx); // Don't close immediately, let process handle it
                     await _processCheckout();
+                    Navigator.pop(ctx); // Close sheet on success or failure handled
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
@@ -362,7 +445,7 @@ class _POSPageState extends State<POSPage> {
                     padding: const EdgeInsets.symmetric(vertical: 20),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  child: Text(_selectedCustomer == null ? 'Select Customer First' : 'CONFIRM SALE', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: Text(_paymentMethod == 'credit' && _selectedCustomer == null ? 'Select Customer for Credit' : 'CONFIRM SALE', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -372,29 +455,36 @@ class _POSPageState extends State<POSPage> {
     );
   }
 
-  Widget _paymentChip(String label, String value, StateSetter setSheetState) {
+  double get _totalAfterDiscount => (_total - _discountAmount).clamp(0.0, double.infinity);
+
+  Widget _paymentChip(String label, String value, StateSetter setSheetState, {bool enabled = true}) {
     final isSelected = _paymentMethod == value;
     return ChoiceChip(
       label: Text(label),
       selected: isSelected,
-      onSelected: (sel) => setSheetState(() => _paymentMethod = value),
+      onSelected: enabled ? (sel) => setSheetState(() => _paymentMethod = value) : null,
       selectedColor: const Color(0xFFFF6600).withOpacity(0.1),
-      labelStyle: GoogleFonts.inter(color: isSelected ? const Color(0xFFFF6600) : Colors.black, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
+      labelStyle: GoogleFonts.inter(color: isSelected ? const Color(0xFFFF6600) : (enabled ? Colors.black : Colors.grey), fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
       side: BorderSide(color: isSelected ? const Color(0xFFFF6600) : Colors.grey[300]!),
       backgroundColor: Colors.transparent,
+      disabledColor: Colors.grey[100],
     );
   }
+
 
   Future<void> _processCheckout() async {
     if (cart.isEmpty) return;
     setState(() => _isCheckingOut = true);
 
+    User? user;
+    Position? position;
+
     try {
-      final user = supabase.auth.currentUser;
+      user = supabase.auth.currentUser;
       if (user == null) throw 'User not logged in';
+      if (_employeeId == null) throw 'Employee profile not found. Contact Admin.';
       
       // Get Location
-      Position? position;
       try {
         LocationPermission permission = await Geolocator.checkPermission();
         if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
@@ -403,23 +493,44 @@ class _POSPageState extends State<POSPage> {
         }
       } catch (e) { print("Loc Error: $e"); }
 
-      // Create Order
+      // Validate Credit Limit
+      if (_paymentMethod == 'credit') {
+        if (_selectedCustomer == null) throw 'Customer required for credit sale';
+        if (_selectedCustomer!['customer_type'] != 'credit') throw 'Customer not approved for credit';
+        
+        final currentBalance = (_selectedCustomer!['credit_balance'] as num? ?? 0).toDouble();
+        final creditLimit = (_selectedCustomer!['credit_limit'] as num? ?? 0).toDouble();
+        
+        if (currentBalance + _totalAfterDiscount > creditLimit) {
+           throw 'Credit limit exceeded. Available: ${currencyFormat.format(creditLimit - currentBalance)}';
+        }
+      }
+
       final orderRes = await supabase.from('sales_orders').insert({
         'created_by': user.id,
+        'sales_agent_id': _employeeId, // Required for commission trigger
         'customer_id': _selectedCustomer?['id'],
         'status': 'pending',
         'payment_method': _paymentMethod,
-        'is_credit_sale': false,
+        'is_credit_sale': _paymentMethod == 'credit',
         'delivery_format': 'POS',
         'subtotal': _total,
+        'discount_amount': _discountAmount,
         'tax_amount': 0,
-        'total_amount': _total,
-        'notes': 'Mobile App Sale',
+        'total_amount': _totalAfterDiscount,
+        'notes': _orderNotesController.text.isEmpty ? null : _orderNotesController.text,
         'latitude': position?.latitude,
         'longitude': position?.longitude,
       }).select().single();
 
       final orderId = orderRes['id'];
+
+      // Verify Location
+      PingService.verifyAndLog(
+        recordType: 'order',
+        recordId: orderId,
+        userId: user.id,
+      );
 
       // Create Items
       final List<Map<String, dynamic>> orderItems = [];
@@ -431,37 +542,62 @@ class _POSPageState extends State<POSPage> {
           'variant_id': variantId,
           'quantity': qty,
           'unit_price': price,
-          'total_price': price * qty,
+          'total_price': price * qty, // We should probably store discount per item if applicable, but global discount is simpler
         });
       });
 
       await supabase.from('sales_order_items').insert(orderItems);
 
       if (mounted) {
-        // Success Dialog
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
-            title: Text('Sale Successful!', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-            content: Text('Order has been recorded.\nTotal: ${currencyFormat.format(_total)}', textAlign: TextAlign.center, style: GoogleFonts.inter()),
-            actions: [
-              TextButton(child: const Text('New Sale'), onPressed: () {
-                setState(() {
-                  cart.clear();
-                  _selectedCustomer = null;
-                });
-                Navigator.pop(ctx);
-              })
-            ],
-          ),
+        // Close Checkout Sheet if open (it is open as a modal)
+        // We are in _processCheckout which is called from the sheet.
+        // We need to close the sheet first.
+        Navigator.of(context).pop(); // Close Checkout Sheet
+        
+        // Show Success Snack
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sale Recorded: ${currencyFormat.format(_totalAfterDiscount)}', style: GoogleFonts.inter()),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          )
         );
+
+        // Reset and Go Home
+        _resetState();
+        widget.onTabChange?.call(0);
       }
     } catch (e) {
-       if (mounted) _showSnack('Checkout failed: $e', Colors.red);
+      if (mounted) {
+        _showErrorDialog('Checkout failed: $e'); 
+      }
     } finally {
       if (mounted) setState(() => _isCheckingOut = false);
     }
+  }
+
+  void _showErrorDialog(String msg) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(msg),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))
+        ],
+      ),
+    );
+  }
+
+  void _resetState() {
+     setState(() {
+        cart.clear();
+        _selectedCustomer = null;
+        _paymentMethod = 'cash';
+        _discountAmount = 0.0;
+        _discountController.clear();
+        _orderNotesController.clear();
+     });
   }
 
   void _showSnack(String msg, Color color) {
@@ -510,10 +646,23 @@ class _POSPageState extends State<POSPage> {
                     children: [
                        IconButton(
                          icon: const Icon(Icons.arrow_back), 
-                         onPressed: () => Navigator.of(context).pop(),
+                         onPressed: () {
+                           if (widget.onTabChange != null) {
+                             widget.onTabChange!(0); // Go to Home Tab
+                           } else {
+                             Navigator.of(context).pop(); // Back if pushed as route
+                           }
+                         },
                        ),
                        const SizedBox(width: 8),
-                       Text('Smart POS', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold)),
+                       Column(
+                         crossAxisAlignment: CrossAxisAlignment.start,
+                         children: [
+                           Text('Smart POS', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold)),
+                           if (_employeeName != null) 
+                             Text('Agent: $_employeeName', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600])),
+                         ],
+                       ),
                        const Spacer(),
                        IconButton(icon: const Icon(Icons.sync), onPressed: _fetchData, tooltip: 'Refresh Data'),
                     ],
@@ -679,7 +828,7 @@ class _POSPageState extends State<POSPage> {
             // --- Bottom Bar ---
             if (cart.isNotEmpty)
               Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 90), // Added bottom padding to clear floating nav
                 decoration: const BoxDecoration(
                   color: Colors.white,
                   boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, -5))],

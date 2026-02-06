@@ -6,7 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final Function(int)? onTabChange;
+  
+  const HomePage({super.key, this.onTabChange});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -87,14 +89,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   Future<void> _fetchRecentSales() async {
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day).toIso8601String();
+
     final response = await supabase
         .from('sales_orders')
-        .select('*, customers(full_name)')
+        .select('*, customers(name)')
         .eq('created_by', user?.id ?? '')
-        .order('created_at', ascending: false)
-        .limit(5);
+        .gte('created_at', startOfDay)
+        .order('created_at', ascending: false);
     
-    _recentSales = response;
+    if (mounted) {
+      setState(() {
+        _recentSales = response;
+      });
+    }
   }
 
   @override
@@ -122,6 +131,37 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
       callback: (payload) {
         _handleAdminRequest(payload.newRecord);
+      },
+    ).subscribe();
+
+    // Listen for sales target updates
+    supabase.channel('public:sales_targets').onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'sales_targets',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'user_id',
+        value: user?.id ?? '',
+      ),
+      callback: (payload) {
+        _fetchSalesTargets();
+      },
+    ).subscribe();
+
+    // Listen for new sales orders
+    supabase.channel('public:sales_orders').onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'sales_orders',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'created_by',
+        value: user?.id ?? '',
+      ),
+      callback: (payload) {
+        _fetchRecentSales();
+        _fetchSalesTargets();
       },
     ).subscribe();
   }
@@ -201,6 +241,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           style: GoogleFonts.inter(color: Colors.black, fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
+            icon: const Icon(Icons.settings, color: Colors.black),
+            onPressed: () => Navigator.of(context).pushNamed('/settings').then((_) => _refreshData()),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh, color: Colors.black),
             onPressed: _refreshData,
           ),
@@ -225,17 +269,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   _buildQuickActions(),
                   const SizedBox(height: 24),
                   _buildRecentSalesHeader(),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   _buildRecentSalesList(currencyFormat),
-                ],
+                  const SizedBox(height: 100), // Bottom spacer for nav
+        ],
               ),
             ),
           ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).pushNamed('/pos'),
-        backgroundColor: Colors.black,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: Text("NEW SALE", style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          widget.onTabChange?.call(1); // Navigate to POS tab
+        },
+        backgroundColor: const Color(0xFFFF6600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+        child: const Icon(Icons.add, color: Colors.white, size: 28),
       ),
     );
   }
@@ -318,9 +366,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       children: [
         _buildActionItem(Icons.location_on, "Sync Loc", _isPinging ? null : () => _pingLocation(), _isPinging),
         const SizedBox(width: 12),
-        _buildActionItem(Icons.people, "Customers", () {}, false), // To be implemented
+        _buildActionItem(Icons.people, "Customers", () => widget.onTabChange?.call(3), false),
         const SizedBox(width: 12),
-        _buildActionItem(Icons.insights, "Analytics", () {}, false),
+        _buildActionItem(Icons.insights, "Analytics", () => widget.onTabChange?.call(2), false),
       ],
     );
   }
@@ -391,7 +439,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       separatorBuilder: (context, index) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final sale = _recentSales[index];
-        final customerName = sale['customers']?['full_name'] ?? 'Walk-in Customer';
+        final customerName = sale['customers']?['name'] ?? 'Walk-in Customer';
         final amount = (sale['total_amount'] as num).toDouble();
         final date = DateTime.parse(sale['created_at']);
         

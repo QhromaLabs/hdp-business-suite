@@ -374,6 +374,12 @@ export default function Deliveries() {
                                             <Navigation className="w-3.5 h-3.5 text-info/60" />
                                             <span className="font-bold text-info">Agent: {delivery.delivery_agent?.full_name || 'Unassigned'}</span>
                                         </div>
+                                        {delivery.notes && (
+                                            <div className="flex items-center gap-2 text-xs text-orange-600 font-medium border-t border-border/30 pt-2 mt-2 bg-orange-50/50 p-2 rounded-lg">
+                                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                                <span className="truncate italic">"{delivery.notes}"</span>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {selectedDeliveryId === delivery.id && (

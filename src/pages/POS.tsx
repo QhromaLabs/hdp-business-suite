@@ -110,6 +110,7 @@ export default function POS() {
   }>({ variantId: '', quantity: 1 });
   const [showNoCustomerAlert, setShowNoCustomerAlert] = useState(false);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
 
   const createOrder = useCreateSalesOrder();
   const createReturn = useCreateProductReturn(); // Initialize hook
@@ -236,7 +237,9 @@ export default function POS() {
   const clearCart = () => {
     setCart([]);
     setSelectedCustomer(null);
+    setSelectedCustomer(null);
     setGlobalDiscount(0);
+    setOrderNotes('');
   };
 
   const openVariantChooser = (item: any) => {
@@ -305,7 +308,10 @@ export default function POS() {
         })),
         payment_method: selectedPayment,
         is_credit_sale: selectedPayment === 'credit',
+        payment_method: selectedPayment,
+        is_credit_sale: selectedPayment === 'credit',
         globalDiscount: globalDiscount,
+        notes: orderNotes,
       });
       clearCart();
       setShowPaymentModal(false);
@@ -1089,6 +1095,16 @@ export default function POS() {
                     Customer: {selectedCustomer.name}
                   </p>
                 )}
+
+                <div className="mt-4 text-left space-y-2">
+                  <Label className="text-xs font-bold text-muted-foreground uppercase">Order Instructions / Notes</Label>
+                  <Textarea
+                    placeholder="Add delivery instructions or sale notes..."
+                    value={orderNotes}
+                    onChange={(e) => setOrderNotes(e.target.value)}
+                    className="bg-muted/30 min-h-[80px]"
+                  />
+                </div>
               </div>
               <div className="p-4 border-t border-border flex gap-3">
                 <button
