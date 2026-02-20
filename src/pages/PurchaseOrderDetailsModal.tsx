@@ -236,19 +236,44 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
                 const totalItemCost = item.subtotal + allocatedCost;
                 const newUnitCost = item.quantity > 0 ? totalItemCost / item.quantity : 0;
 
-                // A. Insert into Inventory
-                const { error: invError } = await supabase.from('inventory').insert([{
-                    variant_id: item.variant_id,
-                    quantity: item.quantity,
-                    transaction_type: 'purchase',
-                    notes: `Recv PO #${order.order_number} (Landed Cost: ${newUnitCost.toFixed(2)})`
-                }]);
+                // A. Update Inventory (Upsert pattern to increment quantity)
+                const { data: currentInv } = await supabase
+                    .from('inventory')
+                    .select('quantity')
+                    .eq('variant_id', item.variant_id)
+                    .maybeSingle();
+
+                const currentQty = currentInv?.quantity || 0;
+                const newQty = currentQty + item.quantity;
+
+                const { error: invError } = await supabase
+                    .from('inventory')
+                    .upsert({
+                        variant_id: item.variant_id,
+                        quantity: newQty,
+                        last_stock_date: new Date().toISOString()
+                    }, { onConflict: 'variant_id' });
+
                 if (invError) throw invError;
 
-                // B. Update Product Cost Price (New Weighted Average or Replacement?)
-                // Requirement implies "value of stocks = value I bought it...".
-                // Usually this updates the CURRENT cost price for future sales margin calc.
-                // We will update it to the New Landed Unit Cost.
+                // B. Create Inventory Transaction Log
+                const { error: transError } = await supabase
+                    .from('inventory_transactions')
+                    .insert([{
+                        variant_id: item.variant_id,
+                        transaction_type: 'purchase_recv',
+                        quantity_change: item.quantity,
+                        previous_quantity: currentQty,
+                        new_quantity: newQty,
+                        reference_type: 'purchase_order',
+                        reference_id: order.id,
+                        notes: `Recv PO #${order.order_number} (Landed Cost: ${newUnitCost.toFixed(2)})`,
+                        created_by: (await supabase.auth.getUser()).data.user?.id
+                    }]);
+
+                if (transError) throw transError;
+
+                // C. Update Product Cost Price
                 const { error: varError } = await supabase
                     .from('product_variants')
                     .update({ cost_price: newUnitCost })

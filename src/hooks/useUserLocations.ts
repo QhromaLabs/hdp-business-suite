@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 export interface UserLocation {
     id: string;
@@ -107,5 +108,33 @@ export const useRequestLocation = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['locationRequests'] });
         },
+    });
+};
+
+export const useSaveLocation = () => {
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ latitude, longitude }: { latitude: number; longitude: number }) => {
+            if (!user) throw new Error('User not authenticated');
+
+            const { error } = await supabase
+                .from('user_locations')
+                .insert({
+                    user_id: user.id,
+                    latitude,
+                    longitude,
+                    timestamp: new Date().toISOString()
+                });
+
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['userLocations'] });
+        },
+        onError: (error) => {
+            console.error('Error saving location:', error);
+        }
     });
 };

@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import DutyTracker from './DutyTracker';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +35,7 @@ export default function MainLayout() {
       )}>
         <Header title={title} />
         <main className="flex-1 p-6">
+          <DutyTracker />
           <Outlet />
         </main>
       </div>

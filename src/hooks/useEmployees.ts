@@ -59,7 +59,8 @@ export function useEmployees() {
   });
 }
 export function useAttendanceToday() {
-  const today = new Date().toISOString().split('T')[0];
+  // Use local date (YYYY-MM-DD) to match mobile app behavior
+  const today = new Date().toLocaleDateString('en-CA');
 
   return useQuery({
     queryKey: ['attendance', today],
@@ -74,6 +75,129 @@ export function useAttendanceToday() {
 
       if (error) throw error;
       return data as unknown as Attendance[];
+    },
+  });
+}
+
+export function useEmployeeAttendance(employeeId: string | undefined) {
+  return useQuery({
+    queryKey: ['attendance', 'history', employeeId],
+    enabled: !!employeeId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employee_id', employeeId!)
+        .order('date', { ascending: false })
+        .limit(30);
+
+      if (error) throw error;
+      return data as Attendance[];
+    },
+  });
+}
+
+export function useCurrentEmployee() {
+  return useQuery({
+    queryKey: ['current_employee'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data as Employee | null;
+    },
+  });
+}
+
+export function useMyAttendanceToday() {
+  const { data: employee } = useCurrentEmployee();
+  const today = new Date().toLocaleDateString('en-CA');
+
+  return useQuery({
+    queryKey: ['my_attendance', today, employee?.id],
+    enabled: !!employee?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employee_id', employee!.id)
+        .eq('date', today)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data as Attendance | null;
+    },
+  });
+}
+
+export function useClockIn() {
+  const queryClient = useQueryClient();
+  const { data: employee } = useCurrentEmployee();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!employee) throw new Error('Employee record not found');
+
+      const today = new Date().toISOString().split('T')[0];
+      const now = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('attendance')
+        .upsert({
+          employee_id: employee.id,
+          date: today,
+          check_in: now,
+          status: 'present',
+        }, { onConflict: 'employee_id,date' });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      const today = new Date().toISOString().split('T')[0];
+      queryClient.invalidateQueries({ queryKey: ['my_attendance', today] });
+      toast.success('Successfully clocked in');
+    },
+    onError: (error) => {
+      toast.error('Failed to clock in: ' + error.message);
+    },
+  });
+}
+
+export function useClockOut() {
+  const queryClient = useQueryClient();
+  const { data: employee } = useCurrentEmployee();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!employee) throw new Error('Employee record not found');
+
+      const today = new Date().toISOString().split('T')[0];
+      const now = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('attendance')
+        .update({
+          check_out: now,
+        })
+        .eq('employee_id', employee.id)
+        .eq('date', today);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      const today = new Date().toISOString().split('T')[0];
+      queryClient.invalidateQueries({ queryKey: ['my_attendance', today] });
+      toast.success('Successfully clocked out');
+    },
+    onError: (error) => {
+      toast.error('Failed to clock out: ' + error.message);
     },
   });
 }
@@ -364,6 +488,38 @@ export function useMarkLeaveAndRole(defaultRole: 'clerk' | 'admin' | 'manager' |
       queryClient.invalidateQueries({ queryKey: ['attendance', new Date().toISOString().split('T')[0]] });
       queryClient.invalidateQueries({ queryKey: ['employees'] });
       toast.success('Status and role updated');
+    },
+    onError: (error) => {
+      toast.error('Failed to update status: ' + error.message);
+    },
+  });
+}
+export function useUpdateAttendanceStatus() {
+  const queryClient = useQueryClient();
+  const { data: employee } = useCurrentEmployee();
+
+  return useMutation({
+    mutationFn: async ({ status, notes }: { status: string; notes?: string }) => {
+      if (!employee) throw new Error('Employee record not found');
+
+      const today = new Date().toISOString().split('T')[0];
+
+      const { error } = await supabase
+        .from('attendance')
+        .upsert({
+          employee_id: employee.id,
+          date: today,
+          status,
+          notes: notes || `Status updated to ${status}`,
+        }, { onConflict: 'employee_id,date' });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      const today = new Date().toISOString().split('T')[0];
+      queryClient.invalidateQueries({ queryKey: ['my_attendance', today] });
+      queryClient.invalidateQueries({ queryKey: ['attendance', today] });
+      toast.success('Attendance status updated');
     },
     onError: (error) => {
       toast.error('Failed to update status: ' + error.message);

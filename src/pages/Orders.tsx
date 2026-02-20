@@ -31,6 +31,7 @@ import {
     Activity,
     CheckCircle2,
     Undo2,
+    Copy,
 } from 'lucide-react';
 import { useDeliveryAgents } from '@/hooks/useDeliveryAgents';
 import { LocationPicker } from '@/components/deliveries/LocationPicker';
@@ -314,6 +315,9 @@ export default function Orders() {
                                 <th className="px-6 py-4 text-[10px] font-black uppercase text-muted-foreground tracking-widest text-center">
                                     {isReturning ? 'Reason' : 'Status'}
                                 </th>
+                                {!isReturning && (
+                                    <th className="px-6 py-4 text-[10px] font-black uppercase text-muted-foreground tracking-widest text-center">Delivery Code</th>
+                                )}
                                 <th className="px-6 py-4 text-[10px] font-black uppercase text-muted-foreground tracking-widest text-right">Actions</th>
                             </tr>
                         </thead>
@@ -422,6 +426,29 @@ export default function Orders() {
                                                     )}>
                                                         {order.status}
                                                     </span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-5">
+                                                <div className="flex justify-center items-center gap-2">
+                                                    {(order as any).delivery_code ? (
+                                                        <>
+                                                            <span className="text-lg font-black text-green-600 tracking-[0.2em] font-mono">
+                                                                {(order as any).delivery_code}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText((order as any).delivery_code);
+                                                                    toast.success('Delivery code copied!');
+                                                                }}
+                                                                className="p-1.5 rounded-lg hover:bg-green-100 transition-colors"
+                                                                title="Copy code"
+                                                            >
+                                                                <Copy className="w-3.5 h-3.5 text-green-600" />
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-xs text-muted-foreground">—</span>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-6 py-5 text-right">

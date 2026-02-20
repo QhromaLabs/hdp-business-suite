@@ -1,0 +1,36 @@
+﻿Analyzing pos_page.dart...                                      
+
+warning - The value of the field '_selectedCategoryId' isn't used - lib\pages\pos_page.dart:29:11 - unused_field
+   info - The private field _customPrices could be 'final' - lib\pages\pos_page.dart:40:23 - prefer_final_fields
+   info - Don't use 'BuildContext's across async gaps - lib\pages\pos_page.dart:244:51 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\pages\pos_page.dart:246:51 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\pages\pos_page.dart:249:49 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\pages\pos_page.dart:300:35 - use_build_context_synchronously
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\pages\pos_page.dart:554:45 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\pages\pos_page.dart:615:46 - deprecated_member_use
+   info - Don't invoke 'print' in production code - lib\pages\pos_page.dart:668:21 - avoid_print
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\pages\pos_page.dart:889:40 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\pages\pos_page.dart:889:72 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\pages\pos_page.dart:1019:71 - deprecated_member_use
+
+flutter : 12 issues 
+found. (ran in 15.2s)
+At line:1 char:1
++ flutter analyze lib/
+pages/pos_page.dart > 
+analysis_output_2.txt 
+2>&1
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (12 issues    
+ found. (ran in 15    
+.2s):String) [],     
+RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 

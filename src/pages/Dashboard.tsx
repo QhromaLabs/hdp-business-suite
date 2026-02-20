@@ -9,10 +9,18 @@ import {
     ArrowRight,
     Wallet,
     Clock,
+    UserCheck,
+    UserX,
+    LogOut,
+    LogIn,
+    CalendarX,
 } from 'lucide-react';
 import { useDashboardStats, useTodaysSales } from '@/hooks/useSalesOrders';
+import { useMyAttendanceToday, useClockIn, useClockOut, useUpdateAttendanceStatus } from '@/hooks/useEmployees';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { DashboardSkeleton } from '@/components/loading/PageSkeletons';
+import { toast } from 'sonner';
 import {
     AreaChart,
     Area,
@@ -33,11 +41,27 @@ const formatCurrency = (amount: number) => {
 };
 
 export default function Dashboard() {
-    const { profile } = useAuth();
+    const { profile, userRole } = useAuth();
     const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
     const { data: recentSales = [], isLoading: salesLoading } = useTodaysSales();
+    const { data: attendance, isLoading: attendanceLoading } = useMyAttendanceToday();
+    const clockInMutation = useClockIn();
+    const clockOutMutation = useClockOut();
+    const updateStatusMutation = useUpdateAttendanceStatus();
 
-    const isLoading = statsLoading || salesLoading;
+    const isLoading = statsLoading || salesLoading || attendanceLoading;
+
+    const isOnDuty = !!attendance?.check_in && !attendance?.check_out && attendance?.status === 'present';
+    const isClockedOut = !!attendance?.check_out;
+    const isOff = attendance?.status === 'leave' || attendance?.status === 'absent';
+
+    const formatTime = (dateString: string) => {
+        return new Date(dateString).toLocaleTimeString('en-KE', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    };
 
     const stats = [
         {
@@ -123,6 +147,91 @@ export default function Dashboard() {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Duty Status Card - Only for non-admin/manager roles */}
+                {userRole !== 'admin' && userRole !== 'manager' && (
+                    <div
+                        className={cn(
+                            "stat-card animate-slide-up border-2 transition-all duration-300",
+                            isOnDuty ? "border-success/30 bg-success/5" : isOff ? "border-destructive/30 bg-destructive/5" : "border-warning/30 bg-warning/5"
+                        )}
+                    >
+                        <div className="flex items-start justify-between">
+                            <div className={cn(
+                                'p-3 rounded-xl',
+                                isOnDuty ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
+                            )}>
+                                {isOnDuty ? <UserCheck className="w-5 h-5" /> : <UserX className="w-5 h-5" />}
+                            </div>
+                            <div className="text-right">
+                                <p className={cn(
+                                    "text-sm font-bold uppercase tracking-wider",
+                                    isOnDuty ? "text-success" : "text-warning"
+                                )}>
+                                    {isOnDuty ? 'On Duty' : isClockedOut ? 'Shift Ended' : isOff ? attendance?.status : 'Off Duty'}
+                                </p>
+                                {attendance?.check_in && (
+                                    <p className="text-[10px] text-muted-foreground mt-1">
+                                        Started: {formatTime(attendance.check_in)}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                            {!isOnDuty && !isClockedOut && (
+                                <Button
+                                    onClick={() => clockInMutation.mutate()}
+                                    disabled={clockInMutation.isPending}
+                                    className="w-full bg-warning hover:bg-warning/90 text-white font-bold py-5 rounded-xl shadow-lg shadow-warning/20 group"
+                                >
+                                    <LogIn className="w-4 h-4 mr-2 group-hover:translate-x-1 transition-transform" />
+                                    Clock In Now
+                                </Button>
+                            )}
+                            {isOnDuty && (
+                                <Button
+                                    onClick={() => clockOutMutation.mutate()}
+                                    disabled={clockOutMutation.isPending}
+                                    variant="outline"
+                                    className="w-full border-destructive/30 text-destructive hover:bg-destructive/5 font-bold py-5 rounded-xl group"
+                                >
+                                    <LogOut className="w-4 h-4 mr-2 group-hover:translate-x-1 transition-transform" />
+                                    Clock Out
+                                </Button>
+                            )}
+                            {isClockedOut && (
+                                <div className="p-3 rounded-lg bg-muted text-center">
+                                    <p className="text-sm font-medium text-muted-foreground">Shift Completed</p>
+                                    <p className="text-xs text-muted-foreground mt-1">Out at: {formatTime(attendance.check_out!)}</p>
+                                </div>
+                            )}
+                            {!isOnDuty && !isClockedOut && !isOff && (
+                                <Button
+                                    onClick={() => updateStatusMutation.mutate({ status: 'absent' })}
+                                    disabled={updateStatusMutation.isPending}
+                                    variant="ghost"
+                                    className="w-full text-muted-foreground hover:text-destructive hover:bg-destructive/5 text-xs"
+                                >
+                                    <CalendarX className="w-3 h-3 mr-1" />
+                                    Mark as Absent
+                                </Button>
+                            )}
+                            {isOff && (
+                                <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/10 text-center">
+                                    <p className="text-sm font-medium text-destructive capitalize">{attendance?.status}</p>
+                                    <Button
+                                        onClick={() => clockInMutation.mutate()}
+                                        disabled={clockInMutation.isPending}
+                                        variant="link"
+                                        className="text-[10px] h-auto p-0 text-primary mt-1"
+                                    >
+                                        Cancel and Clock In
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {stats.map((stat, index) => {
                     const Icon = stat.icon;
                     const isPositive = stat.change > 0;

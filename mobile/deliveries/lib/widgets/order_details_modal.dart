@@ -39,12 +39,33 @@ class _OrderDetailsModalState extends State<OrderDetailsModal> {
         });
         widget.onStatusUpdated?.call(_order);
       } else if (action == 'done') {
-        await SupabaseService.markAsDelivered(_order['id'], widget.agentUserId);
-        setState(() {
-          _order['status'] = 'delivered';
-        });
-        widget.onStatusUpdated?.call(_order);
-        if (mounted) Navigator.pop(context); // Close only on done
+        // Show verification dialog for delivery code
+        final deliveryCode = _order['delivery_code'] as String?;
+        print('DEBUG: checking delivery code for order ${_order['id']}');
+        print('DEBUG: delivery_code value: "$deliveryCode"');
+        print('DEBUG: entire order object: $_order');
+        
+        // If no code exists (legacy order), allow bypass
+        if (deliveryCode == null || deliveryCode.isEmpty) {
+          await SupabaseService.markAsDelivered(_order['id'], widget.agentUserId);
+          setState(() {
+            _order['status'] = 'delivered';
+          });
+          widget.onStatusUpdated?.call(_order);
+          if (mounted) Navigator.pop(context);
+          return;
+        }
+
+        // Show code verification dialog
+        final verified = await _showCodeVerificationDialog(deliveryCode);
+        if (verified == true) {
+          await SupabaseService.markAsDelivered(_order['id'], widget.agentUserId);
+          setState(() {
+            _order['status'] = 'delivered';
+          });
+          widget.onStatusUpdated?.call(_order);
+          if (mounted) Navigator.pop(context);
+        }
       } else if (action == 'accept') {
         await SupabaseService.acceptOrder(_order['id'], widget.agentUserId);
         setState(() {
@@ -59,6 +80,83 @@ class _OrderDetailsModalState extends State<OrderDetailsModal> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<bool?> _showCodeVerificationDialog(String correctCode) async {
+    final codeController = TextEditingController();
+    
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.lock_outline, color: Colors.orange[700]),
+            SizedBox(width: 12),
+            Text('Verify Delivery', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Please enter the 4-digit verification code from the customer.',
+              style: GoogleFonts.inter(fontSize: 14, color: Colors.grey[700]),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: codeController,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              autofocus: true,
+              style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 8),
+              textAlign: TextAlign.center,
+              decoration: InputDecoration(
+                hintText: '----',
+                counterText: '',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Color(0xFFFF6600), width: 2),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final enteredCode = codeController.text.trim();
+              if (enteredCode == correctCode) {
+                Navigator.pop(context, true);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Incorrect code. Please try again.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF6600),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text('VERIFY', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -264,15 +362,17 @@ class _OrderDetailsModalState extends State<OrderDetailsModal> {
                     
                     SizedBox(
                       width: double.infinity,
-                      child: TextButton(
+                      child: ElevatedButton(
                         onPressed: _isLoading ? null : () => _updateStatus('done'),
-                        style: TextButton.styleFrom(
+                        style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          foregroundColor: Colors.green,
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         child: _isLoading 
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text("Mark as Delivered", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Text("MARK AS DELIVERED", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ] else ...[

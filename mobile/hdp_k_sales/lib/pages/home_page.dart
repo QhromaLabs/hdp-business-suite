@@ -4,11 +4,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
 
 class HomePage extends StatefulWidget {
   final Function(int)? onTabChange;
+  final GlobalKey<ScaffoldState>? scaffoldKey;
   
-  const HomePage({super.key, this.onTabChange});
+  const HomePage({super.key, this.onTabChange, this.scaffoldKey});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -23,8 +25,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   // Dashboard Data
   double _monthlyTarget = 0.0;
   double _monthlyActual = 0.0;
+  double _commissionEarned = 0.0;
   List<dynamic> _recentSales = [];
   Map<String, dynamic>? _employeeProfile;
+  bool _isOnDuty = false;
+  String? _attendanceId;
+  Timer? _pingTimer;
 
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -45,18 +51,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _verifyPermissions();
   }
 
-  Future<void> _refreshData() async {
-    setState(() => _isLoading = true);
+  Future<void> _refreshData({bool showLoading = true}) async {
+    if (showLoading) setState(() => _isLoading = true);
     try {
       await Future.wait([
         _fetchEmployeeProfile(),
         _fetchSalesTargets(),
         _fetchRecentSales(),
+        _fetchDutyStatus(),
       ]);
     } catch (e) {
       debugPrint("Error refreshing data: $e");
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && showLoading) setState(() => _isLoading = false);
     }
   }
 
@@ -65,9 +72,135 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         .from('employees')
         .select()
         .eq('email', user?.email ?? '')
+        .eq('is_active', true)
         .maybeSingle();
     if (response != null) {
       _employeeProfile = response;
+      _fetchDutyStatus(); // Fetch status once profile is known
+    }
+  }
+
+  Future<void> _fetchDutyStatus() async {
+    if (_employeeProfile == null) return;
+    
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    
+    final response = await supabase
+        .from('attendance')
+        .select()
+        .eq('employee_id', _employeeProfile!['id'])
+        .eq('date', today)
+        .maybeSingle();
+
+    if (mounted) {
+      setState(() {
+        if (response != null) {
+          _attendanceId = response['id'];
+          // Agent is on duty if they checked in and haven't checked out yet
+          _isOnDuty = response['check_in'] != null && response['check_out'] == null;
+          
+          if (_isOnDuty) {
+            _startPeriodicPing();
+          } else {
+            _stopPeriodicPing();
+          }
+        } else {
+          _isOnDuty = false;
+          _attendanceId = null;
+          _stopPeriodicPing();
+        }
+      });
+    }
+  }
+
+  void _startPeriodicPing() {
+    if (_pingTimer != null) return; // Already running
+    
+    debugPrint("Starting periodic location pings (every 2 hours)");
+    // Note: We ping immediately on clock-in, so the timer starts the next one in 2 hours
+    _pingTimer = Timer.periodic(const Duration(hours: 2), (timer) {
+      if (_isOnDuty && mounted) {
+        _pingLocation();
+      } else {
+        _stopPeriodicPing();
+      }
+    });
+  }
+
+  void _stopPeriodicPing() {
+    if (_pingTimer != null) {
+      debugPrint("Stopping periodic location pings");
+      _pingTimer?.cancel();
+      _pingTimer = null;
+    }
+  }
+
+  Future<void> _toggleDuty(bool value) async {
+    if (_employeeProfile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Employee profile not loaded. Please refresh.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final now = DateTime.now().toIso8601String();
+
+      if (value) {
+        // Clock In
+        if (_attendanceId == null) {
+          await supabase.from('attendance').insert({
+            'employee_id': _employeeProfile!['id'],
+            'date': today,
+            'check_in': now,
+            'status': 'present',
+          });
+        } else {
+          // Already has a record for today, update it
+          await supabase.from('attendance').update({
+            'check_in': now,
+            'check_out': null,
+            'status': 'present',
+          }).eq('id', _attendanceId!);
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Clocked in successfully'), backgroundColor: Colors.green),
+          );
+        }
+        // Auto-ping location on clock in
+        _pingLocation();
+        _startPeriodicPing();
+      } else {
+        // Clock Out
+        if (_attendanceId != null) {
+          await supabase.from('attendance').update({
+            'check_out': now,
+          }).eq('id', _attendanceId!);
+          
+          _stopPeriodicPing();
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Clocked out successfully'), backgroundColor: Colors.orange),
+            );
+          }
+        }
+      }
+      await _fetchDutyStatus();
+    } catch (e) {
+      debugPrint("Error toggling duty: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -82,9 +215,23 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         .gte('target_month', firstDayOfMonth)
         .maybeSingle();
 
-    if (response != null) {
-      _monthlyTarget = (response['target_amount'] as num).toDouble();
-      _monthlyActual = (response['achieved_amount'] as num).toDouble();
+    // Fetch commission earned as well
+    final commissionRes = await supabase
+        .from('sales_commissions')
+        .select('amount')
+        .eq('sales_agent_id', _employeeProfile?['id'] ?? '')
+        .gte('created_at', firstDayOfMonth);
+    
+    final commissionTotal = commissionRes.fold<double>(0, (sum, comm) => sum + (comm['amount'] as num).toDouble());
+
+    if (mounted) {
+      setState(() {
+        if (response != null) {
+          _monthlyTarget = (response['target_amount'] as num).toDouble();
+          _monthlyActual = (response['achieved_amount'] as num).toDouble();
+        }
+        _commissionEarned = commissionTotal;
+      });
     }
   }
 
@@ -109,6 +256,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   @override
   void dispose() {
     _animationController.dispose();
+    _stopPeriodicPing();
     super.dispose();
   }
 
@@ -120,6 +268,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _listenForLocationRequests() {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    // Listen for location requests from admin
     supabase.channel('public:location_requests').onPostgresChanges(
       event: PostgresChangeEvent.insert,
       schema: 'public',
@@ -127,7 +279,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       filter: PostgresChangeFilter(
         type: PostgresChangeFilterType.eq,
         column: 'sales_rep_id',
-        value: user?.id ?? '',
+        value: user.id,
       ),
       callback: (payload) {
         _handleAdminRequest(payload.newRecord);
@@ -142,7 +294,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       filter: PostgresChangeFilter(
         type: PostgresChangeFilterType.eq,
         column: 'user_id',
-        value: user?.id ?? '',
+        value: user.id,
       ),
       callback: (payload) {
         _fetchSalesTargets();
@@ -151,17 +303,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     // Listen for new sales orders
     supabase.channel('public:sales_orders').onPostgresChanges(
-      event: PostgresChangeEvent.all,
+      event: PostgresChangeEvent.insert,
       schema: 'public',
       table: 'sales_orders',
       filter: PostgresChangeFilter(
         type: PostgresChangeFilterType.eq,
         column: 'created_by',
-        value: user?.id ?? '',
+        value: user.id,
       ),
       callback: (payload) {
-        _fetchRecentSales();
-        _fetchSalesTargets();
+        // Run both in parallel for speed
+        Future.wait([
+          _fetchRecentSales(),
+          _fetchSalesTargets(),
+        ]);
       },
     ).subscribe();
   }
@@ -230,13 +385,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final currencyFormat = NumberFormat.currency(symbol: 'KES ', decimalDigits: 0);
     double progress = _monthlyTarget > 0 ? (_monthlyActual / _monthlyTarget) : 0.0;
     if (progress > 1.0) progress = 1.0;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black),
+        leading: IconButton(
+          icon: const Icon(Icons.menu, color: Colors.black),
+          onPressed: () => widget.scaffoldKey?.currentState?.openDrawer(),
+        ),
         title: Text("Revenue Engine", 
           style: GoogleFonts.inter(color: Colors.black, fontWeight: FontWeight.bold)),
         actions: [
@@ -250,7 +407,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
         ],
       ),
-      drawer: _buildDrawer(),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF6600)))
         : RefreshIndicator(
@@ -276,87 +432,108 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ),
             ),
           ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          widget.onTabChange?.call(1); // Navigate to POS tab
-        },
-        backgroundColor: const Color(0xFFFF6600),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-        child: const Icon(Icons.add, color: Colors.white, size: 28),
-      ),
     );
   }
 
   Widget _buildHeader() {
-    return Column(
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "Good Day,",
-          style: GoogleFonts.inter(fontSize: 16, color: Colors.grey[600]),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Good Day,",
+              style: GoogleFonts.inter(fontSize: 16, color: Colors.grey[600]),
+            ),
+            Text(
+              _employeeProfile?['full_name'] ?? user?.email?.split('@')[0] ?? 'Agent',
+              style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.black),
+            ),
+          ],
         ),
-        Text(
-          _employeeProfile?['full_name'] ?? user?.email?.split('@')[0] ?? 'Agent',
-          style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.black),
+        Column(
+          children: [
+            Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: _isOnDuty,
+                onChanged: _isLoading ? null : _toggleDuty,
+                activeColor: const Color(0xFFFF6600),
+                activeTrackColor: const Color(0xFFFF6600).withOpacity(0.2),
+              ),
+            ),
+            Text(
+              _isOnDuty ? "ON DUTY" : "OFF DUTY",
+              style: GoogleFonts.inter(
+                fontSize: 10, 
+                fontWeight: FontWeight.bold, 
+                color: _isOnDuty ? const Color(0xFFFF6600) : Colors.grey
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 
   Widget _buildTargetCard(NumberFormat formatter, double progress) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFF6600), Color(0xFFFF9933)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFF6600).withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
+    return InkWell(
+      onTap: () => Navigator.of(context).pushNamed('/wallet').then((_) => _refreshData()),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFF6600), Color(0xFFFF9933)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("Monthly Target", 
-                style: GoogleFonts.inter(color: Colors.white.withOpacity(0.8), fontSize: 14)),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text("${(progress * 100).toInt()}%", 
-                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(formatter.format(_monthlyActual), 
-            style: GoogleFonts.inter(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-          Text("of ${formatter.format(_monthlyTarget)}", 
-            style: GoogleFonts.inter(color: Colors.white.withOpacity(0.7), fontSize: 14)),
-          const SizedBox(height: 20),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(
-              value: progress,
-              backgroundColor: Colors.white.withOpacity(0.2),
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-              minHeight: 8,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFF6600).withOpacity(0.3),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
             ),
-          ),
-        ],
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Commission Earned", 
+                  style: GoogleFonts.inter(color: Colors.white.withOpacity(0.8), fontSize: 14)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text("${(progress * 100).toInt()}% Target", 
+                    style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(formatter.format(_commissionEarned), 
+              style: GoogleFonts.inter(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+            Text("Monthly Sales: ${formatter.format(_monthlyActual)} / ${formatter.format(_monthlyTarget)}", 
+              style: GoogleFonts.inter(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+            const SizedBox(height: 20),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LinearProgressIndicator(
+                value: progress,
+                backgroundColor: Colors.white.withOpacity(0.2),
+                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                minHeight: 8,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -364,7 +541,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Widget _buildQuickActions() {
     return Row(
       children: [
-        _buildActionItem(Icons.location_on, "Sync Loc", _isPinging ? null : () => _pingLocation(), _isPinging),
+        _buildActionItem(Icons.account_balance_wallet, "Withdraw", () => Navigator.of(context).pushNamed('/wallet').then((_) => _refreshData()), false),
         const SizedBox(width: 12),
         _buildActionItem(Icons.people, "Customers", () => widget.onTabChange?.call(3), false),
         const SizedBox(width: 12),
@@ -477,65 +654,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
         );
       },
-    );
-  }
-
-  Widget _buildDrawer() {
-    return Drawer(
-      child: Column(
-        children: [
-          UserAccountsDrawerHeader(
-            accountName: Text(_employeeProfile?['full_name'] ?? "Sales Rep", 
-              style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-            accountEmail: Text(user?.email ?? ""),
-            currentAccountPicture: CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Text(
-                (_employeeProfile?['full_name'] ?? user?.email ?? 'A')[0].toUpperCase(),
-                style: GoogleFonts.inter(color: const Color(0xFFFF6600), fontWeight: FontWeight.bold, fontSize: 24),
-              ),
-            ),
-            decoration: const BoxDecoration(color: Color(0xFFFF6600)),
-          ),
-          ListTile(
-            leading: const Icon(Icons.dashboard),
-            title: Text('Dashboard', style: GoogleFonts.inter()),
-            onTap: () => Navigator.pop(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.shopping_cart),
-            title: Text('New Sale (POS)', style: GoogleFonts.inter()),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.of(context).pushNamed('/pos');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.account_balance_wallet, color: Colors.orange), // Use orange for emphasis
-            title: Text('My Wallet & Earnings', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.of(context).pushNamed('/wallet');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.people),
-            title: Text('My Customers', style: GoogleFonts.inter()),
-            onTap: () {},
-          ),
-          const Spacer(),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: Text('Logout', style: GoogleFonts.inter(color: Colors.red)),
-            onTap: () async {
-              await supabase.auth.signOut();
-              if (mounted) Navigator.of(context).pushReplacementNamed('/login');
-            },
-          ),
-          const SizedBox(height: 20),
-        ],
-      ),
     );
   }
 }

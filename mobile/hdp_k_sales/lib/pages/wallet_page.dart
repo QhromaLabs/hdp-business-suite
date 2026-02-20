@@ -63,10 +63,10 @@ class _WalletPageState extends State<WalletPage> {
       
       final employeeId = employeeRes['id'];
 
-      // 1. Fetch Commissions (Earnings)
       final commissionsRes = await supabase
           .from('sales_commissions')
           .select('amount, created_at, order_id, status')
+          .eq('sales_agent_id', employeeId)
           .order('created_at', ascending: false);
       
       // 2. Fetch Withdrawals (Debits)

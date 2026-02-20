@@ -42,10 +42,10 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Roboto', // Default, we can use Google Fonts later
       ),
-      home: const MainScreen(),
+      home: const SplashPage(),
       routes: {
         '/login': (context) => const LoginPage(),
-        '/home': (context) => const MainScreen(), // Redirects to MainScreen now
+        '/home': (context) => const MainScreen(),
         '/pos': (context) => const POSPage(),
         '/signup': (context) => const SignUpPage(),
         '/crm': (context) => const CRMPage(),

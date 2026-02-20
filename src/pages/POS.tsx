@@ -237,7 +237,6 @@ export default function POS() {
   const clearCart = () => {
     setCart([]);
     setSelectedCustomer(null);
-    setSelectedCustomer(null);
     setGlobalDiscount(0);
     setOrderNotes('');
   };
@@ -306,8 +305,6 @@ export default function POS() {
           unit_price: item.price,
           discount: item.discount,
         })),
-        payment_method: selectedPayment,
-        is_credit_sale: selectedPayment === 'credit',
         payment_method: selectedPayment,
         is_credit_sale: selectedPayment === 'credit',
         globalDiscount: globalDiscount,
@@ -704,16 +701,29 @@ export default function POS() {
             )}
             <div className="flex justify-between items-center text-xs pt-2 border-t border-border/30">
               <span className="text-muted-foreground font-bold">Total Discount</span>
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground font-mono">KES</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={globalDiscount || ''}
-                  onChange={(e) => setGlobalDiscount(Math.max(0, Number(e.target.value)))}
-                  placeholder="0.00"
-                  className="w-24 h-8 text-right bg-transparent border-b border-muted hover:border-primary focus:border-primary focus:outline-none font-bold transition-colors"
-                />
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex gap-1 mb-1">
+                  {[5, 10, 15, 20].map((pct) => (
+                    <button
+                      key={pct}
+                      onClick={() => setGlobalDiscount(Math.round(cartTotals.subtotal * (pct / 100)))}
+                      className="px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors text-[10px] font-bold"
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground font-mono">KES</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={globalDiscount || ''}
+                    onChange={(e) => setGlobalDiscount(Math.max(0, Number(e.target.value)))}
+                    placeholder="0.00"
+                    className="w-24 h-8 text-right bg-transparent border-b border-muted hover:border-primary focus:border-primary focus:outline-none font-bold transition-colors"
+                  />
+                </div>
               </div>
             </div>
           </div>

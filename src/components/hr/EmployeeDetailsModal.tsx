@@ -15,10 +15,11 @@ import {
     Briefcase,
     Calendar,
     Wallet,
-    Banknote
+    Banknote,
+    Clock
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Employee, useAttendanceToday, usePayrollEntries, useUpdateEmployee, useMarkLeaveAndRole, useCreatePayrollEntry, useTerminateEmployee } from '@/hooks/useEmployees';
+import { Employee, useAttendanceToday, useEmployeeAttendance, usePayrollEntries, useUpdateEmployee, useMarkLeaveAndRole, useCreatePayrollEntry, useTerminateEmployee } from '@/hooks/useEmployees';
 import { useDeleteUser } from '@/hooks/useSettings';
 import { useCommissions, useWithdrawalRequests } from '@/hooks/useCommissions';
 import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
@@ -34,6 +35,16 @@ const formatCurrency = (amount: number) => {
     }).format(amount);
 };
 
+const formatTime = (isoString: string | null) => {
+    if (!isoString) return '--:--';
+    try {
+        const date = new Date(isoString);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+        return isoString;
+    }
+};
+
 interface EmployeeDetailsModalProps {
     employee: Employee | null;
     isOpen: boolean;
@@ -42,6 +53,7 @@ interface EmployeeDetailsModalProps {
 
 export function EmployeeDetailsModal({ employee, isOpen, onClose }: EmployeeDetailsModalProps) {
     const { data: attendanceToday = [] } = useAttendanceToday();
+    const { data: attendanceHistory = [], isLoading: historyLoading } = useEmployeeAttendance(employee?.id);
     const { data: payrollEntries = [] } = usePayrollEntries();
 
     // Commission Hooks
@@ -253,20 +265,51 @@ export function EmployeeDetailsModal({ employee, isOpen, onClose }: EmployeeDeta
                         <TabsContent value="activity" className="space-y-4 py-4">
                             <div className="space-y-4">
                                 <div className="p-4 rounded-xl bg-card border border-border/60">
-                                    <h4 className="text-sm font-semibold mb-3">Attendance History</h4>
-                                    {employeeAttendance ? (
-                                        <div className="flex items-center gap-3">
-                                            <div className={cn(
-                                                "w-3 h-3 rounded-full",
-                                                employeeAttendance.status === 'present' ? 'bg-success' :
-                                                    employeeAttendance.status === 'leave' ? 'bg-warning' : 'bg-muted'
-                                            )} />
-                                            <p className="text-sm">Today: <span className="capitalize font-medium">{employeeAttendance.status}</span></p>
-                                            <p className="text-xs text-muted-foreground ml-auto">{employeeAttendance.check_in || '--:--'} - {employeeAttendance.check_out || '--:--'}</p>
-                                        </div>
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground">No attendance record for today.</p>
-                                    )}
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h4 className="text-sm font-semibold">Attendance History</h4>
+                                        <Badge variant="outline" className="text-[10px] uppercase">Last 30 Days</Badge>
+                                    </div>
+
+                                    <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                                        {historyLoading ? (
+                                            <div className="text-center py-4 text-muted-foreground text-xs italic">Loading history...</div>
+                                        ) : attendanceHistory.length > 0 ? (
+                                            attendanceHistory.map(record => (
+                                                <div key={record.id} className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
+                                                    <div className={cn(
+                                                        "w-2 h-2 rounded-full shrink-0",
+                                                        record.status === 'present' ? 'bg-success' :
+                                                            record.status === 'leave' ? 'bg-warning' : 'bg-muted'
+                                                    )} />
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex justify-between items-start">
+                                                            <p className="text-xs font-semibold">{new Date(record.date).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                                                            <Badge variant="secondary" className="text-[9px] h-4 px-1.5 uppercase font-bold">
+                                                                {record.status}
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="flex items-center gap-4 mt-1">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <Clock className="w-3 h-3 text-muted-foreground" />
+                                                                <span className="text-[10px] text-muted-foreground">IN: {formatTime(record.check_in)}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <Clock className="w-3 h-3 text-muted-foreground" />
+                                                                <span className="text-[10px] text-muted-foreground">OUT: {formatTime(record.check_out)}</span>
+                                                            </div>
+                                                        </div>
+                                                        {record.notes && (
+                                                            <p className="text-[10px] text-muted-foreground italic mt-1.5 border-t border-border/30 pt-1">
+                                                                "{record.notes}"
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <p className="text-center py-4 text-sm text-muted-foreground">No attendance records found.</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </TabsContent>

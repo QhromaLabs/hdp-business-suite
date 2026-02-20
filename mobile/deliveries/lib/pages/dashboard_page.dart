@@ -229,6 +229,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     _orders.isEmpty
                         ? _buildEmptyState()
                         : _buildOrdersList(currencyFormat),
+                    const SizedBox(height: 100), // Spacing for floating bottom nav
                   ],
                 ),
               ),

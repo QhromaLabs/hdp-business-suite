@@ -42,6 +42,7 @@ export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
     const updateStatus = useUpdateSalesOrderStatus();
     const [isDispatching, setIsDispatching] = useState(false);
     const [dispatchingOrder, setDispatchingOrder] = useState<SalesOrder | null>(null);
+    const [generatedCode, setGeneratedCode] = useState<string | null>(null);
     const [selectedAgentId, setSelectedAgentId] = useState<string>('');
     const [location, setLocation] = useState<{ latitude: number, longitude: number, address: string }>({
         latitude: Number(order.latitude || order.customer?.latitude) || -1.286389,
@@ -55,15 +56,23 @@ export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
             toast.error('Please select a delivery agent');
             return;
         }
+
+        // Generate 4-digit code
+        const code = Math.floor(1000 + Math.random() * 9000).toString();
+
         updateStatus.mutate({
             id: order.id,
             status: 'dispatched',
             delivery_agent_id: selectedAgentId,
             latitude: location.latitude,
             longitude: location.longitude,
-            address_name: location.address
+            address_name: location.address,
+            delivery_code: code
         }, {
-            onSuccess: () => setIsDispatching(false)
+            onSuccess: () => {
+                setGeneratedCode(code);
+                setIsDispatching(false);
+            }
         });
     };
     const handleCancel = () => updateStatus.mutate({ id: order.id, status: 'cancelled' });
@@ -213,6 +222,45 @@ export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
             toast.error('Failed to generate PDF: ' + error.message);
         }
     };
+
+    if (generatedCode) {
+        return (
+            <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                <div className="bg-card w-full max-w-sm rounded-[2.5rem] border border-border/50 shadow-2xl p-8 text-center space-y-6 animate-scale-in">
+                    <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                        <Navigation className="w-8 h-8 text-green-600" />
+                    </div>
+
+                    <div className="space-y-2">
+                        <h3 className="text-2xl font-black tracking-tight">Order Dispatched!</h3>
+                        <p className="text-sm text-muted-foreground font-medium px-4">
+                            Share this verification code with the customer. The agent will need it to complete delivery.
+                        </p>
+                    </div>
+
+                    <div
+                        onClick={() => {
+                            navigator.clipboard.writeText(generatedCode);
+                            toast.success("Code copied!");
+                        }}
+                        className="p-8 bg-muted/30 rounded-3xl border-2 border-dashed border-primary/20 hover:border-primary/50 transition-all cursor-pointer group"
+                    >
+                        <span className="text-5xl font-black tracking-[0.4em] text-primary block pl-4 group-hover:scale-105 transition-transform">
+                            {generatedCode}
+                        </span>
+                        <span className="text-[10px] uppercase font-black text-muted-foreground mt-4 block tracking-widest">Click to Copy</span>
+                    </div>
+
+                    <button
+                        onClick={onClose}
+                        className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                    >
+                        Done
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">

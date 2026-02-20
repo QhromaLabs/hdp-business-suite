@@ -30,6 +30,7 @@ export interface SalesOrder {
   dispatched_at?: string | null;
   delivery_accepted_at?: string | null;
   delivery_completed_at?: string | null;
+  delivery_code?: string | null;
 }
 
 
@@ -380,7 +381,8 @@ export function useUpdateSalesOrderStatus() {
       delivery_agent_id,
       latitude,
       longitude,
-      address_name
+      address_name,
+      delivery_code
     }: {
       id: string;
       status: OrderStatus;
@@ -388,12 +390,14 @@ export function useUpdateSalesOrderStatus() {
       latitude?: number;
       longitude?: number;
       address_name?: string;
+      delivery_code?: string;
     }) => {
       const updates: Record<string, any> = { status };
       if (delivery_agent_id) updates.delivery_agent_id = delivery_agent_id;
       if (latitude !== undefined) updates.latitude = latitude;
       if (longitude !== undefined) updates.longitude = longitude;
       if (address_name) updates.address_name = address_name;
+      if (delivery_code) updates.delivery_code = delivery_code;
 
       const now = new Date().toISOString();
       if (status === 'approved') {

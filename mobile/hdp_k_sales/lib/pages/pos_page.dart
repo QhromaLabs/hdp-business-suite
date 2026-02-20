@@ -26,7 +26,6 @@ class _POSPageState extends State<POSPage> {
   bool _isLoading = true;
   bool _isCheckingOut = false;
   String _searchQuery = '';
-  String? _selectedCategoryId;
   Map<String, dynamic>? _selectedCustomer;
   String _paymentMethod = 'cash';
   final TextEditingController _discountController = TextEditingController();
@@ -36,8 +35,9 @@ class _POSPageState extends State<POSPage> {
   String? _employeeName;
 
   // Cart: Key: variant_id, Value: quantity
-  final Map<String, int> cart = {}; 
-  final Map<String, dynamic> productMap = {};
+  final  Map<String, int> cart = {}; // ID -> Qty
+  final Map<String, double> _customPrices = {}; // ID -> Price
+  Map<String, Map<String, dynamic>> productMap = {};
 
   final currencyFormat = NumberFormat.currency(locale: 'en_KE', symbol: 'KES ');
 
@@ -147,7 +147,8 @@ class _POSPageState extends State<POSPage> {
     cart.forEach((id, qty) {
       final product = productMap[id];
       if (product != null) {
-        sum += (product['price'] as num).toDouble() * qty;
+        final price = _customPrices[id] ?? (product['price'] as num).toDouble();
+        sum += price * qty;
       }
     });
     return sum;
@@ -157,69 +158,157 @@ class _POSPageState extends State<POSPage> {
   void _showAddCustomerModal() {
     final nameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
+    final addressCtrl = TextEditingController();
+    
     bool isSubmitting = false;
-
-    showDialog(
+    bool isLocating = false;
+    Position? fetchedPosition;
+    
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => AlertDialog(
-          title: Text('Add New Customer', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-          content: Column(
+        builder: (context, setModalState) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Text('Add New Customer', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
               TextField(
                 controller: nameCtrl,
                 decoration: InputDecoration(
                   labelText: 'Customer Name',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: const Icon(Icons.person_outline),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               TextField(
                 controller: phoneCtrl,
                 decoration: InputDecoration(
                   labelText: 'Phone Number',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: const Icon(Icons.phone_outlined),
                 ),
                 keyboardType: TextInputType.phone,
               ),
+              const SizedBox(height: 16),
+              
+              // Location Section
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: addressCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Location / Address',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        prefixIcon: const Icon(Icons.place_outlined),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50], 
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue[100]!)
+                    ),
+                    child: IconButton(
+                      onPressed: isLocating ? null : () async {
+                        setModalState(() => isLocating = true);
+                        try {
+                          LocationPermission permission = await Geolocator.checkPermission();
+                          if (permission == LocationPermission.denied) {
+                            permission = await Geolocator.requestPermission();
+                          }
+                          
+                          if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+                             final pos = await Geolocator.getCurrentPosition();
+                             setModalState(() {
+                               fetchedPosition = pos;
+                               // Optional: We could reverse geocode here if we had a service
+                               if (addressCtrl.text.isEmpty) {
+                                  addressCtrl.text = "Pinned Location";
+                               }
+                             });
+                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Location fetched!')));
+                          } else {
+                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Location permission denied')));
+                          }
+                        } catch (e) {
+                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                        } finally {
+                          setModalState(() => isLocating = false);
+                        }
+                      },
+                      icon: isLocating 
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Icon(Icons.my_location, color: Colors.blue[700]),
+                      tooltip: 'Use Current Location',
+                    ),
+                  ),
+                ],
+              ),
+              if (fetchedPosition != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'GPS: ${fetchedPosition!.latitude.toStringAsFixed(5)}, ${fetchedPosition!.longitude.toStringAsFixed(5)}',
+                    style: GoogleFonts.inter(fontSize: 12, color: Colors.green[700], fontWeight: FontWeight.w500),
+                  ),
+                ),
+
+              const SizedBox(height: 32),
+              
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF6600),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: isSubmitting ? null : () async {
+                  if (nameCtrl.text.isEmpty) return;
+                  setModalState(() => isSubmitting = true);
+                  try {
+                    final user = supabase.auth.currentUser;
+                    final res = await supabase.from('customers').insert({
+                      'name': nameCtrl.text,
+                      'phone': phoneCtrl.text,
+                      'address': addressCtrl.text,
+                      'customer_type': 'normal',
+                      'created_by': user?.id,
+                      'latitude': fetchedPosition?.latitude, // New Field
+                      'longitude': fetchedPosition?.longitude, // New Field
+                    }).select().single();
+                    
+                    setState(() {
+                      customers.add(res);
+                      customers.sort((a, b) => (a['name'] as String).compareTo(b['name']));
+                      _selectedCustomer = res; // Auto-select new customer
+                    });
+                    Navigator.pop(ctx); 
+                  } catch (e) {
+                    _showSnack('Failed to add customer: $e', Colors.red);
+                  } finally {
+                    setModalState(() => isSubmitting = false);
+                  }
+                },
+                child: isSubmitting 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
+                  : const Text('SAVE CUSTOMER', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
             ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFF6600),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: isSubmitting ? null : () async {
-                if (nameCtrl.text.isEmpty) return;
-                setModalState(() => isSubmitting = true);
-                try {
-                  final user = supabase.auth.currentUser;
-                  final res = await supabase.from('customers').insert({
-                    'name': nameCtrl.text,
-                    'phone': phoneCtrl.text,
-                    'customer_type': 'normal',
-                    'created_by': user?.id
-                  }).select().single();
-                  
-                  setState(() {
-                    customers.add(res);
-                    customers.sort((a, b) => (a['name'] as String).compareTo(b['name']));
-                    _selectedCustomer = res; // Auto-select new customer
-                  });
-                  Navigator.pop(ctx); // Close dialog
-                  // Note: We might need to refresh the parent sheet if it needs to see the new selection
-                } catch (e) {
-                  _showSnack('Failed to add customer: $e', Colors.red);
-                } finally {
-                  setModalState(() => isSubmitting = false);
-                }
-              },
-              child: isSubmitting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Add Customer'),
-            ),
-          ],
         ),
       ),
     );
@@ -238,214 +327,273 @@ class _POSPageState extends State<POSPage> {
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: Stack(
             children: [
-              // Handle
-              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 16),
-              
-              Text('Checkout', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 24),
+              // Scrollable Content
+              Positioned.fill(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 200), // Extra bottom padding for fixed bar
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Handle
+                      Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
+                      const SizedBox(height: 16),
+                      
+                      Text('Checkout', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 24),
 
-              // Customer Selector
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey[300]!),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          hint: Text('Select Customer', style: GoogleFonts.inter(color: Colors.grey)),
-                          value: _selectedCustomer?['id'],
-                          items: customers.map((c) => DropdownMenuItem(
-                            value: c['id'] as String,
-                            child: Text(c['name'], style: GoogleFonts.inter()),
-                          )).toList(),
-                          onChanged: (val) {
-                            setSheetState(() {
-                              _selectedCustomer = customers.firstWhere((c) => c['id'] == val);
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  FloatingActionButton.small(
-                    onPressed: _showAddCustomerModal,
-                    backgroundColor: const Color(0xFFFF6600),
-                    child: const Icon(Icons.person_add, color: Colors.white),
-                  ),
-                ],
-              ),
-               if (_selectedCustomer != null)
-                 Padding(
-                   padding: const EdgeInsets.only(top: 8),
-                   child: Column(
-                     crossAxisAlignment: CrossAxisAlignment.start,
-                     children: [
-                       Text('Client: ${_selectedCustomer!['name']} (${_selectedCustomer!['phone'] ?? 'No phone'})', style: GoogleFonts.inter(fontSize: 12, color: Colors.green[700], fontWeight: FontWeight.w500)),
-                       if (_selectedCustomer!['customer_type'] == 'credit' || (_selectedCustomer!['credit_balance'] ?? 0) > 0)
-                         Text('Unpaid Balance: ${currencyFormat.format(_selectedCustomer!['credit_balance'] ?? 0)} / Limit: ${currencyFormat.format(_selectedCustomer!['credit_limit'] ?? 0)}', 
-                           style: GoogleFonts.inter(fontSize: 11, color: Colors.red[700], fontWeight: FontWeight.bold)),
-                     ],
-                   ),
-                 ),
-              
-              const SizedBox(height: 24),
-              Text('Order Summary', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 12),
-              
-              // Cart List
-              Expanded(
-                child: ListView.separated(
-                  itemCount: cart.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final id = cart.keys.elementAt(index);
-                    final qty = cart[id]!;
-                    final product = productMap[id];
-                    final price = (product['price'] as num).toDouble();
-                    
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Row(
+                      // Customer Selector
+                      Row(
                         children: [
-                          Container(
-                            width: 40, height: 40,
-                            decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)),
-                            child: const Icon(Icons.shopping_bag_outlined, size: 20, color: Colors.grey),
-                          ),
-                          const SizedBox(width: 12),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_getProductName(product), style: GoogleFonts.inter(fontWeight: FontWeight.w500)),
-                                Text(currencyFormat.format(price), style: GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
-                              ],
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: _selectedCustomer != null ? const Color(0xFFFF6600) : Colors.red, width: _selectedCustomer == null ? 1.5 : 1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  isExpanded: true,
+                                  hint: Text('Select Customer', style: GoogleFonts.inter(color: Colors.grey)),
+                                  value: _selectedCustomer?['id'],
+                                  items: customers.map((c) => DropdownMenuItem(
+                                    value: c['id'] as String,
+                                    child: Text(c['name'], style: GoogleFonts.inter()),
+                                  )).toList(),
+                                  onChanged: (val) {
+                                    setSheetState(() {
+                                      _selectedCustomer = customers.firstWhere((c) => c['id'] == val);
+                                    });
+                                  },
+                                ),
+                              ),
                             ),
                           ),
-                          Text('x$qty', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                          const SizedBox(width: 16),
-                          Text(currencyFormat.format(price * qty), style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 12),
+                          FloatingActionButton.small(
+                            onPressed: _showAddCustomerModal,
+                            backgroundColor: const Color(0xFFFF6600),
+                            child: const Icon(Icons.person_add, color: Colors.white, size: 20),
+                          ),
                         ],
                       ),
-                    );
-                  },
-                ),
-              ),
+                      if (_selectedCustomer != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Client: ${_selectedCustomer!['name']} (${_selectedCustomer!['phone'] ?? 'No phone'})', style: GoogleFonts.inter(fontSize: 12, color: Colors.green[700], fontWeight: FontWeight.w500)),
+                              if (_selectedCustomer!['customer_type'] == 'credit' || (_selectedCustomer!['credit_balance'] ?? 0) > 0)
+                                Text('Unpaid Balance: ${currencyFormat.format(_selectedCustomer!['credit_balance'] ?? 0)} / Limit: ${currencyFormat.format(_selectedCustomer!['credit_limit'] ?? 0)}', 
+                                  style: GoogleFonts.inter(fontSize: 11, color: Colors.red[700], fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      
+                      const SizedBox(height: 24),
+                      Text('Order Summary', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 12),
+                      
+                      // Cart List
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: cart.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final id = cart.keys.elementAt(index);
+                          final qty = cart[id]!;
+                          final product = productMap[id];
+                          if (product == null) return const SizedBox.shrink();
+                          final price = _customPrices[id] ?? (product['price'] as num).toDouble();
+                          
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 48, height: 48,
+                                  decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12)),
+                                  child: const Icon(Icons.shopping_bag_outlined, size: 24, color: Colors.grey),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(_getProductName(product), style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
+                                        Row(
+                                          children: [
+                                            Text(currencyFormat.format(price), style: GoogleFonts.inter(fontSize: 11, color: Colors.grey[600])),
+                                            const SizedBox(width: 4),
+                                            GestureDetector(
+                                              onTap: () => _showEditProductPriceDialog(id, price, setSheetState),
+                                              child: const Icon(Icons.edit, size: 18, color: Color(0xFFFF6600)),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                
+                                // Quantity Controls
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.remove, size: 16),
+                                        onPressed: () {
+                                          setSheetState(() => _removeFromCart(id));
+                                          setState(() {}); // Update main UI too
+                                        },
+                                      ),
+                                      Text('$qty', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                                      IconButton(
+                                        icon: const Icon(Icons.add, size: 16),
+                                        onPressed: () {
+                                          setSheetState(() => _addToCart(id));
+                                          setState(() {}); // Update main UI too
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                                  onPressed: () {
+                                     setSheetState(() {
+                                       cart.remove(id);
+                                     });
+                                     setState(() {});
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
 
-              const Divider(),
-              const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 16),
 
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Subtotal', style: GoogleFonts.inter(fontSize: 14, color: Colors.grey[600])),
-                  Text(currencyFormat.format(_total), style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              
-              // Discount Input
-              Row(
-                children: [
-                   Expanded(
-                     child: TextField(
-                       controller: _discountController,
-                       keyboardType: TextInputType.number,
-                       decoration: InputDecoration(
-                         labelText: 'Discount Amount',
-                         isDense: true,
-                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                         prefixText: 'KES ',
-                       ),
-                       onChanged: (val) {
-                         setSheetState(() {
-                           _discountAmount = double.tryParse(val) ?? 0.0;
-                         });
-                       },
-                     ),
-                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              
-              const Divider(),
-              const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Subtotal', style: GoogleFonts.inter(fontSize: 14, color: Colors.grey[600])),
+                          Text(currencyFormat.format(_total), style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Discount Input
+                      Row(
+                        children: [
+                           Expanded(
+                             child: TextField(
+                               controller: _discountController,
+                               keyboardType: TextInputType.number,
+                               decoration: _getInputDecoration('Discount Amount', Icons.discount_outlined, prefixText: 'KES '),
+                               onChanged: (val) {
+                                 setSheetState(() {
+                                   _discountAmount = double.tryParse(val) ?? 0.0;
+                                 });
+                               },
+                             ),
+                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
 
-              const Divider(),
-              const SizedBox(height: 16),
+                      // Order Notes
+                      TextField(
+                        controller: _orderNotesController,
+                        decoration: _getInputDecoration('Order Notes / Instructions', Icons.note_alt_outlined),
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 24),
 
-              // Order Notes
-              TextField(
-                controller: _orderNotesController,
-                decoration: InputDecoration(
-                  labelText: 'Order Notes / Instructions',
-                  alignLabelWithHint: true,
-                  isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  prefixIcon: const Icon(Icons.note_alt_outlined, size: 18),
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 16),
-
-              // Payment Method
-              Text('Payment Method', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _paymentChip('Cash', 'cash', setSheetState),
-                  _paymentChip('M-Pesa', 'till', setSheetState),
-                  _paymentChip('Bank', 'nat', setSheetState),
-                  _paymentChip('Credit', 'credit', setSheetState, enabled: _selectedCustomer != null),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // Total & Action
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Total Amount', style: GoogleFonts.inter(fontSize: 16, color: Colors.grey[600])),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (_discountAmount > 0)
-                        Text(currencyFormat.format(_total), style: GoogleFonts.inter(fontSize: 14, decoration: TextDecoration.lineThrough, color: Colors.grey)),
-                      Text(currencyFormat.format(_totalAfterDiscount), style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: const Color(0xFFFF6600))),
+                      // Payment Method
+                      Text('Payment Method', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _paymentChip('Cash', 'cash', setSheetState),
+                          _paymentChip('M-Pesa', 'till', setSheetState),
+                          _paymentChip('Bank', 'nat', setSheetState),
+                          _paymentChip('Credit', 'credit', setSheetState, enabled: _selectedCustomer != null),
+                        ],
+                      ),
                     ],
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 24),
-              
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isCheckingOut || (_paymentMethod == 'credit' && _selectedCustomer == null) ? null : () async {
-                    // Navigator.pop(ctx); // Don't close immediately, let process handle it
-                    await _processCheckout();
-                    Navigator.pop(ctx); // Close sheet on success or failure handled
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 20),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+
+              // Fixed Bottom Action Bar
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
                   ),
-                  child: Text(_paymentMethod == 'credit' && _selectedCustomer == null ? 'Select Customer for Credit' : 'CONFIRM SALE', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Total Amount', style: GoogleFonts.inter(fontSize: 14, color: Colors.grey[600])),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (_discountAmount > 0)
+                                Text(currencyFormat.format(_total), style: GoogleFonts.inter(fontSize: 12, decoration: TextDecoration.lineThrough, color: Colors.grey)),
+                              Text(currencyFormat.format(_totalAfterDiscount), style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold, color: const Color(0xFFFF6600))),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _isCheckingOut || _selectedCustomer == null ? null : () async {
+                            await _processCheckout();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                          ),
+                          child: _isCheckingOut 
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text(_selectedCustomer == null ? 'PLEASE SELECT CUSTOMER' : 'CONFIRM SALE', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -472,8 +620,33 @@ class _POSPageState extends State<POSPage> {
   }
 
 
+  InputDecoration _getInputDecoration(String label, IconData icon, {String? prefixText}) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: Colors.grey[600], size: 20),
+      prefixText: prefixText,
+      labelStyle: GoogleFonts.inter(color: Colors.grey[600], fontSize: 14),
+      floatingLabelStyle: GoogleFonts.inter(color: const Color(0xFFFF6600), fontWeight: FontWeight.bold),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      isDense: true,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey[300]!),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey[300]!),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFFF6600), width: 2),
+      ),
+    );
+  }
+
   Future<void> _processCheckout() async {
     if (cart.isEmpty) return;
+    if (_selectedCustomer == null) throw 'Customer selection is required.';
     setState(() => _isCheckingOut = true);
 
     User? user;
@@ -536,7 +709,8 @@ class _POSPageState extends State<POSPage> {
       final List<Map<String, dynamic>> orderItems = [];
       cart.forEach((variantId, qty) {
         final product = productMap[variantId];
-        final price = (product['price'] as num).toDouble();
+        if (product == null) return;
+        final price = _customPrices[variantId] ?? (product['price'] as num).toDouble();
         orderItems.add({
           'order_id': orderId,
           'variant_id': variantId,
@@ -549,23 +723,9 @@ class _POSPageState extends State<POSPage> {
       await supabase.from('sales_order_items').insert(orderItems);
 
       if (mounted) {
-        // Close Checkout Sheet if open (it is open as a modal)
-        // We are in _processCheckout which is called from the sheet.
-        // We need to close the sheet first.
+        // Success Flow
         Navigator.of(context).pop(); // Close Checkout Sheet
-        
-        // Show Success Snack
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Sale Recorded: ${currencyFormat.format(_totalAfterDiscount)}', style: GoogleFonts.inter()),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          )
-        );
-
-        // Reset and Go Home
-        _resetState();
-        widget.onTabChange?.call(0);
+        _showSuccessModal(orderRes);
       }
     } catch (e) {
       if (mounted) {
@@ -574,6 +734,77 @@ class _POSPageState extends State<POSPage> {
     } finally {
       if (mounted) setState(() => _isCheckingOut = false);
     }
+  }
+
+  void _showSuccessModal(Map<String, dynamic> order) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: Colors.green[50], shape: BoxShape.circle),
+                child: const Icon(Icons.check_circle, color: Colors.green, size: 64),
+              ),
+              const SizedBox(height: 24),
+              Text('Sale Successful!', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text('Order #${order['id'].toString().substring(0, 8).toUpperCase()}', style: GoogleFonts.inter(color: Colors.grey[600])),
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 16),
+              _buildSuccessRow('Customer', _selectedCustomer?['name'] ?? 'Walk-in'),
+              _buildSuccessRow('Total Amount', currencyFormat.format(_totalAfterDiscount)),
+              _buildSuccessRow('Payment', _paymentMethod.toUpperCase()),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx); // Close Dialog
+                    _resetState();
+                    widget.onTabChange?.call(0);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6600),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
+                  ),
+                  child: const Text('CLOSE & GO HOME', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuccessRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: GoogleFonts.inter(color: Colors.grey[600])),
+          Text(value, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
   }
 
   void _showErrorDialog(String msg) {
@@ -592,6 +823,7 @@ class _POSPageState extends State<POSPage> {
   void _resetState() {
      setState(() {
         cart.clear();
+        _customPrices.clear();
         _selectedCustomer = null;
         _paymentMethod = 'cash';
         _discountAmount = 0.0;
@@ -604,9 +836,48 @@ class _POSPageState extends State<POSPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: GoogleFonts.inter()), backgroundColor: color));
   }
 
+  void _showEditProductPriceDialog(String id, double currentPrice, StateSetter setSheetState) {
+    final priceCtrl = TextEditingController(text: currentPrice.toStringAsFixed(2));
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Edit Price', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: priceCtrl,
+          keyboardType: TextInputType.number,
+          decoration: _getInputDecoration('New Price', Icons.payments_outlined, prefixText: 'KES '),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF6600), foregroundColor: Colors.white),
+            onPressed: () {
+              final newPrice = double.tryParse(priceCtrl.text);
+              if (newPrice != null && newPrice >= 0) {
+                setState(() => _customPrices[id] = newPrice);
+                setSheetState(() {}); // Update the checkout sheet UI
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('UPDATE'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStockBadge(Map<String, dynamic> product) {
-    final inventory = product['inventory'];
-    final quantity = (inventory != null && inventory['quantity'] != null) ? inventory['quantity'] as int : 0;
+    final inventoryData = product['inventory'];
+    int quantity = 0;
+    
+    if (inventoryData is List) {
+       for (var item in inventoryData) {
+         quantity += (item['quantity'] as int? ?? 0);
+       }
+    } else if (inventoryData is Map) {
+       quantity = (inventoryData['quantity'] as int? ?? 0);
+    }
     final reorderLevel = product['reorder_level'] as int? ?? 10;
     
     final isLowStock = quantity <= reorderLevel;

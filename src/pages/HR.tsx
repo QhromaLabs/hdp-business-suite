@@ -26,8 +26,8 @@ export default function HR() {
 
   const isLoading = employeesLoading || attendanceLoading;
 
-  const presentCount = attendanceToday.filter(a => a.status === 'present').length;
-  const absentCount = employees.length - attendanceToday.length;
+  const presentCount = attendanceToday.filter(a => ['present', 'field'].includes(a.status)).length;
+  const absentCount = employees.length - presentCount;
   const fieldCount = attendanceToday.filter(a => a.status === 'field').length;
   const leaveCount = attendanceToday.filter(a => a.status === 'leave').length;
 
@@ -162,7 +162,7 @@ export default function HR() {
                       </div>
                       <div className={cn(
                         "absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-4 border-card",
-                        status === 'present' ? 'bg-success' : status === 'absent' ? 'bg-destructive' : 'bg-warning'
+                        (status === 'present' || status === 'field') ? 'bg-success' : status === 'absent' ? 'bg-destructive' : 'bg-warning'
                       )} />
                     </div>
                     <div className="flex-1 min-w-0">

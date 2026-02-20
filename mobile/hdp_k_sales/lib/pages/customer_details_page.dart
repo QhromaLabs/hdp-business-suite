@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hdp_k_sales/main.dart'; // for supabase client
 import 'package:hdp_k_sales/services/ping_service.dart';
+import 'package:geolocator/geolocator.dart';
 
 class CustomerDetailsPage extends StatefulWidget {
   final Map<String, dynamic> customer;
@@ -75,6 +76,12 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: _showEditCustomerModal,
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -404,6 +411,172 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
                 child: isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('SAVE LOG'),
               ),
               const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditCustomerModal() {
+    final nameCtrl = TextEditingController(text: widget.customer['name']);
+    final phoneCtrl = TextEditingController(text: widget.customer['phone']);
+    final addressCtrl = TextEditingController(text: widget.customer['address']);
+    
+    bool isSubmitting = false;
+    bool isLocating = false;
+    double? lat = widget.customer['latitude'] != null ? (widget.customer['latitude'] as num).toDouble() : null;
+    double? lng = widget.customer['longitude'] != null ? (widget.customer['longitude'] as num).toDouble() : null;
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Edit Customer', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              TextField(
+                controller: nameCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Customer Name',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: const Icon(Icons.person_outline),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: phoneCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Phone Number',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: const Icon(Icons.phone_outlined),
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 16),
+              
+              // Location Section
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: addressCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Location / Address',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        prefixIcon: const Icon(Icons.place_outlined),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50], 
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue[100]!)
+                    ),
+                    child: IconButton(
+                      onPressed: isLocating ? null : () async {
+                        setModalState(() => isLocating = true);
+                        try {
+                          LocationPermission permission = await Geolocator.checkPermission();
+                          if (permission == LocationPermission.denied) {
+                            permission = await Geolocator.requestPermission();
+                          }
+                          
+                          if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+                             final pos = await Geolocator.getCurrentPosition();
+                             setModalState(() {
+                               lat = pos.latitude;
+                               lng = pos.longitude;
+                               if (addressCtrl.text.isEmpty) {
+                                  addressCtrl.text = "Pinned Location";
+                               }
+                             });
+                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Location updated!')));
+                          } else {
+                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Location permission denied')));
+                          }
+                        } catch (e) {
+                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                        } finally {
+                          setModalState(() => isLocating = false);
+                        }
+                      },
+                      icon: isLocating 
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Icon(Icons.my_location, color: Colors.blue[700]),
+                      tooltip: 'Use Current Location',
+                    ),
+                  ),
+                ],
+              ),
+              if (lat != null && lng != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'GPS: ${lat!.toStringAsFixed(5)}, ${lng!.toStringAsFixed(5)}',
+                    style: GoogleFonts.inter(fontSize: 12, color: Colors.green[700], fontWeight: FontWeight.w500),
+                  ),
+                ),
+
+              const SizedBox(height: 32),
+              
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF6600),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: isSubmitting ? null : () async {
+                  if (nameCtrl.text.isEmpty) return;
+                  setModalState(() => isSubmitting = true);
+                  try {
+                    final updates = {
+                      'name': nameCtrl.text,
+                      'phone': phoneCtrl.text,
+                      'address': addressCtrl.text,
+                      'latitude': lat,
+                      'longitude': lng,
+                    };
+                    
+                    final res = await supabase.from('customers').update(updates).eq('id', widget.customer['id']).select().single();
+                    
+                    setState(() {
+                       // Update local state widget
+                       widget.customer['name'] = res['name'];
+                       widget.customer['phone'] = res['phone'];
+                       widget.customer['address'] = res['address'];
+                       widget.customer['latitude'] = res['latitude'];
+                       widget.customer['longitude'] = res['longitude'];
+                       
+                       // Recalculate distance if needed, but for now just visual update
+                    });
+                    
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Customer updated successfully')));
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update: $e')));
+                  } finally {
+                    setModalState(() => isSubmitting = false);
+                  }
+                },
+                child: isSubmitting 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
+                  : const Text('SAVE CHANGES', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
             ],
           ),
         ),

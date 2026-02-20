@@ -91,8 +91,10 @@ export default function FieldSales() {
 
   const stats = [
     {
-      title: 'Active Reps',
-      value: attendanceToday.filter(a => ['present', 'field'].includes(a.status)).length,
+      title: 'Active Agents',
+      value: attendanceToday.filter(a =>
+        employees.some(e => e.id === a.employee_id) && ['present', 'field'].includes(a.status)
+      ).length,
       icon: Users,
       color: 'success',
     },
@@ -557,9 +559,9 @@ export default function FieldSales() {
                       <div className="flex flex-col text-center">
                         <span className="text-xs text-muted-foreground">Status</span>
                         <span className={cn(
-                          'text-sm font-semibold',
-                          status === 'present' || status === 'field' ? 'text-success' : 'text-muted-foreground'
-                        )}>{status}</span>
+                          'text-sm font-semibold capitalize',
+                          (status === 'present' || status === 'field') ? 'text-success' : 'text-muted-foreground'
+                        )}>{(status === 'present' || status === 'field') ? 'On Duty' : status}</span>
                       </div>
                       <div className="flex flex-col text-right">
                         <span className="text-xs text-muted-foreground">Call</span>
