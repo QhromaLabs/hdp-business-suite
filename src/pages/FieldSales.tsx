@@ -70,9 +70,9 @@ export default function FieldSales() {
   );
 
   const attendanceByEmployee = useMemo(() => {
-    const map: Record<string, string> = {};
+    const map: Record<string, { status: string; check_out: string | null }> = {};
     attendanceToday.forEach(a => {
-      map[a.employee_id] = a.status;
+      map[a.employee_id] = { status: a.status, check_out: a.check_out };
     });
     return map;
   }, [attendanceToday]);
@@ -93,7 +93,9 @@ export default function FieldSales() {
     {
       title: 'Active Agents',
       value: attendanceToday.filter(a =>
-        employees.some(e => e.id === a.employee_id) && ['present', 'field'].includes(a.status)
+        employees.some(e => e.id === a.employee_id) &&
+        ['present', 'field'].includes(a.status) &&
+        !a.check_out
       ).length,
       icon: Users,
       color: 'success',
@@ -186,7 +188,7 @@ export default function FieldSales() {
       }).bindPopup(`
                <div class="p-1">
                  <p class="text-xs font-bold">${repName}</p>
-                 <p class="text-[10px] text-muted-foreground">${new Date(loc.timestamp).toLocaleTimeString()}</p>
+                 <p class="text-[10px] text-muted-foreground">${new Date(loc.created_at).toLocaleTimeString()}</p>
                </div>
            `).addTo(layer);
     });
@@ -241,7 +243,7 @@ export default function FieldSales() {
           <p class="font-bold text-base mb-1">${repName}</p>
           <div class="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
              <span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
-             ${new Date(loc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+             ${new Date(loc.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
            <p class="text-sm border-t pt-2 mt-1">
              📍 ${address}
@@ -310,8 +312,8 @@ export default function FieldSales() {
       return () => clearTimeout(timer);
     }, [loc.latitude, loc.longitude]);
 
-    const time = new Date(loc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const date = new Date(loc.timestamp).toLocaleDateString();
+    const time = new Date(loc.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const date = new Date(loc.created_at).toLocaleDateString();
 
     return (
       <div className="flex gap-3 items-start p-3 bg-card/50 rounded-xl border border-border/30 text-sm hover:bg-card transition-colors">
@@ -514,7 +516,7 @@ export default function FieldSales() {
           <div className="space-y-4 flex-1 overflow-y-auto max-h-[500px] pr-2">
             {statusTab === 'reps' ? (
               fieldReps.map((rep, idx) => {
-                const status = attendanceByEmployee[rep.id] || 'absent';
+                const status = attendanceByEmployee[rep.id] || { status: 'absent', check_out: null };
                 const repOrders = ordersByRep[rep.id];
                 const ordersToday = repOrders?.count || 0;
                 const salesValue = repOrders?.value || 0;
@@ -529,7 +531,7 @@ export default function FieldSales() {
                           </div>
                           <div className={cn(
                             "absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-4 border-card",
-                            status === 'present' || status === 'field' ? 'bg-success' : status === 'leave' ? 'bg-warning' : 'bg-muted-foreground opacity-50'
+                            ((status.status === 'present' || status.status === 'field') && !status.check_out) ? 'bg-success' : status.status === 'leave' ? 'bg-warning' : 'bg-muted-foreground opacity-50'
                           )} />
                         </div>
                         <div>
@@ -560,8 +562,8 @@ export default function FieldSales() {
                         <span className="text-xs text-muted-foreground">Status</span>
                         <span className={cn(
                           'text-sm font-semibold capitalize',
-                          (status === 'present' || status === 'field') ? 'text-success' : 'text-muted-foreground'
-                        )}>{(status === 'present' || status === 'field') ? 'On Duty' : status}</span>
+                          ((status.status === 'present' || status.status === 'field') && !status.check_out) ? 'text-success' : 'text-muted-foreground'
+                        )}>{((status.status === 'present' || status.status === 'field') && !status.check_out) ? 'On Duty' : status.check_out ? 'Off Duty' : status.status}</span>
                       </div>
                       <div className="flex flex-col text-right">
                         <span className="text-xs text-muted-foreground">Call</span>

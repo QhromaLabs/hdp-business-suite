@@ -22,6 +22,8 @@ import {
     User,
     MapPin,
     Activity,
+    Globe,
+    ShoppingBag
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DispatchOrderModal } from './DispatchOrderModal';
@@ -317,24 +319,29 @@ export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
                                     </button>
                                 </>
                             )}
-                            {order.status === 'approved' && !isDispatching && (
-                                <button onClick={() => setIsDispatching(true)} className="w-full md:w-auto px-8 py-3 bg-info/10 text-info border border-info/20 rounded-xl font-bold text-sm hover:bg-info hover:text-white transition-all flex items-center justify-center gap-2">
+                            {order.status === 'approved' && (
+                                <button onClick={() => setDispatchingOrder(order)} className="w-full md:w-auto px-8 py-3 bg-info/10 text-info border border-info/20 rounded-xl font-bold text-sm hover:bg-info hover:text-white transition-all flex items-center justify-center gap-2">
                                     <Navigation className="w-4 h-4" />
                                     Prepare Dispatch
                                 </button>
                             )}
-                            {order.status === 'approved' && isDispatching && (
-                                <div className="flex gap-2 w-full md:w-auto">
-                                    <button onClick={handleDispatch} className="flex-1 md:flex-none px-6 py-3 bg-info text-white rounded-xl font-bold text-sm shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                                        {updateStatus.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
-                                        Confirm Dispatch
-                                    </button>
-                                    <button onClick={() => setIsDispatching(false)} className="px-4 py-3 bg-muted text-muted-foreground rounded-xl font-bold text-sm hover:bg-muted/80 transition-all">
-                                        Cancel
-                                    </button>
-                                </div>
+                            {(order.status === 'in_transit' || order.status === 'ready_for_pickup') && (order.third_party_provider_id || order.is_self_pickup) && (
+                                <button
+                                    onClick={() => {
+                                        if (window.confirm('Mark this order as delivered?')) {
+                                            updateStatus.mutate({
+                                                id: order.id,
+                                                status: 'delivered'
+                                            });
+                                        }
+                                    }}
+                                    className="w-full md:w-auto px-8 py-3 bg-green-600 text-white rounded-xl font-bold text-sm shadow-lg hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
+                                >
+                                    <CheckCircle className="w-4 h-4" />
+                                    {order.is_self_pickup ? 'Confirm Pickup' : 'Mark as Delivered'}
+                                </button>
                             )}
-                            {order.status === 'in_transit' && (
+                            {order.status === 'in_transit' && !order.third_party_provider_id && !order.is_self_pickup && (
                                 <a
                                     href={`/deliveries?orderId=${order.id}`}
                                     className="w-full md:w-auto px-8 py-3 bg-green-600 text-white rounded-xl font-bold text-sm shadow-lg hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
@@ -351,37 +358,32 @@ export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
                         </div>
                     </div>
 
-                    {order.status === 'approved' && isDispatching && (
-                        <div className="space-y-6 p-6 bg-info/5 border border-info/10 rounded-2xl animate-fade-in">
-                            <div className="space-y-3">
-                                <label className="text-xs font-black uppercase text-info tracking-widest flex items-center gap-2">
-                                    <User className="w-3 h-3" />
-                                    Assign Delivery Agent
-                                </label>
-                                <select value={selectedAgentId} onChange={(e) => setSelectedAgentId(e.target.value)} className="w-full px-4 py-3 bg-card border border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-info/20 outline-none transition-all">
-                                    <option value="">Select an agent...</option>
-                                    {agents.map((agent) => (
-                                        <option key={agent.id} value={agent.id}>{agent.full_name} ({agent.phone || 'No phone'})</option>
-                                    ))}
-                                </select>
+                    {(order.third_party_provider_id || order.is_self_pickup) && (
+                        <div className="p-6 rounded-2xl bg-muted/30 border border-border/50 flex flex-col md:flex-row items-center gap-6">
+                            <div className="w-16 h-16 rounded-2xl bg-white border border-border/10 flex items-center justify-center p-3">
+                                {order.is_self_pickup ? (
+                                    <ShoppingBag className="w-10 h-10 text-primary" />
+                                ) : (
+                                    <Globe className="w-10 h-10 text-blue-500" />
+                                )}
                             </div>
-
-                            <div className="space-y-3">
-                                <label className="text-xs font-black uppercase text-info tracking-widest flex items-center gap-2">
-                                    <MapPin className="w-3 h-3" />
-                                    Verify Delivery Location
-                                </label>
-                                <div className="h-[300px] border border-border/50 rounded-xl overflow-hidden">
-                                    <LocationPicker
-                                        initialLocation={{
-                                            lat: location.latitude,
-                                            lng: location.longitude,
-                                            address: location.address
-                                        }}
-                                        onLocationSelect={(loc) => setLocation({ latitude: loc.lat, longitude: loc.lng, address: loc.address })}
-                                    />
+                            <div className="flex-1 text-center md:text-left">
+                                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-1">Logistics Information</p>
+                                <h4 className="text-xl font-black text-foreground">
+                                    {order.is_self_pickup ? 'Self Pickup Order' : 'Third Party Delivery'}
+                                </h4>
+                                <p className="text-sm text-muted-foreground font-medium mt-1">
+                                    {order.is_self_pickup
+                                        ? 'Customer will collect the order from the store.'
+                                        : `Order is being delivered via external provider.`}
+                                </p>
+                            </div>
+                            {order.delivery_code && (
+                                <div className="px-6 py-3 bg-primary/10 rounded-2xl border border-primary/20 text-center">
+                                    <p className="text-[10px] font-bold uppercase text-primary tracking-widest mb-1">Verification Code</p>
+                                    <span className="text-2xl font-black text-primary tracking-widest">{order.delivery_code}</span>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     )}
 
@@ -395,6 +397,17 @@ export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
                                 <div>
                                     <p className="text-sm font-bold">{order.customer?.name || 'Walk-in Guest'}</p>
                                     <p className="text-xs text-muted-foreground">{order.customer?.phone || 'No phone provided'}</p>
+                                    {order.latitude && order.longitude && (
+                                        <a
+                                            href={`https://www.google.com/maps/search/?api=1&query=${order.latitude},${order.longitude}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-[10px] text-info flex items-center gap-1 mt-1.5 hover:underline font-bold tracking-tight"
+                                        >
+                                            <MapPin className="w-3 h-3" />
+                                            View Sale Location
+                                        </a>
+                                    )}
                                 </div>
                             </div>
                         </div>

@@ -43,7 +43,7 @@ const navItems: NavItem[] = [
   { label: 'Purchases', icon: ShoppingBag, path: '/purchases', roles: ['admin', 'manager'] },
   { label: 'Categories', icon: Folder, path: '/categories' },
   { label: 'Manufacturing', icon: Factory, path: '/manufacturing', roles: ['admin', 'manager'] },
-  { label: 'Accounting', icon: Calculator, path: '/accounting', roles: ['admin', 'manager'] },
+  { label: 'Accounting', icon: Calculator, path: '/accounting', roles: ['admin', 'manager', 'clerk'] },
   { label: 'Employees', icon: Users, path: '/hr', roles: ['admin', 'manager'] },
   { label: 'Payroll', icon: Wallet, path: '/payroll', roles: ['admin', 'manager'] },
   { label: 'Field Sales', icon: MapPin, path: '/field-sales' },

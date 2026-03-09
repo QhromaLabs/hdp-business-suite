@@ -40,6 +40,7 @@ import { calculateTotals } from '@/lib/tax';
 import { useCreateProductReturn } from '@/hooks/useReturns'; // Import the new hook
 import { Switch } from "@/components/ui/switch"; // Import Switch for toggle
 import { Textarea } from "@/components/ui/textarea"; // Import Textarea
+import { useAuth } from '@/contexts/AuthContext';
 
 type PaymentMethod = Database['public']['Enums']['payment_method'];
 
@@ -81,6 +82,7 @@ export default function POS() {
   const { data: customers = [] } = useCustomers();
   const createCustomer = useCreateCustomer();
   const { taxEnabled, taxRate } = useSettings();
+  const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -309,6 +311,7 @@ export default function POS() {
         is_credit_sale: selectedPayment === 'credit',
         globalDiscount: globalDiscount,
         notes: orderNotes,
+        created_by: user?.id,
       });
       clearCart();
       setShowPaymentModal(false);
@@ -368,7 +371,8 @@ export default function POS() {
       const result = await createCustomer.mutateAsync({
         name: newCustomer.name,
         phone: newCustomer.phone,
-        customer_type: 'normal'
+        customer_type: 'normal',
+        user_id: user?.id
       });
       setSelectedCustomer({
         id: result.id,

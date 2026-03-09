@@ -4,6 +4,7 @@ import 'package:hdp_k_sales/pages/home_page.dart';
 import 'package:hdp_k_sales/pages/pos_page.dart';
 import 'package:hdp_k_sales/pages/analytics_page.dart';
 import 'package:hdp_k_sales/pages/crm_page.dart';
+import 'package:hdp_k_sales/pages/expenses_page.dart';
 import 'package:hdp_k_sales/widgets/nav_bar_item.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -171,6 +172,14 @@ class _MainScreenState extends State<MainScreen> {
             onTap: () {
               Navigator.pop(context);
               _onItemTapped(3);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.receipt_long, color: Colors.blue),
+            title: Text('Record Expenses', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ExpensesPage()));
             },
           ),
           const Spacer(),

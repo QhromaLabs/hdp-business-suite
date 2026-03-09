@@ -22,6 +22,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   double _monthlyTarget = 0;
   double _monthlyActual = 0;
   List<String> _trendDays = [];
+  List<Map<String, dynamic>> _recentOrders = [];
+  bool _isFetchingDetails = false;
   RealtimeChannel? _realtimeChannel;
 
   @override
@@ -166,6 +168,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           .gte('target_month', monthStart)
           .maybeSingle();
       
+      // Fetch Recent Orders (Weekly History)
+      final ordersRes = await supabase
+          .from('sales_orders')
+          .select('*, customers(name)')
+          .eq('created_by', user?.id ?? '')
+          .order('created_at', ascending: false)
+          .limit(20);
+      
       if (mounted) {
         setState(() {
           _stats = {
@@ -177,6 +187,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           };
           _salesTrend = spots;
           _trendDays = days;
+          _recentOrders = List<Map<String, dynamic>>.from(ordersRes);
           _categorySections = sections;
           if (targetRes != null) {
             _monthlyTarget = (targetRes['target_amount'] as num).toDouble();
@@ -242,6 +253,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       _buildCategoryChart(),
                       const SizedBox(height: 24),
                       _buildTargetComparison(currencyFormat),
+                      const SizedBox(height: 32),
+                      _buildRecentOrders(currencyFormat),
                       const SizedBox(height: 100), // Space for bottom nav
                     ],
                   ),
@@ -429,6 +442,187 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           Center(
             child: Text('${(progress * 100).toInt()}% of monthly goal', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentOrders(NumberFormat currencyFormat) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Weekly History', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold)),
+            Text('${_recentOrders.length} orders', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600])),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_recentOrders.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+            child: Center(child: Text('No orders recorded this week', style: GoogleFonts.inter(color: Colors.grey))),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _recentOrders.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (ctx, index) {
+              final order = _recentOrders[index];
+              final date = DateTime.parse(order['created_at']);
+              return InkWell(
+                onTap: () => _showOrderDetails(order),
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.grey[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(color: const Color(0xFFFF6600).withOpacity(0.1), shape: BoxShape.circle),
+                        child: const Icon(Icons.receipt_long, color: Color(0xFFFF6600), size: 20),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(order['customers']?['name'] ?? 'Walk-in', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                            Text(DateFormat('MMM dd, hh:mm a').format(date), style: GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(currencyFormat.format(order['total_amount']), style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: order['status'] == 'completed' ? Colors.green[50] : Colors.orange[50],
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              order['status'].toString().toUpperCase(),
+                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: order['status'] == 'completed' ? Colors.green[700] : Colors.orange[700]),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  Future<void> _showOrderDetails(Map<String, dynamic> order) async {
+    final currencyFormat = NumberFormat.currency(symbol: 'KES ', decimalDigits: 0);
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (ctx, setModalState) => Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Order Details', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold)),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                  ],
+                ),
+              ),
+              const Divider(),
+              Expanded(
+                child: FutureBuilder<List<dynamic>>(
+                  future: supabase.from('sales_order_items').select('*, product_variants(variant_name)').eq('order_id', order['id']),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator(color: Color(0xFFFF6600)));
+                    }
+                    if (snapshot.hasError) {
+                      return Center(child: Text('Error: ${snapshot.error}'));
+                    }
+                    final items = snapshot.data ?? [];
+                    return ListView(
+                      padding: const EdgeInsets.all(24),
+                      children: [
+                        _buildDetailRow('Order #', order['order_number'] ?? order['id'].toString().substring(0, 8)),
+                        _buildDetailRow('Date', DateFormat('MMM dd, yyyy HH:mm').format(DateTime.parse(order['created_at']))),
+                        _buildDetailRow('Customer', order['customers']?['name'] ?? 'Walk-in'),
+                        _buildDetailRow('Status', order['status'].toString().toUpperCase()),
+                        const SizedBox(height: 24),
+                        Text('ITEMS', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        const SizedBox(height: 12),
+                        ...items.map((item) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(item['product_variants']?['variant_name'] ?? 'Unknown Item', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                                  Text('Qty: ${item['quantity']} @ ${currencyFormat.format(item['unit_price'])}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
+                                ],
+                              ),
+                              Text(currencyFormat.format(item['total_price']), style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        )),
+                        const Divider(height: 48),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('TOTAL', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold)),
+                            Text(currencyFormat.format(order['total_amount']), style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFFFF6600))),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: GoogleFonts.inter(color: Colors.grey[600])),
+          Text(value, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
         ],
       ),
     );

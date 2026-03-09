@@ -42,14 +42,16 @@ export function useDeliveries() {
                 .select(`
           *,
           customer:customers(name, phone, address_name, latitude, longitude),
-          delivery_agent:employees!sales_orders_delivery_agent_id_fkey(id, full_name, phone, user_id)
+          delivery_agent:employees!sales_orders_delivery_agent_id_fkey(id, full_name, phone, user_id),
+          third_party_provider:third_party_providers(id, name, image_url, phone)
         `)
-                .in('status', ['dispatched', 'in_transit', 'delivered'])
+                .in('status', ['dispatched', 'in_transit', 'delivered', 'ready_for_pickup'])
                 .order('dispatched_at', { ascending: false });
 
             if (error) throw error;
             return data as (SalesOrder & {
                 delivery_agent?: { id: string; full_name: string; phone: string; user_id?: string };
+                third_party_provider?: { id: string; name: string; image_url?: string; phone?: string };
             })[];
         },
     });

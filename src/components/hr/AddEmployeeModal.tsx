@@ -115,6 +115,22 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
           }
         }
 
+        if (formData.email) {
+          const { data: existingEmp } = await supabase
+            .from('employees')
+            .select('id, is_active')
+            .eq('email', formData.email)
+            .maybeSingle();
+
+          if (existingEmp) {
+            if (existingEmp.is_active) {
+              throw new Error(`An active employee with email ${formData.email} already exists.`);
+            } else {
+              throw new Error(`A terminated employee with email ${formData.email} already exists. Please find and 'Restore' them from the Terminated tab instead of creating a new record.`);
+            }
+          }
+        }
+
         let userId = null;
 
         // 1. Optional: Create Auth User via RPC
@@ -130,7 +146,12 @@ export function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmploye
             _role: formData.role || 'clerk'
           });
 
-          if (rpcError) throw rpcError;
+          if (rpcError) {
+            if (rpcError.message.includes('already exists')) {
+              throw new Error(`A system login with email ${formData.email} already exists in the authentication system. If you recently deleted this user, it might take a moment to clear, or there might be a ghost profile. Check the Terminated tab to see if they can be restored.`);
+            }
+            throw rpcError;
+          }
           userId = newUserId;
         }
 

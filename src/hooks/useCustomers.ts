@@ -24,15 +24,21 @@ export interface Customer {
   updated_at: string;
 }
 
-export function useCustomers() {
+export function useCustomers(userId?: string) {
   return useQuery({
-    queryKey: ['customers'],
+    queryKey: ['customers', userId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('customers')
         .select('*')
         .eq('is_active', true)
         .order('name');
+
+      if (userId) {
+        query = query.eq('created_by', userId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       return data as Customer[];
@@ -72,7 +78,8 @@ export function useCreateCustomer() {
       latitude?: number;
       longitude?: number;
       customer_type: CustomerType;
-      credit_limit?: number
+      credit_limit?: number;
+      user_id?: string;
     }) => {
       const { data, error } = await supabase
         .from('customers')

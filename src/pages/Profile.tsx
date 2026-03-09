@@ -1,5 +1,5 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { BadgeCheck, Mail, Phone, Shield, User, Activity, Clock, Smartphone, Save } from 'lucide-react';
+import { BadgeCheck, Mail, Phone, Shield, User, Smartphone, Save } from 'lucide-react';
 import { CardGridSkeleton, PageHeaderSkeleton } from '@/components/loading/PageSkeletons';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
@@ -15,6 +15,8 @@ export default function Profile() {
     device_id: '',
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -161,18 +163,41 @@ export default function Profile() {
 
         <div className="space-y-4">
           <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-3 text-foreground">
-              <Activity className="w-5 h-5" />
-              <h3 className="text-sm font-semibold text-muted-foreground">Recent activity</h3>
+            <div className="flex items-center gap-2 mb-4 text-foreground">
+              <Shield className="w-5 h-5 text-primary" />
+              <h3 className="text-sm font-semibold text-muted-foreground">Account Security</h3>
             </div>
-            <div className="space-y-3 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                <span>Last login: {new Date().toLocaleString('en-KE', { hour: '2-digit', minute: '2-digit', weekday: 'short', month: 'short', day: 'numeric' })}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4" />
-                <span>Account status: Active</span>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-muted-foreground">Change Password</label>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="password"
+                    className="input-field shadow-none"
+                    placeholder="New password (min 6 chars)"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                  <button
+                    className="btn-primary py-2 px-4 shadow-none w-full"
+                    disabled={isUpdatingPassword || newPassword.length < 6}
+                    onClick={async () => {
+                      setIsUpdatingPassword(true);
+                      try {
+                        const { error } = await supabase.auth.updateUser({ password: newPassword });
+                        if (error) throw error;
+                        toast.success('Password updated successfully');
+                        setNewPassword('');
+                      } catch (err: any) {
+                        toast.error(err.message || 'Failed to update password');
+                      } finally {
+                        setIsUpdatingPassword(false);
+                      }
+                    }}
+                  >
+                    {isUpdatingPassword ? 'Updating...' : 'Update Password'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/table";
 import { Package, Barcode, Wallet, Calendar, Tag, History, Info, List, ArrowUpRight, ArrowDownRight, Plus } from 'lucide-react';
 import { useProductHistory } from '@/hooks/useProducts';
+import { useAuth } from '@/contexts/AuthContext';
+import { cn } from "@/lib/utils";
 
 interface ProductDetailsModalProps {
     isOpen: boolean;
@@ -29,6 +31,10 @@ interface ProductDetailsModalProps {
 }
 
 export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetailsModalProps) {
+    const { userRole } = useAuth();
+    const isClerk = userRole === 'clerk';
+    const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
+
     if (!product) return null;
 
     const variant = product.variant || product;
@@ -39,8 +45,10 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
         { label: 'Category', value: prod?.category?.name || 'Uncategorized', icon: Tag },
         { label: 'SKU', value: variant?.sku, icon: Package },
         { label: 'Barcode', value: variant?.barcode || 'N/A', icon: Barcode },
-        { label: 'Cost Price', value: `KES ${variant?.cost_price || prod?.cost_price || 0}`, icon: Wallet },
-        { label: 'Selling Price', value: `KES ${variant?.price || prod?.base_price || 0}`, icon: Wallet },
+        ...(isAdminOrManager ? [
+            { label: 'Cost Price', value: `KES ${variant?.cost_price || prod?.cost_price || 0}`, icon: Wallet },
+            { label: 'Selling Price', value: `KES ${variant?.price || prod?.base_price || 0}`, icon: Wallet },
+        ] : []),
         { label: 'Current Stock', value: product.quantity ?? 'N/A', icon: Package },
     ];
 
@@ -72,7 +80,7 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
                 </DialogHeader>
 
                 <Tabs defaultValue="overview" className="mt-6">
-                    <TabsList className="grid w-full grid-cols-3 h-12">
+                    <TabsList className={cn("grid w-full h-12", isClerk ? "grid-cols-2" : "grid-cols-3")}>
                         <TabsTrigger value="overview" className="flex items-center gap-2">
                             <Info className="w-4 h-4" />
                             Overview
@@ -81,10 +89,12 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
                             <List className="w-4 h-4" />
                             Attributes
                         </TabsTrigger>
-                        <TabsTrigger value="history" className="flex items-center gap-2">
-                            <History className="w-4 h-4" />
-                            History
-                        </TabsTrigger>
+                        {!isClerk && (
+                            <TabsTrigger value="history" className="flex items-center gap-2">
+                                <History className="w-4 h-4" />
+                                History
+                            </TabsTrigger>
+                        )}
                     </TabsList>
 
                     <TabsContent value="overview" className="space-y-6 py-4 animate-in fade-in slide-in-from-top-2">

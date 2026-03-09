@@ -44,11 +44,29 @@ class _CRMPageState extends State<CRMPage> {
       // 2. Fetch Customers with their last order location from sales_orders
       // We'll use a RPC or a complex query. 
       // For simplicity, let's fetch customers and then fetch their last order locations
-      final custRes = await supabase
+      // 2. Fetch Customers
+      // Filter by created_by if not admin/manager
+      var query = supabase
           .from('customers')
-          .select('id, name, phone, customer_type, credit_balance, credit_limit')
-          .eq('is_active', true)
-          .order('name');
+          .select('id, name, phone, customer_type, credit_balance, credit_limit, created_by')
+          .eq('is_active', true);
+
+      // We need the role to decide on filtering. Let's fetch profile first if needed.
+      final user = supabase.auth.currentUser;
+      final profileRes = await supabase
+          .from('employees')
+          .select('role')
+          .eq('email', user?.email ?? '')
+          .maybeSingle();
+      
+      final role = profileRes?['role'];
+      final isAdmin = role == 'admin' || role == 'manager';
+
+      if (!isAdmin && user != null) {
+        query = query.eq('created_by', user.id);
+      }
+
+      final custRes = await query.order('name');
 
       // Fetch last known locations from sales_orders
       final ordersRes = await supabase

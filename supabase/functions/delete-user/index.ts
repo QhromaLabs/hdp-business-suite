@@ -7,7 +7,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-    // Check for OPTIONS request for CORS
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
     }
@@ -16,121 +15,57 @@ serve(async (req) => {
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
         const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-        if (!supabaseUrl || !serviceRoleKey) {
-            console.error('Missing Environment Variables:', {
-                url: !!supabaseUrl,
-                key: !!serviceRoleKey
-            });
-            throw new Error('Server configuration error: Missing Environment Variables');
-        }
+        const supabaseClient = createClient(supabaseUrl, serviceRoleKey, {
+            auth: { autoRefreshToken: false, persistSession: false }
+        })
 
-        const supabaseClient = createClient(
-            supabaseUrl,
-            serviceRoleKey,
-            {
-                auth: {
-                    autoRefreshToken: false,
-                    persistSession: false
-                }
-            }
-        )
+        const body = await req.json();
+        let { user_id, email } = body;
 
-        let body;
-        try {
-            body = await req.json();
-        } catch (e) {
-            console.error('Failed to parse JSON body:', e);
-            throw new Error('Invalid JSON body');
-        }
+        console.log(`Deletion request for user_id: ${user_id}, email: ${email}`);
 
-        const { user_id } = body;
+        // 0. Resolve User ID if only email is provided
+        if (!user_id && email) {
+            console.log(`Looking up user by email: ${email}`);
+            const { data: { users }, error: listError } = await supabaseClient.auth.admin.listUsers();
+            if (listError) throw listError;
 
-        console.log(`Received request to delete user_id: ${user_id}`);
-
-        if (!user_id) {
-            console.error('User ID missing in payload', body);
-            return new Response(
-                JSON.stringify({ error: 'User ID is required', received: body }),
-                {
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    status: 400
-                }
-            )
-        }
-
-        // -1. Delete from user_roles (Explicit cleanup)
-        console.log('Step -1: Deleting from user_roles...');
-        const { error: deleteRolesError } = await supabaseClient
-            .from('user_roles')
-            .delete()
-            .eq('user_id', user_id);
-
-        if (deleteRolesError) {
-            console.error('User roles deletion error:', JSON.stringify(deleteRolesError));
-            throw deleteRolesError;
-        }
-
-        // 0. Update employees table - Unlink user_id to allow profile deletion
-        // We cannot blindly delete employees because of FK to sales_orders, payroll etc.
-        // So we set user_id to NULL. This preserves sales history but frees the Profile to be deleted.
-        console.log('Step 0: Unlinking employee record...');
-        const { error: unlinkError } = await supabaseClient
-            .from('employees')
-            .update({ user_id: null, is_active: false }) // Also mark inactive
-            .eq('user_id', user_id);
-
-        if (unlinkError) {
-            console.error('Error unlinking employee:', JSON.stringify(unlinkError));
-            throw unlinkError;
-        }
-
-        // 1. Delete from public.profiles
-        // Now that employee is unlinked, this should succeed (unless other blocking constraints exist)
-        console.log('Step 1: Deleting from profiles...');
-        const { error: deleteProfileError } = await supabaseClient
-            .from('profiles')
-            .delete()
-            .eq('id', user_id)
-
-        if (deleteProfileError && deleteProfileError.code !== 'PGRST116') {
-            console.error('Profile deletion error:', JSON.stringify(deleteProfileError));
-            throw deleteProfileError;
-        }
-
-        // 2. Delete from auth.users
-        console.log('Step 2: Deleting from auth.users...');
-        const { error: deleteAuthError } = await supabaseClient.auth.admin.deleteUser(user_id)
-
-        if (deleteAuthError) {
-            // Check if user not found - treat as success for idempotency
-            const isNotFound = (deleteAuthError as any).status === 404 ||
-                deleteAuthError.message.includes('not found');
-
-            if (isNotFound) {
-                console.log('Auth user not found (already deleted?), proceeding.');
+            const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+            if (user) {
+                user_id = user.id;
+                console.log(`Found user_id: ${user_id} for email: ${email}`);
             } else {
-                console.error('Error deleting auth user:', JSON.stringify(deleteAuthError));
+                console.log(`No auth user found for email: ${email}`);
+            }
+        }
+
+        if (user_id) {
+            // 1. Delete from user_roles
+            await supabaseClient.from('user_roles').delete().eq('user_id', user_id);
+
+            // 2. Unlink from employees
+            await supabaseClient.from('employees').update({ user_id: null }).eq('user_id', user_id);
+
+            // 3. Delete profile
+            await supabaseClient.from('profiles').delete().eq('id', user_id);
+
+            // 4. Delete auth user
+            const { error: deleteAuthError } = await supabaseClient.auth.admin.deleteUser(user_id);
+            if (deleteAuthError && (deleteAuthError as any).status !== 404) {
                 throw deleteAuthError;
             }
         }
 
-        console.log('Deletion successful');
         return new Response(
-            JSON.stringify({ message: 'User deleted successfully' }),
-            {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 200
-            }
+            JSON.stringify({ message: 'User deletion processed', detected_id: user_id }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         )
 
     } catch (error) {
-        console.error('Unexpected error in delete-user:', error);
+        console.error('Error in delete-user:', error);
         return new Response(
-            JSON.stringify({ error: error.message, stack: error.stack }),
-            {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 500 // Return 500 for unexpected errors
-            }
+            JSON.stringify({ error: error.message }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
         )
     }
 })

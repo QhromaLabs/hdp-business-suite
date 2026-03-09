@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { AddCustomerModal } from '@/components/customers/AddCustomerModal';
 import { AdvancedCustomerModal } from '@/components/customers/AdvancedCustomerModal';
 import { CardGridSkeleton, FilterBarSkeleton, PageHeaderSkeleton, StatsSkeleton } from '@/components/loading/PageSkeletons';
+import { useAuth } from '@/contexts/AuthContext';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -38,6 +39,7 @@ const customerTypes = [
 
 export default function Customers() {
   const queryClient = useQueryClient();
+  const { user, userRole } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -45,10 +47,15 @@ export default function Customers() {
   const [viewingCustomer, setViewingCustomer] = useState<any>(null);
   const [paymentCustomer, setPaymentCustomer] = useState<any>(null);
 
+  const isClerk = userRole === 'clerk';
   const { data: customers = [], isLoading } = useCustomers();
   const deleteCustomer = useDeleteCustomer();
 
   const filteredCustomers = customers.filter(customer => {
+    // For Clerks, show only 'normal' customers (POS)
+    const isPOSCustomer = !isClerk || customer.customer_type === 'normal';
+    if (!isPOSCustomer) return false;
+
     const matchesSearch =
       customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       customer.phone?.includes(searchQuery) ||
@@ -64,30 +71,31 @@ export default function Customers() {
       icon: Users,
       color: 'primary',
     },
-    {
-      title: 'Credit Outstanding',
-      value: formatCurrency(customers.reduce((sum, c) => sum + Number(c.credit_balance || 0), 0)),
-      icon: CreditCard,
-      color: 'warning',
-    },
-    {
-      title: 'Consignment Partners',
-      value: customers.filter(c => c.customer_type === 'consignment').length,
-      icon: Building,
-      color: 'success',
-    },
-    {
-      title: 'Marketplace',
-      value: customers.filter(c => c.customer_type === 'marketplace').length,
-      icon: ShoppingBag,
-      color: 'accent',
-    },
+    ...(!isClerk ? [
+      {
+        title: 'Credit Outstanding',
+        value: formatCurrency(customers.reduce((sum, c) => sum + Number(c.credit_balance || 0), 0)),
+        icon: CreditCard,
+        color: 'warning',
+      },
+      {
+        title: 'Consignment Partners',
+        value: customers.filter(c => c.customer_type === 'consignment').length,
+        icon: Building,
+        color: 'success',
+      },
+      {
+        title: 'Retail (Normal)',
+        value: customers.filter(c => c.customer_type === 'normal').length,
+        icon: ShoppingBag,
+        color: 'accent',
+      }
+    ] : []),
   ];
 
   const getTypeColor = (type: CustomerType) => {
     switch (type) {
       case 'consignment': return 'badge-warning';
-      case 'marketplace': return 'badge-success';
       default: return 'bg-muted text-muted-foreground';
     }
   };
@@ -149,7 +157,7 @@ export default function Customers() {
             />
           </div>
           <div className="flex gap-2">
-            {customerTypes.map(type => (
+            {customerTypes.filter(t => !isClerk || t.value === 'all' || t.value === 'normal').map(type => (
               <button
                 key={type.value}
                 onClick={() => setSelectedType(type.value)}
@@ -245,7 +253,7 @@ export default function Customers() {
                   </td>
                   <td className="py-4 px-6">
                     <div className="flex items-center justify-end gap-2">
-                      {Number(customer.credit_balance) > 0 && (
+                      {!isClerk && Number(customer.credit_balance) > 0 && (
                         <button
                           onClick={() => setViewingCustomer(customer)}
                           className="p-2 rounded-lg bg-success/10 text-success hover:bg-success/20 transition-colors"
@@ -259,20 +267,24 @@ export default function Customers() {
                         className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
                         <Eye className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={() => {
-                          setEditingCustomer(customer);
-                          setIsAddModalOpen(true);
-                        }}
-                        className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => deleteCustomer.mutate(customer.id)}
-                        className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {!isClerk && (
+                        <>
+                          <button
+                            onClick={() => {
+                              setEditingCustomer(customer);
+                              setIsAddModalOpen(true);
+                            }}
+                            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteCustomer.mutate(customer.id)}
+                            className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>

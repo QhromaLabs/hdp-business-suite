@@ -23,6 +23,7 @@ import { ProductDetailsModal } from '@/components/inventory/ProductDetailsModal'
 import { FilterBarSkeleton, PageHeaderSkeleton, StatsSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-KE', {
@@ -45,6 +46,9 @@ export default function Inventory() {
   const { data: categories = [] } = useCategories();
   const deleteProducts = useDeleteProducts();
   const queryClient = useQueryClient();
+  const { userRole } = useAuth();
+
+  const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
 
   // Realtime Sync for Inventory
   useEffect(() => {
@@ -96,12 +100,6 @@ export default function Inventory() {
       color: 'primary',
     },
     {
-      title: 'Stock Value',
-      value: formatCurrency(totalValue),
-      icon: TrendingUp,
-      color: 'success',
-    },
-    {
       title: 'Low Stock',
       value: lowStockCount,
       icon: AlertTriangle,
@@ -113,6 +111,12 @@ export default function Inventory() {
       icon: TrendingDown,
       color: 'destructive',
     },
+    ...(isAdminOrManager ? [{
+      title: 'Stock Value',
+      value: formatCurrency(totalValue),
+      icon: TrendingUp,
+      color: 'success',
+    }] : []),
   ];
 
   if (isLoading) {
@@ -201,23 +205,25 @@ export default function Inventory() {
             ))}
           </div>
         </div>
-        <div className="flex gap-3">
-          <button className="btn-secondary">
-            <Download className="w-5 h-5" />
-            Export
-          </button>
-          <button className="btn-secondary">
-            <Upload className="w-5 h-5" />
-            Import
-          </button>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="btn-primary"
-          >
-            <Plus className="w-5 h-5" />
-            Add Product
-          </button>
-        </div>
+        {isAdminOrManager && (
+          <div className="flex gap-3">
+            <button className="btn-secondary">
+              <Download className="w-5 h-5" />
+              Export
+            </button>
+            <button className="btn-secondary">
+              <Upload className="w-5 h-5" />
+              Import
+            </button>
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="btn-primary"
+            >
+              <Plus className="w-5 h-5" />
+              Add Product
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Bulk Action Toolbar */}
@@ -279,12 +285,16 @@ export default function Inventory() {
                   </button>
                 </th>
                 <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">Product</th>
-                <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">SKU / Barcode</th>
-                <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">Category</th>
-                <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Cost</th>
-                <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Price</th>
+                {isAdminOrManager && (
+                  <>
+                    <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">SKU / Barcode</th>
+                    <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">Category</th>
+                    <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Cost</th>
+                    <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Price</th>
+                    <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Value</th>
+                  </>
+                )}
                 <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Stock</th>
-                <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Value</th>
                 <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Actions</th>
               </tr>
             </thead>
@@ -343,32 +353,41 @@ export default function Inventory() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-4 px-6">
-                      <div className="space-y-1">
-                        <p className="font-mono text-sm text-foreground">{variant?.sku}</p>
-                        {variant?.barcode && (
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Barcode className="w-3 h-3" />
-                            {variant.barcode}
+                    {isAdminOrManager && (
+                      <>
+                        <td className="py-4 px-6">
+                          <div className="space-y-1">
+                            <p className="font-mono text-sm text-foreground">{variant?.sku}</p>
+                            {variant?.barcode && (
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Barcode className="w-3 h-3" />
+                                {variant.barcode}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className="px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium">
-                        {product?.category?.name || 'Uncategorized'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      <span className="text-muted-foreground">
-                        {formatCurrency(cost)}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      <span className="text-foreground">
-                        {formatCurrency(price)}
-                      </span>
-                    </td>
+                        </td>
+                        <td className="py-4 px-6">
+                          <span className="px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium">
+                            {product?.category?.name || 'Uncategorized'}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6 text-right">
+                          <span className="text-muted-foreground">
+                            {formatCurrency(cost)}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6 text-right">
+                          <span className="text-foreground">
+                            {formatCurrency(price)}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6 text-right">
+                          <span className="text-foreground">
+                            {formatCurrency(cost * stock)}
+                          </span>
+                        </td>
+                      </>
+                    )}
                     <td className="py-4 px-6 text-right">
                       <span className={cn(
                         'font-medium',
@@ -379,11 +398,6 @@ export default function Inventory() {
                         {stock}
                       </span>
                     </td>
-                    <td className="py-4 px-6 text-right">
-                      <span className="text-foreground">
-                        {formatCurrency(cost * stock)}
-                      </span>
-                    </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center justify-end gap-2">
                         <button
@@ -391,26 +405,30 @@ export default function Inventory() {
                           className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => {
-                            setEditingProduct(item);
-                            setIsAddModalOpen(true);
-                          }}
-                          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm('Permanently delete this product? This will remove all history and cannot be undone.')) {
-                              const productId = item.variant?.product?.id;
-                              if (productId) {
-                                deleteProducts.mutate({ ids: [productId], hardDelete: true });
-                              }
-                            }
-                          }}
-                          className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isAdminOrManager && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setEditingProduct(item);
+                                setIsAddModalOpen(true);
+                              }}
+                              className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm('Permanently delete this product? This will remove all history and cannot be undone.')) {
+                                  const productId = item.variant?.product?.id;
+                                  if (productId) {
+                                    deleteProducts.mutate({ ids: [productId], hardDelete: true });
+                                  }
+                                }
+                              }}
+                              className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

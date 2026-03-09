@@ -31,6 +31,8 @@ export interface SalesOrder {
   delivery_accepted_at?: string | null;
   delivery_completed_at?: string | null;
   delivery_code?: string | null;
+  third_party_provider_id?: string | null;
+  is_self_pickup?: boolean;
 }
 
 
@@ -64,13 +66,14 @@ export function useSalesOrders(
     endDate?: string;
     page?: number;
     pageSize?: number;
+    createdBy?: string;
   }
 ) {
   const page = options?.page || 1;
   const pageSize = options?.pageSize || 25;
 
   return useQuery({
-    queryKey: ['sales_orders', status, options?.startDate, options?.endDate, page, pageSize],
+    queryKey: ['sales_orders', status, options?.startDate, options?.endDate, page, pageSize, options?.createdBy],
     queryFn: async () => {
       let query = supabase
         .from('sales_orders')
@@ -82,6 +85,10 @@ export function useSalesOrders(
 
       if (status) {
         query = query.eq('status', status);
+      }
+
+      if (options?.createdBy) {
+        query = query.eq('created_by', options.createdBy);
       }
 
       if (options?.startDate) {
@@ -227,6 +234,7 @@ export function useCreateSalesOrder() {
       is_credit_sale?: boolean;
       notes?: string;
       globalDiscount?: number;
+      created_by?: string;
     }) => {
       const subtotal = order.items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
       const itemDiscounts = order.items.reduce((sum, item) => sum + (item.discount || 0), 0);
@@ -269,6 +277,7 @@ export function useCreateSalesOrder() {
           payment_method: order.payment_method,
           is_credit_sale: order.is_credit_sale || false,
           notes: order.notes,
+          created_by: order.created_by,
         })
         .select()
         .single();
@@ -382,7 +391,9 @@ export function useUpdateSalesOrderStatus() {
       latitude,
       longitude,
       address_name,
-      delivery_code
+      delivery_code,
+      third_party_provider_id,
+      is_self_pickup
     }: {
       id: string;
       status: OrderStatus;
@@ -391,9 +402,13 @@ export function useUpdateSalesOrderStatus() {
       longitude?: number;
       address_name?: string;
       delivery_code?: string;
+      third_party_provider_id?: string;
+      is_self_pickup?: boolean;
     }) => {
       const updates: Record<string, any> = { status };
       if (delivery_agent_id) updates.delivery_agent_id = delivery_agent_id;
+      if (third_party_provider_id) updates.third_party_provider_id = third_party_provider_id;
+      if (is_self_pickup !== undefined) updates.is_self_pickup = is_self_pickup;
       if (latitude !== undefined) updates.latitude = latitude;
       if (longitude !== undefined) updates.longitude = longitude;
       if (address_name) updates.address_name = address_name;
@@ -403,7 +418,7 @@ export function useUpdateSalesOrderStatus() {
       if (status === 'approved') {
         updates.approved_at = now;
       }
-      if (status === 'dispatched') {
+      if (status === 'dispatched' || status === 'in_transit' || status === 'ready_for_pickup') {
         updates.dispatched_at = now;
 
         // Get order details to create payment record

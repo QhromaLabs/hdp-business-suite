@@ -7,7 +7,7 @@ export interface UserLocation {
     user_id: string;
     latitude: number;
     longitude: number;
-    timestamp: string;
+    created_at: string;
 }
 
 export interface LocationRequest {
@@ -30,7 +30,7 @@ export const useUserLocations = () => {
             const { data, error } = await supabase
                 .from('user_locations')
                 .select('*')
-                .order('timestamp', { ascending: false })
+                .order('created_at', { ascending: false })
                 .limit(100);
 
             if (error) throw error;
@@ -56,7 +56,7 @@ export const useRecentLocationHistory = () => {
             const { data, error } = await supabase
                 .from('user_locations')
                 .select('*')
-                .order('timestamp', { ascending: false })
+                .order('created_at', { ascending: false })
                 .limit(50);
 
             if (error) throw error;
@@ -125,7 +125,6 @@ export const useSaveLocation = () => {
                     user_id: user.id,
                     latitude,
                     longitude,
-                    timestamp: new Date().toISOString()
                 });
 
             if (error) throw error;

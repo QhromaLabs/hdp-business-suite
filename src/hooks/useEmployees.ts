@@ -43,15 +43,19 @@ export interface Payroll {
   employee?: Employee;
 }
 
-export function useEmployees() {
+export function useEmployees(includeInactive = false) {
   return useQuery({
-    queryKey: ['employees'],
+    queryKey: ['employees', includeInactive],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('employees')
-        .select('*')
-        .eq('is_active', true)
-        .order('full_name');
+        .select('*');
+
+      if (!includeInactive) {
+        query = query.eq('is_active', true);
+      }
+
+      const { data, error } = await query.order('full_name');
 
       if (error) throw error;
       return data as Employee[];
@@ -76,6 +80,7 @@ export function useAttendanceToday() {
       if (error) throw error;
       return data as unknown as Attendance[];
     },
+    refetchInterval: 30000, // Refresh every 30s to pick up duty status changes
   });
 }
 
@@ -93,6 +98,31 @@ export function useEmployeeAttendance(employeeId: string | undefined) {
 
       if (error) throw error;
       return data as Attendance[];
+    },
+  });
+}
+
+export interface AttendanceLog {
+  id: string;
+  employee_id: string;
+  action: 'clock_in' | 'clock_out' | 'auto_clock_out';
+  timestamp: string;
+}
+
+export function useEmployeeAttendanceLogs(employeeId: string | undefined) {
+  return useQuery({
+    queryKey: ['attendance_logs', employeeId],
+    enabled: !!employeeId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attendance_logs')
+        .select('*')
+        .eq('employee_id', employeeId!)
+        .order('timestamp', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      return data as AttendanceLog[];
     },
   });
 }
@@ -345,6 +375,114 @@ export function useTerminateEmployee() {
     },
     onError: (error) => {
       toast.error('Failed to terminate: ' + error.message);
+    },
+  });
+}
+
+export function useRestoreEmployee() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ employee_id }: { employee_id: string }) => {
+      // 1. Get employee data to check email and current linking status
+      const { data: employee, error: fetchError } = await supabase
+        .from('employees')
+        .select('email, user_id')
+        .eq('id', employee_id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const updates: any = { is_active: true, updated_at: new Date().toISOString() };
+
+      // 2. If not linked, try to link by email
+      if (!employee.user_id && employee.email) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', employee.email)
+          .maybeSingle();
+
+        if (profile) {
+          updates.user_id = profile.id;
+        }
+      }
+
+      const { error } = await supabase
+        .from('employees')
+        .update(updates)
+        .eq('id', employee_id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast.success('Employee record restored and system link checked');
+    },
+    onError: (error) => {
+      toast.error('Failed to restore employee: ' + error.message);
+    },
+  });
+}
+
+export function useDeleteEmployeeHard() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // 1. Get employee to check for linked user and email
+      const { data: employee } = await supabase
+        .from('employees')
+        .select('user_id, email')
+        .eq('id', id)
+        .single();
+
+      // 2. Clear login/auth record (including ghost accounts by email)
+      if (employee) {
+        const { error: authError } = await supabase.functions.invoke('delete-user', {
+          body: {
+            user_id: employee.user_id,
+            email: employee.email
+          },
+        });
+
+        if (authError) {
+          console.error("Auth deletion failed during hard delete:", authError);
+        }
+      }
+
+      // 3. Call the RPC to handle deep deletion of business records
+      const { error } = await supabase.rpc('hard_delete_employee', {
+        target_employee_id: id,
+      });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast.success('Employee and all related records permanently deleted');
+    },
+    onError: (error) => {
+      toast.error('Failed to permanently delete: ' + error.message);
+    },
+  });
+}
+
+export function useUpdateUserPassword() {
+  return useMutation({
+    mutationFn: async ({ userId, password }: { userId: string; password: string }) => {
+      const { data, error } = await supabase.functions.invoke('update-user-auth', {
+        body: { user_id: userId, password },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast.success('User password updated successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to update password: ' + error.message);
     },
   });
 }

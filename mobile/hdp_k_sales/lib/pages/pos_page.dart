@@ -455,7 +455,12 @@ class _POSPageState extends State<POSPage> {
                                           setState(() {}); // Update main UI too
                                         },
                                       ),
-                                      Text('$qty', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                                        GestureDetector(
+                                          onTap: () => _showEditQuantityDialog(id, qty, setSheetState),
+                                          onLongPress: () => _showEditQuantityDialog(id, qty, setSheetState),
+                                          child: Text('$qty', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                                        ),
+
                                       IconButton(
                                         icon: const Icon(Icons.add, size: 16),
                                         onPressed: () {
@@ -578,7 +583,9 @@ class _POSPageState extends State<POSPage> {
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: _isCheckingOut || _selectedCustomer == null ? null : () async {
+                            setSheetState(() => _isCheckingOut = true);
                             await _processCheckout();
+                            if (mounted) setSheetState(() => _isCheckingOut = false);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.black,
@@ -599,6 +606,38 @@ class _POSPageState extends State<POSPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showEditQuantityDialog(String id, int currentQty, StateSetter setSheetState) {
+    final ctrl = TextEditingController(text: currentQty.toString());
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Edit Quantity', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Quantity'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+          ElevatedButton(
+            onPressed: () {
+              final newQty = int.tryParse(ctrl.text);
+              if (newQty != null && newQty > 0) {
+                setSheetState(() {
+                  cart[id] = newQty;
+                });
+                setState(() {});
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('SAVE'),
+          ),
+        ],
       ),
     );
   }
@@ -645,10 +684,14 @@ class _POSPageState extends State<POSPage> {
   }
 
   Future<void> _processCheckout() async {
+    if (_isCheckingOut) return;
     if (cart.isEmpty) return;
-    if (_selectedCustomer == null) throw 'Customer selection is required.';
+    if (_selectedCustomer == null) {
+      _showSnack('Please select a customer', Colors.red);
+      return;
+    }
+    
     setState(() => _isCheckingOut = true);
-
     User? user;
     Position? position;
 
@@ -724,6 +767,7 @@ class _POSPageState extends State<POSPage> {
 
       if (mounted) {
         // Success Flow
+        _resetState(); // Reset ALL state first
         Navigator.of(context).pop(); // Close Checkout Sheet
         _showSuccessModal(orderRes);
       }

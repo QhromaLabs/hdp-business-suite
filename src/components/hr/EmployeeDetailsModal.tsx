@@ -1,4 +1,3 @@
-
 import {
     Dialog,
     DialogContent,
@@ -16,16 +15,23 @@ import {
     Calendar,
     Wallet,
     Banknote,
-    Clock
+    Clock,
+    Lock,
+    Key,
+    Shield as ShieldIcon,
+    Loader2
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Employee, useAttendanceToday, useEmployeeAttendance, usePayrollEntries, useUpdateEmployee, useMarkLeaveAndRole, useCreatePayrollEntry, useTerminateEmployee } from '@/hooks/useEmployees';
+import { Employee, useAttendanceToday, useEmployeeAttendance, useEmployeeAttendanceLogs, usePayrollEntries, useUpdateEmployee, useMarkLeaveAndRole, useCreatePayrollEntry, useTerminateEmployee, useRestoreEmployee, useDeleteEmployeeHard, useUpdateUserPassword } from '@/hooks/useEmployees';
 import { useDeleteUser } from '@/hooks/useSettings';
 import { useCommissions, useWithdrawalRequests } from '@/hooks/useCommissions';
 import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
+import { toast } from 'sonner';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-KE', {
@@ -54,6 +60,7 @@ interface EmployeeDetailsModalProps {
 export function EmployeeDetailsModal({ employee, isOpen, onClose }: EmployeeDetailsModalProps) {
     const { data: attendanceToday = [] } = useAttendanceToday();
     const { data: attendanceHistory = [], isLoading: historyLoading } = useEmployeeAttendance(employee?.id);
+    const { data: attendanceLogs = [], isLoading: logsLoading } = useEmployeeAttendanceLogs(employee?.id);
     const { data: payrollEntries = [] } = usePayrollEntries();
 
     // Commission Hooks
@@ -65,11 +72,41 @@ export function EmployeeDetailsModal({ employee, isOpen, onClose }: EmployeeDeta
     const deleteUser = useDeleteUser();
     const createPayrollEntry = useCreatePayrollEntry();
     const markLeave = useMarkLeaveAndRole('clerk'); // Default role, overridden in function
+    const restoreEmployee = useRestoreEmployee();
+    const hardDeleteEmployee = useDeleteEmployeeHard();
 
-    const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; employeeId: string | null; userId: string | null }>({
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{
+        isOpen: boolean;
+        type: 'terminate' | 'hard-delete';
+        employeeId: string | null;
+        userId: string | null
+    }>({
         isOpen: false,
+        type: 'terminate',
         employeeId: null,
-        userId: null,
+    });
+
+    const [passwordForm, setPasswordForm] = useState({
+        newPassword: '',
+        isUpdating: false
+    });
+
+    const updateAuthPassword = useUpdateUserPassword();
+
+    // Check for existing system account if not linked
+    const { data: existingProfile, refetch: checkProfile } = useQuery({
+        queryKey: ['profile_lookup', employee?.email],
+        enabled: !!employee && !employee.user_id && !!employee.email,
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('id, email')
+                .eq('email', employee!.email)
+                .maybeSingle();
+
+            if (error) throw error;
+            return data;
+        }
     });
 
     const [profileForm, setProfileForm] = useState({
@@ -187,37 +224,142 @@ export function EmployeeDetailsModal({ employee, isOpen, onClose }: EmployeeDeta
                                 </div>
                             </div>
 
+                            {employee.user_id && (
+                                <div className="space-y-3 pt-4 border-t border-border/50">
+                                    <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-2">
+                                        <ShieldIcon className="w-3 h-3" /> Security & Login
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex-1 flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+                                            <Lock className="w-4 h-4 text-muted-foreground" />
+                                            <input
+                                                type="password"
+                                                className="bg-transparent text-sm w-full focus:outline-none"
+                                                value={passwordForm.newPassword}
+                                                onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                                                placeholder="Set New Password"
+                                                minLength={6}
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="btn-primary py-3 px-4 text-xs whitespace-nowrap"
+                                            onClick={async () => {
+                                                if (!passwordForm.newPassword || passwordForm.newPassword.length < 6) {
+                                                    toast.error("Password must be at least 6 characters");
+                                                    return;
+                                                }
+                                                setPasswordForm(prev => ({ ...prev, isUpdating: true }));
+                                                try {
+                                                    await updateAuthPassword.mutateAsync({
+                                                        userId: employee.user_id!,
+                                                        password: passwordForm.newPassword
+                                                    });
+                                                    setPasswordForm({ newPassword: '', isUpdating: false });
+                                                } catch (err) {
+                                                    setPasswordForm(prev => ({ ...prev, isUpdating: false }));
+                                                }
+                                            }}
+                                            disabled={passwordForm.isUpdating || updateAuthPassword.isPending || !passwordForm.newPassword}
+                                        >
+                                            {passwordForm.isUpdating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Key className="w-3 h-3 mr-1" />}
+                                            Update Password
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground italic px-1">
+                                        This will update the login password for {employee.full_name}'s system account.
+                                    </p>
+                                </div>
+                            )}
+
+                            {!employee.user_id && existingProfile && (
+                                <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 space-y-3 mt-4">
+                                    <div className="flex items-center gap-2 text-primary font-semibold text-sm">
+                                        <ShieldIcon className="w-4 h-4" />
+                                        System account found!
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        A login account with email <strong>{employee.email}</strong> exists but isn't linked to this employee record.
+                                        Link it to enable password resets and system access.
+                                    </p>
+                                    <button
+                                        className="btn-primary w-full text-xs py-2"
+                                        onClick={() => {
+                                            updateEmployee.mutate({
+                                                id: employee.id,
+                                                user_id: existingProfile.id
+                                            }, {
+                                                onSuccess: () => {
+                                                    checkProfile();
+                                                }
+                                            });
+                                        }}
+                                        disabled={updateEmployee.isPending}
+                                    >
+                                        Link System Account
+                                    </button>
+                                </div>
+                            )}
+
                             <div className="pt-4 border-t flex justify-end gap-2">
-                                <button
-                                    className="btn-destructive text-xs"
-                                    onClick={() => setDeleteConfirmation({
-                                        isOpen: true,
-                                        employeeId: employee.id,
-                                        userId: employee.user_id || null
-                                    })}
-                                >
-                                    <Trash2 className="w-3 h-3 mr-1" />
-                                    Terminate / Delete
-                                </button>
-                                <button
-                                    className="btn-primary text-xs"
-                                    onClick={() => {
-                                        updateEmployee.mutate({
-                                            id: employee.id,
-                                            full_name: profileForm.full_name,
-                                            email: profileForm.email,
-                                            phone: profileForm.phone,
-                                            department: profileForm.department,
-                                            position: profileForm.position,
-                                            basic_salary: Number(profileForm.basic_salary || 0),
-                                            role: profileForm.role,
-                                            user_id: employee.user_id,
-                                        });
-                                    }}
-                                    disabled={updateEmployee.isPending}
-                                >
-                                    Save Changes
-                                </button>
+                                {employee.is_active ? (
+                                    <button
+                                        className="btn-destructive text-xs"
+                                        onClick={() => setDeleteConfirmation({
+                                            isOpen: true,
+                                            type: 'terminate',
+                                            employeeId: employee.id,
+                                            userId: employee.user_id || null
+                                        })}
+                                    >
+                                        <Trash2 className="w-3 h-3 mr-1" />
+                                        Terminate / Delete Login
+                                    </button>
+                                ) : (
+                                    <>
+                                        <button
+                                            className="btn-destructive variant-outline text-xs"
+                                            onClick={() => setDeleteConfirmation({
+                                                isOpen: true,
+                                                type: 'hard-delete',
+                                                employeeId: employee.id,
+                                                userId: employee.user_id || null
+                                            })}
+                                        >
+                                            <Trash2 className="w-3 h-3 mr-1" />
+                                            Permanently Delete Record
+                                        </button>
+                                        <button
+                                            className="btn-primary variant-outline text-xs"
+                                            onClick={() => restoreEmployee.mutate({ employee_id: employee.id })}
+                                            disabled={restoreEmployee.isPending}
+                                        >
+                                            <UserCheck className="w-3 h-3 mr-1" />
+                                            Restore Employee
+                                        </button>
+                                    </>
+                                )}
+                                {employee.is_active && (
+                                    <button
+                                        className="btn-primary text-xs"
+                                        onClick={() => {
+                                            updateEmployee.mutate({
+                                                id: employee.id,
+                                                full_name: profileForm.full_name,
+                                                email: profileForm.email,
+                                                phone: profileForm.phone,
+                                                department: profileForm.department,
+                                                position: profileForm.position,
+                                                basic_salary: Number(profileForm.basic_salary || 0),
+                                                role: profileForm.role,
+                                                user_id: employee.user_id,
+                                            });
+                                        }}
+                                        disabled={updateEmployee.isPending}
+                                    >
+                                        Save Changes
+                                    </button>
+                                )}
                             </div>
                         </TabsContent>
 
@@ -311,6 +453,43 @@ export function EmployeeDetailsModal({ employee, isOpen, onClose }: EmployeeDeta
                                         )}
                                     </div>
                                 </div>
+
+                                <div className="p-4 rounded-xl bg-card border border-border/60 mt-4">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h4 className="text-sm font-semibold">Raw Activity Logs</h4>
+                                        <Badge variant="outline" className="text-[10px] uppercase">All Events</Badge>
+                                    </div>
+                                    <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                                        {logsLoading ? (
+                                            <div className="text-center py-4 text-muted-foreground text-xs italic">Loading logs...</div>
+                                        ) : attendanceLogs.length > 0 ? (
+                                            attendanceLogs.map(log => (
+                                                <div key={log.id} className="flex justify-between items-center p-3 text-sm bg-muted/20 border border-border/30 rounded-lg">
+                                                    <div className="flex items-center gap-3">
+                                                        {log.action === 'clock_in' ? (
+                                                            <div className="w-8 h-8 rounded-full bg-success/10 text-success flex items-center justify-center">
+                                                                <Clock className="w-4 h-4" />
+                                                            </div>
+                                                        ) : (
+                                                            <div className="w-8 h-8 rounded-full bg-warning/10 text-warning flex items-center justify-center">
+                                                                <Clock className="w-4 h-4" />
+                                                            </div>
+                                                        )}
+                                                        <div>
+                                                            <p className="font-semibold">{log.action === 'clock_in' ? 'Clocked In' : log.action === 'clock_out' ? 'Clocked Out' : 'Auto Clock Out'}</p>
+                                                            <p className="text-[10px] text-muted-foreground">{new Date(log.timestamp).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="font-mono text-xs font-semibold bg-background border border-border/40 px-2 py-1 rounded shadow-sm text-foreground">
+                                                        {formatTime(log.timestamp)}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <p className="text-center py-4 text-sm text-muted-foreground">No granular activity logs found.</p>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </TabsContent>
                     </Tabs>
@@ -319,18 +498,22 @@ export function EmployeeDetailsModal({ employee, isOpen, onClose }: EmployeeDeta
 
             <ConfirmDeleteDialog
                 isOpen={deleteConfirmation.isOpen}
-                onClose={() => setDeleteConfirmation({ isOpen: false, employeeId: null, userId: null })}
+                onClose={() => setDeleteConfirmation({ isOpen: false, type: 'terminate', employeeId: null, userId: null })}
                 onConfirm={() => {
-                    if (deleteConfirmation.userId) {
+                    if (deleteConfirmation.type === 'hard-delete') {
+                        hardDeleteEmployee.mutate(deleteConfirmation.employeeId!);
+                    } else if (deleteConfirmation.userId) {
                         deleteUser.mutate(deleteConfirmation.userId);
                     } else if (deleteConfirmation.employeeId) {
                         terminateEmployee.mutate({ employee_id: deleteConfirmation.employeeId });
                     }
                     onClose(); // Close parent modal too
                 }}
-                isDeleting={deleteUser.isPending || terminateEmployee.isPending}
-                title="Terminate Employee?"
-                description="This action will remove access and mark the employee as inactive."
+                isDeleting={deleteUser.isPending || terminateEmployee.isPending || hardDeleteEmployee.isPending}
+                title={deleteConfirmation.type === 'hard-delete' ? "Permanently Delete?" : "Terminate Employee?"}
+                description={deleteConfirmation.type === 'hard-delete'
+                    ? "This will permanently remove the employee and all their associated history (payroll, attendance, commissions). This cannot be undone."
+                    : "This action will remove access and mark the employee as inactive."}
             />
         </>
     );

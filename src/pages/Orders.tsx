@@ -59,14 +59,18 @@ import { toast } from 'sonner';
 import { ReceiptContent } from '@/components/printing/Receipt';
 import { createRoot } from 'react-dom/client';
 import { formatCurrency } from '@/lib/format';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Orders() {
+    const { user, userRole } = useAuth();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedStatus, setSelectedStatus] = useState<string>('all');
     const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
     const [selectedReturn, setSelectedReturn] = useState<any | null>(null);
     const [orderToDelete, setOrderToDelete] = useState<SalesOrder | null>(null);
     const [dispatchingOrder, setDispatchingOrder] = useState<SalesOrder | null>(null);
+
+    const isClerk = userRole === 'clerk';
 
     // Date filtering state
     const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'last30' | 'all' | 'custom'>('last30');
@@ -139,6 +143,7 @@ export default function Orders() {
             endDate: dateRange.end,
             page: currentPage,
             pageSize: pageSize,
+            createdBy: isClerk ? user?.id : undefined
         }
     );
 
@@ -210,7 +215,7 @@ export default function Orders() {
                     <p className="text-muted-foreground mt-1 text-sm font-medium">Track and manage all business sales</p>
                 </div>
                 <div className="flex items-center gap-2 bg-card p-1 rounded-xl border border-border/50 shadow-sm">
-                    {['all', 'pending', 'approved', 'dispatched', 'returned'].map((status) => (
+                    {['all', 'pending', 'approved', 'dispatched', 'in_transit', 'ready_for_pickup', 'returned'].map((status) => (
                         <button
                             key={status}
                             onClick={() => {

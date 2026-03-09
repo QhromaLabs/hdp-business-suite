@@ -9,6 +9,7 @@ import 'package:hdp_k_sales/pages/crm_page.dart';
 import 'package:hdp_k_sales/pages/wallet_page.dart';
 import 'package:hdp_k_sales/pages/analytics_page.dart';
 import 'package:hdp_k_sales/pages/settings_page.dart';
+import 'package:hdp_k_sales/pages/expenses_page.dart';
 import 'package:hdp_k_sales/pages/main_screen.dart';
 
 Future<void> main() async {
@@ -52,6 +53,7 @@ class MyApp extends StatelessWidget {
         '/wallet': (context) => const WalletPage(),
         '/analytics': (context) => const AnalyticsPage(),
         '/settings': (context) => const SettingsPage(),
+        '/expenses': (context) => const ExpensesPage(),
       },
     );
   }
