@@ -7,6 +7,7 @@ import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persist
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { SettingsProvider } from "./contexts/SettingsContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
 import MainLayout from "./components/layout/MainLayout";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -28,6 +29,7 @@ import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Profile from "./pages/Profile";
 import Changelog from "./pages/Changelog";
+import MobileApps from "./pages/MobileApps";
 
 import Orders from "./pages/Orders";
 import Commissions from "./pages/Commissions";
@@ -114,6 +116,7 @@ function AppRoutes() {
         <Route path="orders" element={<Orders />} />
         <Route path="commissions" element={<Commissions />} />
         <Route path="payroll" element={<Payroll />} />
+        <Route path="mobile-apps" element={<MobileApps />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
@@ -126,15 +129,17 @@ const App = () => (
     persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}
   >
     <SettingsProvider>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner position="top-center" />
-          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <AppRoutes />
-          </BrowserRouter>
-        </TooltipProvider>
-      </AuthProvider>
+      <ThemeProvider defaultTheme="dark" storageKey="hdp-theme">
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner position="top-center" />
+            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+              <AppRoutes />
+            </BrowserRouter>
+          </TooltipProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </SettingsProvider>
   </PersistQueryClientProvider>
 );

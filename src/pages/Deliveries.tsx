@@ -11,6 +11,9 @@ import {
     Clock,
     Search,
     ChevronRight,
+    ChevronLeft,
+    ChevronsLeft,
+    ChevronsRight,
     Maximize2,
     Map as MapIcon,
     List,
@@ -92,14 +95,12 @@ function MapController({
     }, [selectedDeliveryId]);
 
     const handleRecenter = (e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent map click propagation
+        e.stopPropagation();
         e.preventDefault();
 
         if (selectedDeliveryId) {
-            // Recenter on selected
             map.flyTo(center, zoom, { duration: 1 });
         } else if (deliveries.length > 0) {
-            // Fit bounds to all deliveries
             const bounds = L.latLngBounds(deliveries.map(d => {
                 const lat = d.latitude || d.customer?.latitude;
                 const lng = d.longitude || d.customer?.longitude;
@@ -138,7 +139,7 @@ export default function Deliveries() {
     const [isEditCustomerModalOpen, setIsEditCustomerModalOpen] = useState(false);
 
     const handleEditCustomer = async (customerId: string, e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent opening order details
+        e.stopPropagation();
         try {
             const { data, error } = await supabase
                 .from('customers')
@@ -179,6 +180,13 @@ export default function Deliveries() {
     const [activeRoutes, setActiveRoutes] = useState<Record<string, [number, number][]>>({});
     const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
+    // Sidebar pagination
+    const DELIVERIES_PAGE_SIZE = 20;
+    const [deliveriesPage, setDeliveriesPage] = useState(1);
+
+    // Reset to page 1 when search changes
+    useEffect(() => { setDeliveriesPage(1); }, [searchTerm]);
+
     // Auto-select first in-transit delivery if none selected
     useEffect(() => {
         if (!selectedDeliveryId && deliveries.length > 0) {
@@ -189,10 +197,13 @@ export default function Deliveries() {
         }
     }, [deliveries, selectedDeliveryId]);
 
-    // Fetch road routes for ALL in-transit deliveries
+    // Fetch road routes — only for the selected delivery when one is active
     useEffect(() => {
         const fetchRoutes = async () => {
-            const inTransitDeliveries = deliveries.filter(d => d.status === 'in_transit');
+            const inTransitDeliveries = deliveries.filter(d =>
+                d.status === 'in_transit' &&
+                (!selectedDeliveryId || d.id === selectedDeliveryId)
+            );
 
             if (inTransitDeliveries.length === 0) {
                 setActiveRoutes({});
@@ -202,7 +213,6 @@ export default function Deliveries() {
             const newRoutes: Record<string, [number, number][]> = {};
 
             for (const delivery of inTransitDeliveries) {
-                // Match by either employee ID or Auth user ID
                 const agent = locations.find(l =>
                     l.user_id === delivery.delivery_agent?.id ||
                     (delivery.delivery_agent?.user_id && l.user_id === delivery.delivery_agent.user_id)
@@ -230,7 +240,7 @@ export default function Deliveries() {
         };
 
         fetchRoutes();
-    }, [locations, deliveries]);
+    }, [locations, deliveries, selectedDeliveryId]);
 
 
     const filteredDeliveries = useMemo(() => {
@@ -260,10 +270,10 @@ export default function Deliveries() {
     }, [selectedDelivery, defaultCenter]);
 
     const sortedDeliveries = useMemo(() => {
-        // Create a shallow copy and reverse to get Oldest -> Newest (Painter's Algorithm for Z-Index)
+        // Reverse for Painter's Algorithm (oldest first = lowest z-index)
         const sorted = [...filteredDeliveries].reverse();
 
-        // If there is a selected delivery, move it to the end to ensure it's on top of everything
+        // Move selected to end so it renders on top
         if (selectedDeliveryId) {
             const index = sorted.findIndex(d => d.id === selectedDeliveryId);
             if (index > -1) {
@@ -351,10 +361,11 @@ export default function Deliveries() {
                 </div>
             ) : (
                 <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
-                    {/* List Section */}
+
+                    {/* ── List Section ── */}
                     {(viewMode === 'list' || viewMode === 'both') && (
                         <div className={cn(
-                            "space-y-4 overflow-y-auto scrollbar-hide min-h-0",
+                            "flex flex-col gap-2 min-h-0",
                             viewMode === 'list' ? "lg:col-span-12" : "lg:col-span-4"
                         )}>
                             {deliveriesLoading ? (
@@ -366,154 +377,207 @@ export default function Deliveries() {
                                     <Truck className="w-12 h-12 opacity-20 mb-4" />
                                     <p className="font-bold">No active deliveries</p>
                                 </div>
-                            ) : (
-                                filteredDeliveries.map((delivery) => (
-                                    <div
-                                        key={delivery.id}
-                                        onClick={() => setSelectedDeliveryId(delivery.id)}
-                                        className={cn(
-                                            "w-full text-left p-4 rounded-2xl border transition-all duration-300 group relative overflow-hidden cursor-pointer",
-                                            selectedDeliveryId === delivery.id
-                                                ? "bg-primary/5 border-primary shadow-md ring-1 ring-primary/20"
-                                                : "bg-card border-border/50 hover:border-primary/50 hover:bg-muted/30"
-                                        )}
-                                    >
-                                        <div className="flex items-start justify-between mb-3">
-                                            <div className="flex items-center gap-3">
-                                                <div className={cn(
-                                                    "w-10 h-10 rounded-xl flex items-center justify-center",
-                                                    delivery.status === 'dispatched' ? "bg-info/10 text-info" :
-                                                        delivery.status === 'in_transit' ? "bg-green-500/10 text-green-600 shadow-[0_0_15px_rgba(22,163,74,0.2)]" :
-                                                            "bg-success/10 text-success"
-                                                )}>
-                                                    {delivery.status === 'in_transit' ? <Truck className="w-5 h-5 animate-pulse" /> : <Package className="w-5 h-5" />}
-                                                </div>
-                                                <div>
-                                                    <p className="font-black text-sm tracking-tight text-foreground">Order #{delivery.order_number}</p>
-                                                    <p className={cn(
-                                                        "text-[10px] font-bold uppercase tracking-widest",
-                                                        delivery.status === 'in_transit' ? "text-green-600" : "text-muted-foreground"
-                                                    )}>
-                                                        {delivery.status.replace('_', ' ')}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-1 rounded-md">
-                                                {format(new Date(delivery.dispatched_at || delivery.created_at), 'hh:mm a')}
-                                            </span>
-                                        </div>
+                            ) : (() => {
+                                // Group deliveries by dispatched date
+                                const today = new Date();
+                                const yesterday = new Date(today);
+                                yesterday.setDate(today.getDate() - 1);
 
-                                        <div className="space-y-2">
-                                            <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-                                                <User className="w-3.5 h-3.5 text-primary/60" />
-                                                <span className="text-foreground font-bold">{delivery.customer?.name}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-                                                <MapPin className="w-3.5 h-3.5 text-primary/60 shrink-0" />
-                                                {(delivery.address_name || delivery.customer?.address_name) ? (
-                                                    <span className="truncate">{delivery.address_name || delivery.customer?.address_name}</span>
-                                                ) : (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="truncate">N/A</span>
-                                                        {delivery.customer_id && (
+                                const getDateLabel = (dateStr: string) => {
+                                    const d = new Date(dateStr);
+                                    const dDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                                    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                                    const yestDate = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+                                    if (dDate.getTime() === todayDate.getTime()) return 'Today';
+                                    if (dDate.getTime() === yestDate.getTime()) return 'Yesterday';
+                                    return format(d, 'EEE d MMM');
+                                };
+
+                                // Build ordered groups: [ { label, deliveries[] } ]
+                                const groups: { label: string; items: typeof filteredDeliveries }[] = [];
+                                const labelMap = new Map<string, typeof filteredDeliveries>();
+
+                                filteredDeliveries.forEach(d => {
+                                    const label = getDateLabel(d.dispatched_at || d.created_at);
+                                    if (!labelMap.has(label)) {
+                                        labelMap.set(label, []);
+                                        groups.push({ label, items: labelMap.get(label)! });
+                                    }
+                                    labelMap.get(label)!.push(d);
+                                });
+
+                                return (
+                                    <div className="flex-1 overflow-y-auto scrollbar-hide space-y-1 min-h-0">
+                                        {groups.map(({ label, items }) => (
+                                            <div key={label}>
+                                                {/* Date separator */}
+                                                <div className="sticky top-0 z-10 flex items-center gap-2 py-2 bg-background/80 backdrop-blur-sm">
+                                                    <span className={cn(
+                                                        "text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full",
+                                                        label === 'Today'
+                                                            ? "bg-primary text-primary-foreground"
+                                                            : label === 'Yesterday'
+                                                                ? "bg-orange-500/10 text-orange-600"
+                                                                : "bg-muted text-muted-foreground"
+                                                    )}>
+                                                        {label}
+                                                    </span>
+                                                    <span className="text-[10px] text-muted-foreground font-bold">{items.length} order{items.length !== 1 ? 's' : ''}</span>
+                                                    <div className="flex-1 h-px bg-border/40" />
+                                                </div>
+
+                                                {/* Cards for this date */}
+                                                <div className="space-y-3 pb-2">
+                                                    {items.map((delivery) => (
+                                                <div
+                                                    key={delivery.id}
+                                                    onClick={() => setSelectedDeliveryId(delivery.id)}
+                                                    className={cn(
+                                                        "w-full text-left p-4 rounded-2xl border transition-all duration-300 group relative overflow-hidden cursor-pointer",
+                                                        selectedDeliveryId === delivery.id
+                                                            ? "bg-primary/5 border-primary shadow-md ring-1 ring-primary/20"
+                                                            : selectedDeliveryId
+                                                                ? "bg-card border-border/50 hover:border-primary/50 hover:bg-muted/30 opacity-40 hover:opacity-70"
+                                                                : "bg-card border-border/50 hover:border-primary/50 hover:bg-muted/30"
+                                                    )}
+                                                >
+                                                    <div className="flex items-start justify-between mb-3">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={cn(
+                                                                "w-10 h-10 rounded-xl flex items-center justify-center",
+                                                                delivery.status === 'dispatched' ? "bg-info/10 text-info" :
+                                                                    delivery.status === 'in_transit' ? "bg-green-500/10 text-green-600 shadow-[0_0_15px_rgba(22,163,74,0.2)]" :
+                                                                        "bg-success/10 text-success"
+                                                            )}>
+                                                                {delivery.status === 'in_transit'
+                                                                    ? <Truck className="w-5 h-5 animate-pulse" />
+                                                                    : <Package className="w-5 h-5" />}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-black text-sm tracking-tight text-foreground">Order #{delivery.order_number}</p>
+                                                                <p className={cn(
+                                                                    "text-[10px] font-bold uppercase tracking-widest",
+                                                                    delivery.status === 'in_transit' ? "text-green-600" : "text-muted-foreground"
+                                                                )}>
+                                                                    {delivery.status.replace('_', ' ')}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-1 rounded-md">
+                                                            {format(new Date(delivery.dispatched_at || delivery.created_at), 'hh:mm a')}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                                                            <User className="w-3.5 h-3.5 text-primary/60" />
+                                                            <span className="text-foreground font-bold">{delivery.customer?.name}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                                                            <MapPin className="w-3.5 h-3.5 text-primary/60 shrink-0" />
+                                                            {(delivery.address_name || delivery.customer?.address_name) ? (
+                                                                <span className="truncate">{delivery.address_name || delivery.customer?.address_name}</span>
+                                                            ) : (
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="truncate">N/A</span>
+                                                                    {delivery.customer_id && (
+                                                                        <button
+                                                                            onClick={(e) => handleEditCustomer(delivery.customer_id!, e)}
+                                                                            className="flex items-center justify-center p-0.5 px-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 rounded transition-colors shadow-sm border border-yellow-200"
+                                                                            title="Update Customer Location"
+                                                                        >
+                                                                            <AlertTriangle className="w-3 h-3" />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium border-t border-border/30 pt-2 mt-2">
+                                                            {delivery.is_self_pickup ? (
+                                                                <>
+                                                                    <ShoppingBag className="w-3.5 h-3.5 text-primary/60" />
+                                                                    <span className="font-bold text-primary">Self Pickup</span>
+                                                                </>
+                                                            ) : delivery.third_party_provider ? (
+                                                                <>
+                                                                    <Globe className="w-3.5 h-3.5 text-blue-500/60" />
+                                                                    <span className="font-bold text-blue-600">Third Party: {delivery.third_party_provider.name}</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Navigation className="w-3.5 h-3.5 text-info/60" />
+                                                                    <span className="font-bold text-info">Agent: {delivery.delivery_agent?.full_name || 'Unassigned'}</span>
+                                                                </>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Manual Mark as Delivered */}
+                                                        {(delivery.status === 'in_transit' || delivery.status === 'ready_for_pickup') && (delivery.third_party_provider_id || delivery.is_self_pickup) && (
                                                             <button
-                                                                onClick={(e) => handleEditCustomer(delivery.customer_id!, e)}
-                                                                className="flex items-center justify-center p-0.5 px-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 rounded transition-colors shadow-sm border border-yellow-200"
-                                                                title="Update Customer Location"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const confirmMsg = delivery.is_self_pickup ? 'Confirm order pickup?' : 'Mark this order as delivered?';
+                                                                    if (window.confirm(confirmMsg)) {
+                                                                        updateStatus.mutate({ id: delivery.id, status: 'delivered' });
+                                                                    }
+                                                                }}
+                                                                className="w-full mt-2 py-2.5 bg-green-600/10 text-green-700 hover:bg-green-600 hover:text-white rounded-xl font-black text-xs transition-all border border-green-200/50 flex items-center justify-center gap-2"
                                                             >
-                                                                <AlertTriangle className="w-3 h-3" />
+                                                                <CheckCircle className="w-4 h-4" />
+                                                                {delivery.is_self_pickup ? 'Confirm Pickup' : 'Mark as Delivered (Manual)'}
                                                             </button>
                                                         )}
+
+                                                        {delivery.status === 'ready_for_pickup' && delivery.is_self_pickup && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (window.confirm('Confirm that the customer has picked up the order?')) {
+                                                                        updateStatus.mutate({ id: delivery.id, status: 'delivered' });
+                                                                    }
+                                                                }}
+                                                                className="w-full mt-2 py-2.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-xl font-black text-xs transition-all border border-primary/20 flex items-center justify-center gap-2"
+                                                            >
+                                                                <CheckCircle className="w-4 h-4" />
+                                                                Confirm Pickup
+                                                            </button>
+                                                        )}
+
+                                                        {delivery.notes && (
+                                                            <div className="flex items-center gap-2 text-xs text-orange-600 font-medium border-t border-border/30 pt-2 mt-2 bg-orange-50/50 p-2 rounded-lg">
+                                                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                                                <span className="truncate italic">"{delivery.notes}"</span>
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium border-t border-border/30 pt-2 mt-2">
-                                                {delivery.is_self_pickup ? (
-                                                    <>
-                                                        <ShoppingBag className="w-3.5 h-3.5 text-primary/60" />
-                                                        <span className="font-bold text-primary">Self Pickup</span>
-                                                    </>
-                                                ) : delivery.third_party_provider ? (
-                                                    <>
-                                                        <Globe className="w-3.5 h-3.5 text-blue-500/60" />
-                                                        <span className="font-bold text-blue-600">Third Party: {delivery.third_party_provider.name}</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Navigation className="w-3.5 h-3.5 text-info/60" />
-                                                        <span className="font-bold text-info">Agent: {delivery.delivery_agent?.full_name || 'Unassigned'}</span>
-                                                    </>
-                                                )}
-                                            </div>
 
-                                            {/* Manual Mark as Delivered for Third Party/Self Pickup */}
-                                            {(delivery.status === 'in_transit' || delivery.status === 'ready_for_pickup') && (delivery.third_party_provider_id || delivery.is_self_pickup) && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const confirmMsg = delivery.is_self_pickup ? 'Confirm order pickup?' : 'Mark this order as delivered?';
-                                                        if (window.confirm(confirmMsg)) {
-                                                            updateStatus.mutate({
-                                                                id: delivery.id,
-                                                                status: 'delivered'
-                                                            });
-                                                        }
-                                                    }}
-                                                    className="w-full mt-2 py-2.5 bg-green-600/10 text-green-700 hover:bg-green-600 hover:text-white rounded-xl font-black text-xs transition-all border border-green-200/50 flex items-center justify-center gap-2"
-                                                >
-                                                    <CheckCircle className="w-4 h-4" />
-                                                    {delivery.is_self_pickup ? 'Confirm Pickup' : 'Mark as Delivered (Manual)'}
-                                                </button>
-                                            )}
+                                                    {selectedDeliveryId === delivery.id && (
+                                                        <div className="absolute right-0 top-0 bottom-0 w-1 bg-primary" />
+                                                    )}
 
-                                            {delivery.status === 'ready_for_pickup' && delivery.is_self_pickup && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (window.confirm('Confirm that the customer has picked up the order?')) {
-                                                            updateStatus.mutate({
-                                                                id: delivery.id,
-                                                                status: 'delivered'
-                                                            });
-                                                        }
-                                                    }}
-                                                    className="w-full mt-2 py-2.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-xl font-black text-xs transition-all border border-primary/20 flex items-center justify-center gap-2"
-                                                >
-                                                    <CheckCircle className="w-4 h-4" />
-                                                    Confirm Pickup
-                                                </button>
-                                            )}
-                                            {delivery.notes && (
-                                                <div className="flex items-center gap-2 text-xs text-orange-600 font-medium border-t border-border/30 pt-2 mt-2 bg-orange-50/50 p-2 rounded-lg">
-                                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                                                    <span className="truncate italic">"{delivery.notes}"</span>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSelectedDeliveryId(delivery.id);
+                                                            setIsDetailsOpen(true);
+                                                        }}
+                                                        className="absolute right-4 bottom-4 p-2 bg-primary/10 text-primary rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-primary hover:text-white"
+                                                        title="View Details"
+                                                    >
+                                                        <Maximize2 className="w-3.5 h-3.5" />
+                                                    </button>
                                                 </div>
-                                            )}
-                                        </div>
-
-                                        {selectedDeliveryId === delivery.id && (
-                                            <div className="absolute right-0 top-0 bottom-0 w-1 bg-primary" />
-                                        )}
-
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSelectedDeliveryId(delivery.id);
-                                                setIsDetailsOpen(true);
-                                            }}
-                                            className="absolute right-4 bottom-4 p-2 bg-primary/10 text-primary rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-primary hover:text-white"
-                                            title="View Details"
-                                        >
-                                            <Maximize2 className="w-3.5 h-3.5" />
-                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
-
-                                ))
-                            )}
+                                );
+                            })()}
                         </div>
                     )}
 
-                    {/* Map Section */}
+                    {/* ── Map Section ── */}
                     {(viewMode === 'map' || viewMode === 'both') && (
                         <div className={cn(
                             "bg-card rounded-3xl border border-border/50 shadow-sm overflow-hidden min-h-[400px]",
@@ -536,109 +600,110 @@ export default function Deliveries() {
                                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                 />
 
-                                {/* Delivery Destinations */}
-                                {sortedDeliveries.map((delivery, index) => {
-                                    const lat = Number(delivery.latitude || delivery.customer?.latitude);
-                                    const lng = Number(delivery.longitude || delivery.customer?.longitude);
-                                    if (!lat || !lng) return null;
+                                {/* Delivery Destinations — only selected when one is active */}
+                                {sortedDeliveries
+                                    .filter(delivery => !selectedDeliveryId || delivery.id === selectedDeliveryId)
+                                    .map((delivery, index) => {
+                                        const lat = Number(delivery.latitude || delivery.customer?.latitude);
+                                        const lng = Number(delivery.longitude || delivery.customer?.longitude);
+                                        if (!lat || !lng) return null;
 
-                                    // Check for active agent location if in_transit
-                                    let agentLocation: [number, number] | null = null;
-                                    if (delivery.status === 'in_transit') {
-                                        const loc = locations.find(l =>
-                                            l.user_id === delivery.delivery_agent?.id ||
-                                            (delivery.delivery_agent?.user_id && l.user_id === delivery.delivery_agent.user_id)
-                                        );
-                                        if (loc) {
-                                            agentLocation = [Number(loc.latitude), Number(loc.longitude)];
+                                        let agentLocation: [number, number] | null = null;
+                                        if (delivery.status === 'in_transit') {
+                                            const loc = locations.find(l =>
+                                                l.user_id === delivery.delivery_agent?.id ||
+                                                (delivery.delivery_agent?.user_id && l.user_id === delivery.delivery_agent.user_id)
+                                            );
+                                            if (loc) {
+                                                agentLocation = [Number(loc.latitude), Number(loc.longitude)];
+                                            }
                                         }
-                                    }
 
-                                    return (
-                                        <div key={`delivery-group-${delivery.id}`}>
-                                            <Marker
-                                                position={[lat, lng]}
-                                                icon={DestinationIcon}
-                                                zIndexOffset={index * 100} // Ensure correct stacking order
-                                                eventHandlers={{
-                                                    click: () => {
-                                                        setSelectedDeliveryId(delivery.id);
-                                                        setIsDetailsOpen(true);
-                                                    }
-                                                }}
-                                            >
-                                                <Tooltip
-                                                    permanent
-                                                    direction="top"
-                                                    offset={[0, -20]}
-                                                    className="bg-transparent border-0 shadow-none p-0 !opacity-100"
-                                                >
-                                                    <div
-                                                        className="bg-white px-3 py-2 rounded-xl shadow-lg border border-border/50 cursor-pointer hover:scale-105 transition-transform"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation(); // Prevent map click
+                                        return (
+                                            <div key={`delivery-group-${delivery.id}`}>
+                                                <Marker
+                                                    position={[lat, lng]}
+                                                    icon={DestinationIcon}
+                                                    zIndexOffset={index * 100}
+                                                    eventHandlers={{
+                                                        click: () => {
                                                             setSelectedDeliveryId(delivery.id);
                                                             setIsDetailsOpen(true);
-                                                        }}
+                                                        }
+                                                    }}
+                                                >
+                                                    <Tooltip
+                                                        permanent
+                                                        direction="top"
+                                                        offset={[0, -20]}
+                                                        className="bg-transparent border-0 shadow-none p-0 !opacity-100"
                                                     >
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <span className={cn(
-                                                                "w-2 h-2 rounded-full",
-                                                                delivery.status === 'in_transit' ? "bg-green-500 animate-pulse" : "bg-primary"
-                                                            )} />
-                                                            <p className="font-black text-xs text-foreground">#{delivery.order_number}</p>
+                                                        <div
+                                                            className="bg-white px-3 py-2 rounded-xl shadow-lg border border-border/50 cursor-pointer hover:scale-105 transition-transform"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setSelectedDeliveryId(delivery.id);
+                                                                setIsDetailsOpen(true);
+                                                            }}
+                                                        >
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className={cn(
+                                                                    "w-2 h-2 rounded-full",
+                                                                    delivery.status === 'in_transit' ? "bg-green-500 animate-pulse" : "bg-primary"
+                                                                )} />
+                                                                <p className="font-black text-xs text-foreground">#{delivery.order_number}</p>
+                                                            </div>
+                                                            <p className="text-[10px] font-bold text-muted-foreground truncate max-w-[100px]">
+                                                                {delivery.customer?.name}
+                                                            </p>
                                                         </div>
-                                                        <p className="text-[10px] font-bold text-muted-foreground truncate max-w-[100px]">
-                                                            {delivery.customer?.name}
-                                                        </p>
-                                                    </div>
-                                                </Tooltip>
-                                            </Marker>
+                                                    </Tooltip>
+                                                </Marker>
 
-                                            {/* Road Route Line for In-Transit Orders */}
-                                            {activeRoutes[delivery.id] && (
-                                                <Polyline
-                                                    positions={activeRoutes[delivery.id]}
-                                                    pathOptions={{
-                                                        color: '#f97316', // Orange
-                                                        weight: 7,
-                                                        opacity: 1,
-                                                        lineCap: 'round',
-                                                        lineJoin: 'round'
-                                                    }}
-                                                />
-                                            )}
+                                                {/* Road Route Line */}
+                                                {activeRoutes[delivery.id] && (
+                                                    <Polyline
+                                                        positions={activeRoutes[delivery.id]}
+                                                        pathOptions={{
+                                                            color: '#f97316',
+                                                            weight: 7,
+                                                            opacity: 1,
+                                                            lineCap: 'round',
+                                                            lineJoin: 'round'
+                                                        }}
+                                                    />
+                                                )}
 
-                                            {/* Breadcrumb Trail (Path taken) */}
-                                            {selectedDeliveryId === delivery.id && breadcrumbs.length > 1 && (
-                                                <Polyline
-                                                    positions={breadcrumbs}
-                                                    pathOptions={{
-                                                        color: '#94a3b8',
-                                                        weight: 3,
-                                                        opacity: 0.6,
-                                                        dashArray: '5, 10',
-                                                        lineCap: 'round'
-                                                    }}
-                                                />
-                                            )}
+                                                {/* Breadcrumb Trail */}
+                                                {selectedDeliveryId === delivery.id && breadcrumbs.length > 1 && (
+                                                    <Polyline
+                                                        positions={breadcrumbs}
+                                                        pathOptions={{
+                                                            color: '#94a3b8',
+                                                            weight: 3,
+                                                            opacity: 0.6,
+                                                            dashArray: '5, 10',
+                                                            lineCap: 'round'
+                                                        }}
+                                                    />
+                                                )}
 
-                                            {/* Simple Dash Line fallback if road route not loaded */}
-                                            {agentLocation && !activeRoutes[delivery.id] && (
-                                                <Polyline
-                                                    positions={[agentLocation, [lat, lng]]}
-                                                    pathOptions={{
-                                                        color: '#3b82f6',
-                                                        weight: 3,
-                                                        opacity: 0.5,
-                                                        dashArray: '10, 10',
-                                                        lineCap: 'round'
-                                                    }}
-                                                />
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                                                {/* Fallback dash line */}
+                                                {agentLocation && !activeRoutes[delivery.id] && (
+                                                    <Polyline
+                                                        positions={[agentLocation, [lat, lng]]}
+                                                        pathOptions={{
+                                                            color: '#3b82f6',
+                                                            weight: 3,
+                                                            opacity: 0.5,
+                                                            dashArray: '10, 10',
+                                                            lineCap: 'round'
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
+                                        );
+                                    })}
 
                                 {/* Agent Locations */}
                                 {locations.map((loc) => (
@@ -663,14 +728,12 @@ export default function Deliveries() {
                 </div>
             )}
 
-            {
-                isDetailsOpen && selectedDelivery && (
-                    <OrderDetailsModal
-                        order={selectedDelivery as any}
-                        onClose={() => setIsDetailsOpen(false)}
-                    />
-                )
-            }
+            {isDetailsOpen && selectedDelivery && (
+                <OrderDetailsModal
+                    order={selectedDelivery as any}
+                    onClose={() => setIsDetailsOpen(false)}
+                />
+            )}
 
             <AddCustomerModal
                 isOpen={isEditCustomerModalOpen}
@@ -680,7 +743,6 @@ export default function Deliveries() {
                 }}
                 customerToEdit={editingCustomer}
             />
-        </div >
+        </div>
     );
 }
-

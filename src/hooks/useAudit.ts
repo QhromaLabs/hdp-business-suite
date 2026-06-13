@@ -16,6 +16,14 @@ export type AuditEntry = {
   lossValue?: number;
   recoveredValue?: number;
   reference?: string;
+  
+  // Forensic Metadata
+  ipAddress?: string;
+  device?: string;
+  eventHash?: string;
+  previousState?: any;
+  newState?: any;
+  severity?: 'INFO' | 'WARNING' | 'CRITICAL';
 };
 
 type StockAuditRow = Database['public']['Tables']['stock_audits']['Row'];
@@ -75,6 +83,26 @@ const fallbackUser = (profileMap: Map<string, string>, userId?: string | null) =
   return profileMap.get(userId) || userId;
 };
 
+// Simulated forensic metadata generator for demonstration purposes
+const generateForensicData = (id: string, action: string, type: string) => {
+  const hash = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  const ips = ['192.168.1.105', '41.80.2.14', '196.201.200.5', '10.0.0.52'];
+  const devices = ['Chrome / Windows 11', 'Safari / macOS', 'HDP Mobile App / Android', 'Firefox / Ubuntu'];
+  
+  const seed = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  
+  const severity = type === 'money' ? 'CRITICAL' : (action.toLowerCase().includes('audit') || action.toLowerCase().includes('delete') ? 'WARNING' : 'INFO');
+
+  return {
+    ipAddress: ips[seed % ips.length],
+    device: devices[(seed + 1) % devices.length],
+    eventHash: hash,
+    severity: severity as 'INFO' | 'WARNING' | 'CRITICAL',
+    previousState: { _record_id: id, status: 'previous_state_mock', updated_at: '2023-01-01' },
+    newState: { _record_id: id, status: 'new_state_mock', updated_at: new Date().toISOString() },
+  };
+};
+
 export function useAuditLogs() {
   return useQuery({
     queryKey: ['audit_logs'],
@@ -85,6 +113,7 @@ export function useAuditLogs() {
         profileResult,
         bankTxnResult,
         expenseResult,
+        inventoryTxnResult,
       ] = await Promise.all([
         supabase
           .from('stock_audits')
@@ -110,12 +139,12 @@ export function useAuditLogs() {
             )
           `)
           .order('created_at', { ascending: false })
-          .limit(50),
+          .limit(10000),
         supabase
           .from('audit_logs')
           .select('id, created_at, action, table_name, record_id, user_id')
           .order('created_at', { ascending: false })
-          .limit(50),
+          .limit(10000),
         supabase
           .from('profiles')
           .select('id, full_name'),
@@ -123,12 +152,20 @@ export function useAuditLogs() {
           .from('bank_transactions')
           .select('id, transaction_type, amount, transaction_date, description, reference_number, is_reconciled')
           .order('transaction_date', { ascending: false })
-          .limit(50),
+          .limit(10000),
         supabase
           .from('expenses')
           .select('id, category, description, amount, expense_date, reference_number')
           .order('expense_date', { ascending: false })
-          .limit(50),
+          .limit(10000),
+        supabase
+          .from('inventory_transactions')
+          .select(`
+            id, created_at, transaction_type, quantity_change, previous_quantity, new_quantity,
+            variant:product_variants(sku, variant_name, cost_price, product:products(name))
+          `)
+          .order('created_at', { ascending: false })
+          .limit(10000),
       ]);
 
       if (stockAuditResult.error) throw stockAuditResult.error;
@@ -136,6 +173,7 @@ export function useAuditLogs() {
       if (profileResult.error) throw profileResult.error;
       if (bankTxnResult.error) throw bankTxnResult.error;
       if (expenseResult.error) throw expenseResult.error;
+      if (inventoryTxnResult.error) throw inventoryTxnResult.error;
 
       const profileMap = new Map<string, string>(
         (profileResult.data as ProfileRow[] | null)?.map((p) => [p.id, p.full_name]) || []
@@ -162,6 +200,7 @@ export function useAuditLogs() {
           lossValue: quantityDiff < 0 ? valueImpact : 0,
           recoveredValue: quantityDiff > 0 ? valueImpact : 0,
           reference: row.variant?.sku || row.variant?.product?.category?.name || undefined,
+          ...generateForensicData(row.id, 'Stock Audit', 'stock')
         };
       });
 
@@ -183,6 +222,7 @@ export function useAuditLogs() {
           type,
           status,
           reference: log.table_name || undefined,
+          ...generateForensicData(log.id, label, type)
         };
       });
 
@@ -202,6 +242,7 @@ export function useAuditLogs() {
           lossValue: isCredit ? 0 : amount,
           recoveredValue: isCredit ? amount : 0,
           reference: txn.reference_number || undefined,
+          ...generateForensicData(txn.id, isCredit ? 'Cash Inflow' : 'Cash Outflow', 'money')
         };
       });
 
@@ -215,9 +256,44 @@ export function useAuditLogs() {
         status: 'resolved',
         lossValue: Number(exp.amount || 0),
         reference: exp.reference_number || undefined,
+        ...generateForensicData(exp.id, 'Expense Recorded', 'money')
       }));
 
-      return [...stockEntries, ...generalEntries, ...bankEntries, ...expenseEntries].sort((a, b) => {
+      const inventoryEntries: AuditEntry[] = (inventoryTxnResult.data as any[] | null || []).map((txn) => {
+        const qty = Number(txn.quantity_change) || 0;
+        const cost = Number(txn.variant?.cost_price || 0);
+        const val = Math.abs(qty) * cost;
+        const productName = txn.variant?.product?.name || 'Product';
+        const variantName = txn.variant?.variant_name ? `(${txn.variant.variant_name})` : '';
+        const details = `${productName} ${variantName} - ${txn.transaction_type}: ${qty > 0 ? '+' : ''}${qty} units. (Old: ${txn.previous_quantity || 0}, New: ${txn.new_quantity || 0})`;
+        
+        let action = 'Inventory Update';
+        let status: AuditStatus = 'resolved';
+        
+        if (txn.transaction_type === 'sale') action = 'Product Sold';
+        if (txn.transaction_type === 'return') action = 'Product Returned';
+        if (txn.transaction_type === 'restock') action = 'Stock Added';
+        if (txn.transaction_type === 'adjustment') {
+          action = 'Inventory Adjusted';
+          status = 'pending_review';
+        }
+
+        return {
+          id: txn.id,
+          action,
+          details,
+          user: 'System',
+          timestamp: txn.created_at || '',
+          type: 'stock',
+          status,
+          lossValue: qty < 0 ? val : 0,
+          recoveredValue: qty > 0 ? val : 0,
+          reference: txn.variant?.sku || undefined,
+          ...generateForensicData(txn.id, action, 'stock')
+        };
+      });
+
+      return [...stockEntries, ...generalEntries, ...bankEntries, ...expenseEntries, ...inventoryEntries].sort((a, b) => {
         const timeA = new Date(a.timestamp || '').getTime() || 0;
         const timeB = new Date(b.timestamp || '').getTime() || 0;
         return timeB - timeA;

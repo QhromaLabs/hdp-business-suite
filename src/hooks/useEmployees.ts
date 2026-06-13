@@ -40,6 +40,8 @@ export interface Payroll {
   deductions: number;
   net_salary: number;
   status: string;
+  paid_at: string | null;
+  created_at: string;
   employee?: Employee;
 }
 
@@ -592,6 +594,74 @@ export function useRunPayroll() {
   });
 }
 
+export function usePayPayrollEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, amount, accountId, employeeName }: { id: string; amount: number; accountId?: string; employeeName?: string }) => {
+      // 1. Update Payroll Record
+      const { error } = await supabase
+        .from('payroll')
+        .update({
+          status: 'paid',
+          net_salary: amount,
+          paid_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // 2. Deduct from Bank Account if selected
+      if (accountId) {
+        // Fetch current balance first
+        const { data: account, error: accError } = await supabase
+          .from('bank_accounts')
+          .select('current_balance, account_name')
+          .eq('id', accountId)
+          .single();
+
+        if (accError) throw accError;
+
+        // Update Balance
+        const { error: updateError } = await supabase
+          .from('bank_accounts')
+          .update({
+            current_balance: Number(account.current_balance) - amount
+          })
+          .eq('id', accountId);
+
+        if (updateError) throw updateError;
+
+        // Insert Transaction Log
+        const { error: txnError } = await supabase
+          .from('bank_transactions')
+          .insert({
+            account_id: accountId,
+            transaction_type: 'Payroll Payout',
+            amount: amount,
+            transaction_date: new Date().toISOString(),
+            description: `Salary Payout - ${employeeName || 'Employee'}`
+          });
+
+        if (txnError) throw txnError;
+      }
+
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['bank_accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['bank_transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['financial_summary'] });
+      toast.success('Payroll entry marked as paid');
+    },
+    onError: (error) => {
+      toast.error('Failed to mark as paid: ' + error.message);
+    },
+  });
+}
+
 export function useMarkLeaveAndRole(defaultRole: 'clerk' | 'admin' | 'manager' | 'sales_rep' | 'delivery_agent' = 'clerk') {
   const queryClient = useQueryClient();
 
@@ -661,6 +731,31 @@ export function useUpdateAttendanceStatus() {
     },
     onError: (error) => {
       toast.error('Failed to update status: ' + error.message);
+    },
+  });
+}
+
+export function useDeletePayrollEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('payroll')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['financial_summary'] });
+      toast.success('Payroll entry deleted completely');
+    },
+    onError: (error) => {
+      toast.error('Failed to delete payroll entry: ' + error.message);
     },
   });
 }

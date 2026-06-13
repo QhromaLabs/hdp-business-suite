@@ -12,10 +12,10 @@ class POSPage extends StatefulWidget {
   const POSPage({super.key, this.onTabChange});
 
   @override
-  State<POSPage> createState() => _POSPageState();
+  State<POSPage> createState() => POSPageState();
 }
 
-class _POSPageState extends State<POSPage> {
+class POSPageState extends State<POSPage> {
   // Data
   List<Map<String, dynamic>> products = [];
   List<Map<String, dynamic>> filteredProducts = [];
@@ -874,6 +874,46 @@ class _POSPageState extends State<POSPage> {
         _discountController.clear();
         _orderNotesController.clear();
      });
+  }
+
+  /// Called externally (e.g. from CRM page) to pre-select a customer on POS.
+  void preselectCustomer(Map<String, dynamic> customer) {
+    setState(() {
+      // Try to find an exact match in the already-loaded customers list
+      final match = customers.where((c) => c['id'] == customer['id']).toList();
+      if (match.isNotEmpty) {
+        _selectedCustomer = match.first;
+      } else {
+        // Use the passed customer directly (may have extra fields like distance)
+        _selectedCustomer = customer;
+        // Also add it to the list so the dropdown shows it
+        if (!customers.any((c) => c['id'] == customer['id'])) {
+          customers.add(customer);
+          customers.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+        }
+      }
+    });
+    // Show a brief confirmation banner
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.person_pin, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Customer: ${customer['name']} selected',
+                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFFFF6600),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   void _showSnack(String msg, Color color) {

@@ -19,19 +19,26 @@ const pageTitles: Record<string, string> = {
   '/settings': 'Settings',
   '/profile': 'My Profile',
   '/orders': 'All Orders',
+  '/mobile-apps': 'Mobile Apps',
 };
 
 export default function MainLayout() {
   const location = useLocation();
   const title = pageTitles[location.pathname] || 'HDP(K) ERP';
-  const [collapsed, setCollapsed] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+      <Sidebar 
+        isPinned={isPinned} 
+        setIsPinned={setIsPinned} 
+        isHovered={isHovered} 
+        setIsHovered={setIsHovered} 
+      />
       <div className={cn(
         "min-h-screen flex flex-col transition-all duration-300",
-        collapsed ? "ml-20" : "ml-64"
+        isPinned ? "ml-64" : "ml-20"
       )}>
         <Header title={title} />
         <main className="flex-1 p-6">

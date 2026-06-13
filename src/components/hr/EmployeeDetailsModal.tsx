@@ -22,7 +22,7 @@ import {
     Loader2
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Employee, useAttendanceToday, useEmployeeAttendance, useEmployeeAttendanceLogs, usePayrollEntries, useUpdateEmployee, useMarkLeaveAndRole, useCreatePayrollEntry, useTerminateEmployee, useRestoreEmployee, useDeleteEmployeeHard, useUpdateUserPassword } from '@/hooks/useEmployees';
+import { Employee, useAttendanceToday, useEmployeeAttendance, useEmployeeAttendanceLogs, usePayrollEntries, useUpdateEmployee, useMarkLeaveAndRole, useCreatePayrollEntry, useTerminateEmployee, useRestoreEmployee, useDeleteEmployeeHard, useUpdateUserPassword, useDeletePayrollEntry } from '@/hooks/useEmployees';
 import { useDeleteUser } from '@/hooks/useSettings';
 import { useCommissions, useWithdrawalRequests } from '@/hooks/useCommissions';
 import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
@@ -74,6 +74,7 @@ export function EmployeeDetailsModal({ employee, isOpen, onClose }: EmployeeDeta
     const markLeave = useMarkLeaveAndRole('clerk'); // Default role, overridden in function
     const restoreEmployee = useRestoreEmployee();
     const hardDeleteEmployee = useDeleteEmployeeHard();
+    const deletePayrollEntry = useDeletePayrollEntry();
 
     const [deleteConfirmation, setDeleteConfirmation] = useState<{
         isOpen: boolean;
@@ -389,9 +390,19 @@ export function EmployeeDetailsModal({ employee, isOpen, onClose }: EmployeeDeta
                                 <h4 className="text-sm font-semibold">Latest Transactions</h4>
                                 <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                                     {employeePayroll.slice(0, 5).map(p => (
-                                        <div key={p.id} className="flex justify-between items-center p-3 text-sm bg-muted/40 rounded-lg">
+                                        <div key={p.id} className="flex justify-between items-center p-3 text-sm bg-muted/40 rounded-lg group">
                                             <span>Salary ({p.pay_period_end})</span>
-                                            <span className="font-mono">{formatCurrency(p.net_salary)}</span>
+                                            <div className="flex items-center gap-3">
+                                                <span className="font-mono">{formatCurrency(p.net_salary)}</span>
+                                                <button 
+                                                    onClick={() => deletePayrollEntry.mutate(p.id)}
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-destructive/10 rounded text-destructive"
+                                                    title="Delete Transaction"
+                                                    disabled={deletePayrollEntry.isPending}
+                                                >
+                                                    {deletePayrollEntry.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                     {employeeWithdrawals.slice(0, 5).map(w => (

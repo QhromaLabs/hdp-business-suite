@@ -18,6 +18,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey<POSPageState> _posPageKey = GlobalKey<POSPageState>();
   int _selectedIndex = 0;
   Map<String, dynamic>? _employeeProfile;
   final User? user = supabase.auth.currentUser;
@@ -30,9 +31,9 @@ class _MainScreenState extends State<MainScreen> {
     _fetchEmployeeProfile();
     _pages = [
       HomePage(onTabChange: _onItemTapped, scaffoldKey: _scaffoldKey),
-      POSPage(onTabChange: _onItemTapped),
+      POSPage(key: _posPageKey, onTabChange: _onItemTapped),
       AnalyticsPage(scaffoldKey: _scaffoldKey),
-      CRMPage(onTabChange: _onItemTapped),
+      CRMPage(onTabChange: _onItemTapped, onNavigateToPOSWithCustomer: _navigateToPOSWithCustomer),
     ];
   }
 
@@ -52,6 +53,15 @@ class _MainScreenState extends State<MainScreen> {
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
+    });
+  }
+
+  /// Navigate to POS tab with a pre-selected customer.
+  void _navigateToPOSWithCustomer(Map<String, dynamic> customer) {
+    setState(() => _selectedIndex = 1);
+    // Give the tab a frame to render before calling preselectCustomer
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _posPageKey.currentState?.preselectCustomer(customer);
     });
   }
 

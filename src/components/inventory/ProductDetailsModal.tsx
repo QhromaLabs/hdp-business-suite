@@ -19,9 +19,11 @@ import {
     TableHeader,
     TableRow
 } from "@/components/ui/table";
-import { Package, Barcode, Wallet, Calendar, Tag, History, Info, List, ArrowUpRight, ArrowDownRight, Plus } from 'lucide-react';
+import { Skeleton } from "@/components/ui/skeleton";
+import { Package, Barcode, Wallet, Tag, History, Info, List, ArrowUpRight, Plus } from 'lucide-react';
 import { useProductHistory } from '@/hooks/useProducts';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLandedMarkup } from '@/hooks/useAccounting';
 import { cn } from "@/lib/utils";
 
 interface ProductDetailsModalProps {
@@ -40,13 +42,18 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
     const variant = product.variant || product;
     const prod = variant?.product || product;
     const { data: history, isLoading: isHistoryLoading } = useProductHistory(prod?.id);
+    const { data: landedMarkup = 0 } = useLandedMarkup();
+    
+    const isLoading = isHistoryLoading;
 
     const details = [
         { label: 'Category', value: prod?.category?.name || 'Uncategorized', icon: Tag },
         { label: 'SKU', value: variant?.sku, icon: Package },
         { label: 'Barcode', value: variant?.barcode || 'N/A', icon: Barcode },
         ...(isAdminOrManager ? [
-            { label: 'Cost Price', value: `KES ${variant?.cost_price || prod?.cost_price || 0}`, icon: Wallet },
+            { label: 'Factory Cost Price', value: `KES ${variant?.cost_price || prod?.cost_price || 0}`, icon: Wallet },
+            { label: 'Landed Markup (Freight/Customs)', value: `KES ${landedMarkup.toFixed(2)}`, icon: ArrowUpRight },
+            { label: 'Total Landed Cost', value: `KES ${((variant?.cost_price || prod?.cost_price || 0) + landedMarkup).toFixed(2)}`, icon: Wallet },
             { label: 'Selling Price', value: `KES ${variant?.price || prod?.base_price || 0}`, icon: Wallet },
         ] : []),
         { label: 'Current Stock', value: product.quantity ?? 'N/A', icon: Package },
@@ -98,33 +105,51 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
                     </TabsList>
 
                     <TabsContent value="overview" className="space-y-6 py-4 animate-in fade-in slide-in-from-top-2">
-                        <div className="bg-muted/30 p-4 rounded-xl border border-border">
-                            <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground">
-                                <Info className="w-4 h-4 text-primary" />
-                                Description
-                            </h4>
-                            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                                {prod?.description || 'No description provided.'}
-                            </p>
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                            {details.map((item) => (
-                                <div key={item.label} className="bg-card p-4 rounded-xl border border-border transition-colors hover:border-primary/20 group">
-                                    <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-1 group-hover:text-primary transition-colors">
-                                        <item.icon className="w-3.5 h-3.5" />
-                                        {item.label}
-                                    </span>
-                                    <p className="text-base font-bold text-foreground">
-                                        {item.value}
+                        {isLoading ? (
+                            <div className="space-y-4">
+                                <Skeleton className="h-20 w-full" />
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                                    <Skeleton className="h-24 w-full" />
+                                    <Skeleton className="h-24 w-full" />
+                                    <Skeleton className="h-24 w-full" />
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="bg-muted/30 p-4 rounded-xl border border-border">
+                                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground">
+                                        <Info className="w-4 h-4 text-primary" />
+                                        Description
+                                    </h4>
+                                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                                        {prod?.description || 'No description provided.'}
                                     </p>
                                 </div>
-                            ))}
-                        </div>
+
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                                    {details.map((item) => (
+                                        <div key={item.label} className="bg-card p-4 rounded-xl border border-border transition-colors hover:border-primary/20 group">
+                                            <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-1 group-hover:text-primary transition-colors">
+                                                <item.icon className="w-3.5 h-3.5" />
+                                                {item.label}
+                                            </span>
+                                            <p className="text-base font-bold text-foreground">
+                                                {item.value}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
                     </TabsContent>
 
                     <TabsContent value="attributes" className="py-4 animate-in fade-in slide-in-from-top-2">
-                        {attributes.length > 0 ? (
+                        {isLoading ? (
+                            <div className="space-y-4">
+                                <Skeleton className="h-12 w-full" />
+                                <Skeleton className="h-12 w-full" />
+                            </div>
+                        ) : attributes.length > 0 ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {attributes.map(([key, value]) => (
                                     <div key={key} className="flex items-center justify-between p-3 bg-muted/20 rounded-lg border border-border">
@@ -142,6 +167,20 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
                     </TabsContent>
 
                     <TabsContent value="history" className="py-4 animate-in fade-in slide-in-from-top-2">
+                        {isLoading ? (
+                            <div className="space-y-8">
+                                <div className="space-y-3">
+                                    <Skeleton className="h-6 w-32" />
+                                    <Skeleton className="h-12 w-full" />
+                                    <Skeleton className="h-12 w-full" />
+                                </div>
+                                <div className="space-y-3">
+                                    <Skeleton className="h-6 w-32" />
+                                    <Skeleton className="h-12 w-full" />
+                                    <Skeleton className="h-12 w-full" />
+                                </div>
+                            </div>
+                        ) : (
                         <div className="space-y-6">
                             <div>
                                 <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
@@ -205,7 +244,7 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
                                                 <TableCell className="font-medium">{item.order.customer?.name || 'Direct Sale'}</TableCell>
                                                 <TableCell className="text-right">{item.quantity}</TableCell>
                                                 <TableCell className="text-right font-bold text-primary">
-                                                    KES {item.subtotal}
+                                                    KES {item.total_price?.toLocaleString()}
                                                 </TableCell>
                                             </TableRow>
                                         ))}
@@ -218,8 +257,14 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
                                         )}
                                     </TableBody>
                                 </Table>
+                                {history?.sales && history.sales.length > 0 && (
+                                    <div className="text-center mt-6 text-xs text-muted-foreground/50 italic font-medium">
+                                        — record ends here —
+                                    </div>
+                                )}
                             </div>
                         </div>
+                        )}
                     </TabsContent>
                 </Tabs>
             </DialogContent>

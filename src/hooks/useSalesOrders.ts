@@ -300,22 +300,6 @@ export function useCreateSalesOrder() {
 
       if (itemsError) throw itemsError;
 
-      // 3. Deduct stock from inventory
-      for (const item of items) {
-        const { data: invData } = await supabase
-          .from('inventory')
-          .select('quantity')
-          .eq('variant_id', item.variant_id)
-          .single();
-
-        if (invData) {
-          await supabase
-            .from('inventory')
-            .update({ quantity: (invData.quantity || 0) - item.quantity })
-            .eq('variant_id', item.variant_id);
-        }
-      }
-
       // 4. Update Customer Credit Balance (if credit sale)
       if (order.is_credit_sale && order.customer_id) {
         // Re-fetch strictly to be safe, or just use atomic increment logic if possible.

@@ -325,11 +325,11 @@ export default function TransactionLedgerModal({ open, onClose, transactions }: 
                             </Button>
                         </div>
                     ) : (
-                        filteredTransactions.map((txn) => {
+                        filteredTransactions.map((txn, idx) => {
                             const isIncome = txn.type === 'income';
                             return (
                                 <div
-                                    key={txn.id}
+                                    key={txn.id || `txn-${idx}`}
                                     className="group flex items-center justify-between p-4 bg-card rounded-xl border border-border/50 hover:border-primary/30 transition-all"
                                 >
                                     <div className="flex items-center gap-4 flex-1 min-w-0">

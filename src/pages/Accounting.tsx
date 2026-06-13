@@ -9,28 +9,34 @@ import {
   Plus,
   Loader2,
   Trash2,
+  ArrowUp,
+  ArrowDown,
+  Activity,
+  DollarSign,
+  Info,
 } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { DateRange } from "react-day-picker";
 import { subDays, startOfYear, endOfYear, startOfMonth } from "date-fns";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar, ReferenceLine } from 'recharts';
 
 import {
   useFinancialSummary,
-  useExpensesByCategory,
-  useBankTransactions,
-  useBankAccounts,
-  useExpenses,
   useRecordExpense,
   useDeleteExpense,
-  usePayments,
-  useProductionRuns,
-  useCreditorTransactions,
 } from '@/hooks/useAccounting';
-import { usePayrollEntries } from '@/hooks/useEmployees';
+// import { usePayrollEntries } from '@/hooks/useEmployees';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -50,23 +56,68 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
+function CalculatingLoader() {
+  const [dataPoints, setDataPoints] = useState([0, 0, 0, 0]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDataPoints(prev => prev.map(() => Math.floor(Math.random() * 900000) + 100000));
+    }, 150);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+      <div className="flex flex-col items-center justify-center h-[70vh] gap-8 animate-fade-in">
+        <div className="relative">
+          <div className="w-32 h-32 rounded-full border-4 border-primary/20 animate-[spin_3s_linear_infinite]" />
+          <div className="absolute inset-0 rounded-full border-4 border-primary border-b-transparent animate-spin" style={{ animationDuration: '1.5s' }} />
+          <div className="absolute inset-0 rounded-full border-4 border-info/50 border-l-transparent animate-spin" style={{ animationDuration: '2s', animationDirection: 'reverse' }} />
+          <Activity className="absolute inset-0 m-auto w-10 h-10 text-primary animate-pulse" />
+        </div>
+        <div className="flex flex-col items-center gap-3">
+          <h2 className="text-3xl font-black tracking-tight text-foreground animate-pulse">Calculating data...</h2>
+          <div className="flex flex-wrap items-center justify-center gap-3 text-muted-foreground font-medium text-sm">
+             <span className="px-3 py-1 bg-card rounded-full border border-border/50 animate-pulse shadow-sm">Reconciling ledgers</span>
+             <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '150ms' }} />
+             <span className="px-3 py-1 bg-card rounded-full border border-border/50 animate-pulse shadow-sm" style={{ animationDelay: '300ms' }}>Computing profit margins</span>
+             <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '450ms' }} />
+             <span className="px-3 py-1 bg-card rounded-full border border-border/50 animate-pulse shadow-sm" style={{ animationDelay: '600ms' }}>Fetching transactions</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 opacity-60">
+          {dataPoints.map((val, i) => (
+            <div key={i} className="bg-card/50 backdrop-blur-sm border border-border/50 p-5 rounded-2xl flex flex-col items-center justify-center min-w-[140px] shadow-sm">
+              <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">
+                {['Revenue', 'Expenses', 'Net Profit', 'Taxes'][i]}
+              </div>
+              <div className="font-mono text-xl font-black text-foreground">
+                Ksh {val.toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+  );
+}
+
 export default function Accounting() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: subDays(new Date(), 30),
+    from: startOfMonth(new Date()),
     to: new Date(),
   });
+  const [activeTab, setActiveTab] = useState("overview");
 
   const queryDateRange = dateRange ? { from: dateRange.from!, to: dateRange.to! } : undefined;
   const { userRole } = useAuth();
   const { data: financialSummary, isLoading: summaryLoading } = useFinancialSummary(queryDateRange);
-  const { data: expenseCategories = [], isLoading: expensesLoading } = useExpensesByCategory(queryDateRange);
-  const { data: transactions = [], isLoading: transactionsLoading } = useBankTransactions();
-  const { data: bankAccounts = [], isLoading: accountsLoading } = useBankAccounts();
-  const { data: expenses = [], isLoading: expensesListLoading } = useExpenses(queryDateRange);
-  const { data: payments = [], isLoading: paymentsLoading } = usePayments(queryDateRange);
-  const { data: productionRuns = [], isLoading: productionLoading } = useProductionRuns(queryDateRange);
-  const { data: creditorTransactions = [], isLoading: creditorTxLoading } = useCreditorTransactions(queryDateRange);
-  const { data: payrollEntries = [], isLoading: payrollLoading } = usePayrollEntries(queryDateRange);
+  const expenseCategories = financialSummary?.expenseCategories || [];
+  const transactions = financialSummary?.bankTransactionsList || [];
+  const bankAccounts = financialSummary?.bankAccountsList || [];
+  const expenses = financialSummary?.expensesList || [];
+  const payments = financialSummary?.paymentsList || [];
+  const productionRuns = financialSummary?.productionRunsList || [];
+  const creditorTransactions = financialSummary?.creditorTransactionsList || [];
+  const payrollEntries = financialSummary?.payrollEntriesList || [];
   const { mutateAsync: recordExpense, isPending: savingExpense } = useRecordExpense();
   const { mutate: deleteExpense } = useDeleteExpense();
   const navigate = useNavigate();
@@ -92,7 +143,7 @@ export default function Accounting() {
         .channel(`realtime_${table}`)
         .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
           // Invalidate ALL accounting related queries on any change
-          queryClient.invalidateQueries({ queryKey: ['financial_summary'] });
+          queryClient.invalidateQueries({ queryKey: ['financial_summary_v3'] });
           queryClient.invalidateQueries({ queryKey: ['expenses'] });
           queryClient.invalidateQueries({ queryKey: ['expenses_by_category'] });
           queryClient.invalidateQueries({ queryKey: ['payments'] });
@@ -122,15 +173,7 @@ export default function Accounting() {
     'Shipping Freight Charges',
   ];
 
-  const isLoading =
-    summaryLoading ||
-    expensesLoading ||
-    transactionsLoading ||
-    accountsLoading ||
-    expensesListLoading ||
-    paymentsLoading ||
-    productionLoading ||
-    creditorTxLoading;
+  const isLoading = summaryLoading;
 
   const availableCategories = useMemo(() => {
     const existingNames = expenseCategories.map((c) => c.name);
@@ -138,25 +181,39 @@ export default function Accounting() {
     return allCategories.filter(Boolean).sort();
   }, [expenseCategories]);
 
-  // Use new nested structure
   const cashBalance = financialSummary?.assets?.cash || 0;
   const receivables = financialSummary?.assets?.receivables || 0;
   const payables = financialSummary?.liabilities?.payables || 0;
+  const pendingPayroll = financialSummary?.liabilities?.payroll || 0;
 
-  // Calculate cash from payment methods (actual cash received)
-  const paymentMethodBreakdown = payments.reduce(
-    (acc, payment) => {
-      const method = payment.payment_method || 'other';
-      acc[method] = (acc[method] || 0) + Number(payment.amount);
-      return acc;
-    },
-    {} as Record<string, number>
-  );
+  // Period Credit Calculation
+  const periodCreditIssued = financialSummary?.periodCreditIssued || 0;
 
-  // Use actual cash payments for cash balance instead of bank account data
-  const actualCashBalance = paymentMethodBreakdown['cash'] || 0;
+  let periodLabel = "Period";
+  if (dateRange?.from && dateRange?.to) {
+    const diffDays = Math.round((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays > 360) {
+      if (dateRange.from.getFullYear() === 2000) periodLabel = "All-time";
+      else periodLabel = `${dateRange.from.getFullYear()}`;
+    } else if (diffDays <= 31) {
+      periodLabel = dateRange.from.toLocaleString('default', { month: 'short' });
+    }
+  }
 
-  const workingCapital = cashBalance + receivables - payables;
+  // Calculate cash from payment methods (actual cash received) using financialSummary for legacy support
+  const paymentMethodBreakdown = financialSummary?.paymentBreakdown || {};
+
+  // Calculate actual cash balance across all non-credit payment methods (Cash, M-Pesa, Bank, etc.)
+  const actualCashBalance = Object.entries(paymentMethodBreakdown)
+    .filter(([method]) => method !== 'credit')
+    .reduce((sum, [_, amount]) => sum + amount, 0);
+
+  // Derived Totals for Balance Sheet
+  const totalAssetsSum = actualCashBalance + receivables + (financialSummary?.assets?.inventory || 0) + (financialSummary?.assets?.rawMaterials || 0) + (financialSummary?.assets?.equipment || 0);
+  const totalLiabilitiesSum = payables + pendingPayroll;
+  const retainedEarningsSum = totalAssetsSum - totalLiabilitiesSum;
+
+  const workingCapital = actualCashBalance + receivables - payables;
 
   const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,34 +260,9 @@ export default function Accounting() {
     return ['credit', 'deposit', 'income', 'inflow', 'receive', 'received'].some((t) => type.includes(t));
   };
 
-  const stats = [
-    {
-      title: 'Total Revenue',
-      value: financialSummary?.revenue || 0,
-      icon: Wallet,
-      color: 'primary',
-    },
-    {
-      title: 'Net Profit',
-      value: financialSummary?.netProfit || 0,
-      icon: TrendingUp,
-      color: 'success',
-    },
-    {
-      title: 'Cash Balance',
-      value: actualCashBalance,
-      icon: Wallet,
-      color: 'warning',
-    },
-    {
-      title: 'Receivables',
-      value: receivables,
-      icon: CreditCard,
-      color: 'destructive',
-    },
-  ];
 
-  const liquidityCover = payables > 0 ? ((cashBalance + receivables) / payables).toFixed(2) : 'N/A';
+
+  const liquidityCover = payables > 0 ? ((actualCashBalance + receivables) / payables).toFixed(2) : 'N/A';
   const topExpenses = expenses.slice(0, 6);
 
   // Create unified transaction ledger (income + expenses)
@@ -290,7 +322,7 @@ export default function Accounting() {
           type: 'expense',
           category: 'Payroll',
           amount: entry.net_salary,
-          date: entry.payment_date || entry.created_at,
+          date: entry.paid_at || entry.pay_period_end,
           description: `Salary - ${entry.employee?.full_name || 'Employee'}`
         });
       });
@@ -323,7 +355,7 @@ export default function Accounting() {
     .reduce((sum, txn) => sum + Number(txn.amount), 0);
 
   const payrollLast30 = payrollEntries
-    .filter(entry => entry.status === 'paid' && new Date(entry.payment_date || entry.created_at) >= thirtyDaysAgo)
+    .filter(entry => entry.status === 'paid' && new Date(entry.paid_at || entry.pay_period_end) >= thirtyDaysAgo)
     .reduce((sum, entry) => sum + Number(entry.net_salary), 0);
 
   const cashOut30 = expensesLast30 + supplierPaymentsLast30 + payrollLast30;
@@ -336,13 +368,7 @@ export default function Accounting() {
     .slice(0, 4);
 
   if (isLoading) {
-    return (
-      <div className="space-y-6 animate-fade-in">
-        <PageHeaderSkeleton actions={2} />
-        <StatsSkeleton />
-        <CardGridSkeleton cards={6} />
-      </div>
-    );
+    return <CalculatingLoader />;
   }
 
   return (
@@ -354,54 +380,86 @@ export default function Accounting() {
           <p className="text-muted-foreground">Real-time financial overview and reporting</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center bg-card/50 backdrop-blur-sm rounded-xl p-1 border border-border/40 mr-2 shadow-sm">
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "h-8 px-3 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all",
-                dateRange?.from?.getTime() === subDays(new Date(), 30).setHours(0, 0, 0, 0) && "bg-primary text-primary-foreground shadow-md"
-              )}
-              onClick={() => {
-                const from = subDays(new Date(), 30);
-                from.setHours(0, 0, 0, 0);
-                setDateRange({ from, to: new Date() });
+          <div className="flex flex-wrap items-center gap-2 p-1 bg-card/60 backdrop-blur-xl border border-border/60 rounded-xl shadow-sm">
+            {/* Presets */}
+            <Select 
+              value={
+                !dateRange?.from ? 'all' 
+                : (dateRange.from.getTime() === startOfYear(new Date()).getTime() && dateRange.to?.getTime() === endOfYear(new Date()).getTime()) ? 'this_year' 
+                : 'custom'
+              }
+              onValueChange={(val) => {
+                if (val === 'all') setDateRange(undefined);
+                if (val === 'this_year') setDateRange({ from: startOfYear(new Date()), to: endOfYear(new Date()) });
               }}
             >
-              30 Days
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "h-8 px-3 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ml-1",
-                dateRange?.from?.getTime() === subDays(new Date(), 60).setHours(0, 0, 0, 0) && "bg-primary text-primary-foreground shadow-md"
-              )}
-              onClick={() => {
-                const from = subDays(new Date(), 60);
-                from.setHours(0, 0, 0, 0);
-                setDateRange({ from, to: new Date() });
+              <SelectTrigger className="w-[120px] h-8 bg-background/50 border-transparent rounded-lg focus:ring-primary/20 transition-all text-xs font-semibold hover:bg-background/80">
+                <SelectValue placeholder="Period" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl shadow-xl border-border/50">
+                <SelectItem value="all" className="font-medium cursor-pointer rounded-lg text-xs">All Time</SelectItem>
+                <SelectItem value="this_year" className="font-medium cursor-pointer rounded-lg text-xs">This Year</SelectItem>
+                <SelectItem value="custom" disabled className="hidden">Specific Month</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <div className="w-px h-5 bg-border/50 mx-0.5 rounded-full hidden sm:block" />
+
+            {/* Custom Month */}
+            <Select 
+              value={
+                dateRange?.from && 
+                dateRange?.from.getTime() !== startOfYear(dateRange.from).getTime() 
+                ? dateRange.from.getMonth().toString() 
+                : "all_months"
+              }
+              onValueChange={(val) => {
+                if (val === "all_months") {
+                   // If they clear the month, just show the whole year
+                   const year = dateRange?.from ? dateRange.from.getFullYear() : new Date().getFullYear();
+                   setDateRange({ from: startOfYear(new Date(year, 0, 1)), to: endOfYear(new Date(year, 0, 1)) });
+                   return;
+                }
+                const year = dateRange?.from ? dateRange.from.getFullYear() : new Date().getFullYear();
+                const start = new Date(year, parseInt(val), 1);
+                const end = new Date(year, parseInt(val) + 1, 0, 23, 59, 59);
+                setDateRange({ from: start, to: end });
               }}
             >
-              Bi-Monthly
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "h-8 px-3 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ml-1",
-                dateRange?.from?.getTime() === startOfYear(new Date()).getTime() && "bg-primary text-primary-foreground shadow-md"
-              )}
-              onClick={() => {
-                setDateRange({ from: startOfYear(new Date()), to: endOfYear(new Date()) });
+              <SelectTrigger className="w-[130px] h-8 bg-background/50 border-transparent rounded-lg focus:ring-primary/20 transition-all text-xs font-medium hover:bg-background/80">
+                <SelectValue placeholder="All Months" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl shadow-xl border-border/50 max-h-[300px]">
+                <SelectItem value="all_months" className="cursor-pointer rounded-lg text-xs font-semibold">All Months</SelectItem>
+                {Array.from({length: 12}).map((_, i) => (
+                  <SelectItem key={i} value={i.toString()} className="cursor-pointer rounded-lg text-xs">
+                    {new Date(2000, i).toLocaleString('default', { month: 'long' })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Custom Year */}
+            <Select 
+              value={dateRange?.from ? dateRange.from.getFullYear().toString() : new Date().getFullYear().toString()}
+              onValueChange={(val) => {
+                // Selecting a year ALWAYS selects the entire year independently
+                const year = parseInt(val);
+                setDateRange({ from: startOfYear(new Date(year, 0, 1)), to: endOfYear(new Date(year, 0, 1)) });
               }}
             >
-              Yearly
-            </Button>
+              <SelectTrigger className="w-[80px] h-8 bg-background/50 border-transparent rounded-lg focus:ring-primary/20 transition-all text-xs font-medium hover:bg-background/80">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl shadow-xl border-border/50">
+                {[...Array(6)].map((_, i) => {
+                   const y = new Date().getFullYear() - i + 1;
+                   return <SelectItem key={y} value={y.toString()} className="cursor-pointer rounded-lg text-xs">{y}</SelectItem>
+                })}
+              </SelectContent>
+            </Select>
           </div>
-          <DatePickerWithRange date={dateRange} setDate={setDateRange} />
-          {(userRole === 'admin' || userRole === 'manager') && (
-            <Button
+                      <Button
               variant="outline"
               onClick={() => setIsLedgerModalOpen(true)}
               className="hidden md:flex"
@@ -409,191 +467,397 @@ export default function Accounting() {
               <FileText className="w-4 h-4 mr-2" />
               Ledger
             </Button>
-          )}
-        </div>
+            </div>
       </div>
 
-      {/* Stats Row */}
-      {(userRole === 'admin' || userRole === 'manager') && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {stats.map((stat, index) => {
-            const Icon = stat.icon;
-            return (
-              <div key={stat.title} className="group bg-card rounded-2xl border border-border/50 p-6 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-                <div className="flex items-center justify-between mb-4">
-                  <div className={cn('p-3 rounded-2xl transition-transform group-hover:scale-110 duration-500', stat.color === 'primary' && 'bg-primary/10 text-primary', stat.color === 'success' && 'bg-success/10 text-success', stat.color === 'warning' && 'bg-warning/10 text-warning', stat.color === 'destructive' && 'bg-destructive/10 text-destructive')}>
-                    <Icon className="w-6 h-6" />
+      {userRole !== 'admin' && userRole !== 'manager' ? (
+        <div className="space-y-6">
+            {/* Regular user just sees Expense Form from below */}
+        </div>
+      ) : (
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="bg-card/50 backdrop-blur-md border border-border/50 p-1 rounded-xl h-12 w-full max-w-md grid grid-cols-3 mb-6">
+            <TabsTrigger value="overview" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-semibold h-9">Overview</TabsTrigger>
+            <TabsTrigger value="balance_sheet" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-semibold h-9">Balance Sheet</TabsTrigger>
+            <TabsTrigger value="expenses" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-semibold h-9">Expenses & Ledger</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-8 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-700">
+            {/* HERO KPI SECTION */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Cash Collected Card */}
+              <div className="group bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm hover:shadow-2xl hover:border-success/30 transition-all duration-300 relative overflow-hidden flex flex-col justify-between min-h-[160px]">
+                <div className="absolute -right-6 -top-6 w-32 h-32 bg-success/10 rounded-full blur-3xl group-hover:bg-success/20 transition-all duration-500" />
+                <div className="flex items-center justify-between mb-2 relative z-10">
+                  <div className="p-3 bg-success/10 text-success rounded-2xl">
+                    <DollarSign className="w-6 h-6" />
+                  </div>
+                  <div className="px-3 py-1 rounded-full bg-success/10 text-success text-[10px] font-bold uppercase tracking-wider">
+                    Actual Liquidity
                   </div>
                 </div>
+                <div className="relative z-10 mt-auto">
+                  <div className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1.5 cursor-help">
+                    Cash Collected 
+                    <TooltipProvider delayDuration={100}>
+                      <UITooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3.5 h-3.5 text-muted-foreground/70 hover:text-foreground transition-colors" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[250px] bg-card border border-border text-foreground font-medium p-3 rounded-lg shadow-xl" sideOffset={8}>
+                          <p>Total cash physically received from customers across all payment methods.</p>
+                        </TooltipContent>
+                      </UITooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground tracking-tight">{formatCurrency(financialSummary?.cashCollected || 0)}</p>
+                  <div className="text-[11px] font-semibold text-warning mt-1.5 opacity-80 group-hover:opacity-100 transition-opacity flex flex-col gap-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse"></span>
+                      {formatCurrency(financialSummary?.assets?.receivables || 0)} total credit
+                    </span>
+                    {periodCreditIssued > 0 && (
+                      <span className="flex items-center gap-1.5 text-muted-foreground ml-3 cursor-help" title="Exact sum of sales generated specifically as 'Credit' during this period.">
+                        ↳ {formatCurrency(periodCreditIssued)} {periodLabel} credit issued
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Accrued Revenue Card */}
+              <div className="group bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm hover:shadow-2xl hover:border-primary/30 transition-all duration-300 relative overflow-hidden flex flex-col justify-between min-h-[160px]">
+                <div className="absolute -right-6 -top-6 w-32 h-32 bg-primary/10 rounded-full blur-3xl group-hover:bg-primary/20 transition-all duration-500" />
+                <div className="flex items-center justify-between mb-2 relative z-10">
+                  <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+                    <TrendingUp className="w-6 h-6" />
+                  </div>
+                  <div className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider">
+                    Gross Margin: {financialSummary?.grossMargin?.toFixed(1) || 0}%
+                  </div>
+                </div>
+                <div className="relative z-10 mt-auto">
+                  <div className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1.5 cursor-help">
+                    Accrued Revenue 
+                    <TooltipProvider delayDuration={100}>
+                      <UITooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3.5 h-3.5 text-muted-foreground/70 hover:text-foreground transition-colors" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[250px] bg-card border border-border text-foreground font-medium p-3 rounded-lg shadow-xl" sideOffset={8}>
+                          <p>Total value of all sales generated (invoiced), regardless of whether cash has been fully collected yet.</p>
+                        </TooltipContent>
+                      </UITooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground tracking-tight">{formatCurrency(financialSummary?.revenue || 0)}</p>
+                  <div className="text-[11px] font-semibold text-primary mt-1.5 opacity-80 group-hover:opacity-100 transition-opacity flex flex-col gap-1">
+                    <span className="flex items-center gap-1.5 text-muted-foreground font-medium mb-0.5">
+                       Generated from {(financialSummary?.orderPipeline?.completed || 0) + (financialSummary?.orderPipeline?.in_progress || 0)} valid orders:
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                      {financialSummary?.orderPipeline?.completed || 0} delivered & completed
+                    </span>
+                    <span className="flex items-center gap-1.5 text-muted-foreground ml-3">
+                      ↳ {financialSummary?.orderPipeline?.in_progress || 0} approved & in-transit
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Net Profit Card */}
+              <div className="group bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm hover:shadow-2xl hover:border-warning/30 transition-all duration-300 relative overflow-hidden flex flex-col justify-between min-h-[160px]">
+                <div className="absolute -right-6 -top-6 w-32 h-32 bg-warning/10 rounded-full blur-3xl group-hover:bg-warning/20 transition-all duration-500" />
+                <div className="flex items-center justify-between mb-2 relative z-10">
+                  <div className="p-3 bg-warning/10 text-warning rounded-2xl">
+                    <Activity className="w-6 h-6" />
+                  </div>
+                  <div className="px-3 py-1 rounded-full bg-warning/10 text-warning text-[10px] font-bold uppercase tracking-wider">
+                    Net Margin: {financialSummary?.netMargin?.toFixed(1) || 0}%
+                  </div>
+                </div>
+                <div className="relative z-10 mt-auto">
+                  <div className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1.5 cursor-help">
+                    Net Profit 
+                    <TooltipProvider delayDuration={100}>
+                      <UITooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3.5 h-3.5 text-muted-foreground/70 hover:text-foreground transition-colors" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[250px] bg-card border border-border text-foreground font-medium p-3 rounded-lg shadow-xl" sideOffset={8}>
+                          <p>Gross Profit minus Operating Expenses, Supplier Payouts, and Payroll. Represents the true bottom line.</p>
+                        </TooltipContent>
+                      </UITooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground tracking-tight">{formatCurrency(financialSummary?.netProfit || 0)}</p>
+                  <div className="text-[11px] font-semibold text-warning mt-1.5 opacity-80 group-hover:opacity-100 transition-opacity flex flex-col gap-1">
+                    <span className="flex items-center gap-1.5 text-muted-foreground font-medium mb-0.5">
+                       Gross profit minus operating costs:
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse"></span>
+                      {formatCurrency(financialSummary?.grossProfit || 0)} gross profit
+                    </span>
+                    <span className="flex items-center gap-1.5 text-muted-foreground ml-3">
+                      ↳ - {formatCurrency(financialSummary?.expenses || 0)} OPEX & Payroll
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* COGS Card */}
+              <div className="group bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm hover:shadow-2xl hover:border-destructive/30 transition-all duration-300 relative overflow-hidden flex flex-col justify-between min-h-[160px]">
+                <div className="absolute -right-6 -top-6 w-32 h-32 bg-destructive/10 rounded-full blur-3xl group-hover:bg-destructive/20 transition-all duration-500" />
+                <div className="flex items-center justify-between mb-2 relative z-10">
+                  <div className="p-3 bg-destructive/10 text-destructive rounded-2xl">
+                    <ArrowDown className="w-6 h-6" />
+                  </div>
+                  <div className="px-3 py-1 rounded-full bg-destructive/10 text-destructive text-[10px] font-bold uppercase tracking-wider">
+                    Cost of Goods Sold
+                  </div>
+                </div>
+                <div className="relative z-10 mt-auto">
+                  <div className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1.5 cursor-help">
+                    Total COGS 
+                    <TooltipProvider delayDuration={100}>
+                      <UITooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3.5 h-3.5 text-muted-foreground/70 hover:text-foreground transition-colors" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[250px] bg-card border border-border text-foreground font-medium p-3 rounded-lg shadow-xl" sideOffset={8}>
+                          <p>Cost of Goods Sold: The base cost of sold items plus all historical freight and customs markups.</p>
+                        </TooltipContent>
+                      </UITooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground tracking-tight">{formatCurrency(financialSummary?.breakdown?.cogs || 0)}</p>
+                  <div className="text-[11px] font-semibold text-destructive mt-1.5 opacity-80 group-hover:opacity-100 transition-opacity flex flex-col gap-1">
+                    <span className="flex items-center gap-1.5 text-muted-foreground font-medium mb-0.5">
+                       Pure item cost + dynamic freight:
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse"></span>
+                      {formatCurrency(financialSummary?.breakdown?.pureSupplierCOGS || 0)} Supplier cost of goods
+                    </span>
+                    <span className="flex items-center gap-1.5 text-muted-foreground ml-3">
+                      ↳ + {formatCurrency(financialSummary?.breakdown?.totalLandedMarkupCOGS || 0)} Landed markup (shipping/tax)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* MAIN CHARTS SECTION */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Liquidity Velocity (Area Chart) */}
+              <div className="lg:col-span-2 bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col h-[450px]">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-bold text-foreground">Liquidity & Accrual Velocity</h3>
+                    <p className="text-xs text-muted-foreground mt-1">Tracking recorded revenue versus operating cash burn.</p>
+                  </div>
+                  <div className="p-2 bg-secondary rounded-xl text-secondary-foreground">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="flex-1 w-full min-h-0">
+                  {financialSummary?.trends && financialSummary.trends.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={financialSummary?.trends || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#888' }} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#888' }} tickFormatter={(value) => `KSh ${value/1000}k`} />
+                        <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#333" opacity={0.15} />
+                        <Tooltip 
+                          contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', backgroundColor: 'var(--background)' }}
+                          formatter={(value: number) => [formatCurrency(value), undefined]}
+                        />
+                        <Area type="monotone" dataKey="revenue" name="Accrued Revenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+                        <Area type="monotone" dataKey="expenses" name="Opex + Mfg" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorExp)" />
+                        <Area type="monotone" dataKey="payroll" name="Payroll" stroke="#f59e0b" strokeWidth={2} fill="transparent" strokeDasharray="5 5" />
+                        <Legend iconType="circle" wrapperStyle={{ fontSize: '13px', paddingTop: '20px', fontWeight: 500 }} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-muted-foreground text-sm opacity-50 font-medium">
+                      Not enough data to plot velocity trends
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Order Pipeline Progress */}
+              <div className="bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col h-[450px]">
+                <div className="mb-6">
+                  <h3 className="text-xl font-bold text-foreground">Order Pipeline</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Fulfillment lifecycle mapping</p>
+                </div>
+                
+                <div className="flex-1 flex flex-col justify-center space-y-8">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <span className="text-sm font-bold text-destructive flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-destructive animate-pulse"/> Trapped in Pending</span>
+                        <p className="text-[11px] text-muted-foreground mt-1">{financialSummary?.orderPipeline?.pending || 0} stagnant orders</p>
+                      </div>
+                      <span className="font-bold text-lg">{formatCurrency(financialSummary?.orderPipeline?.total_value_pending || 0)}</span>
+                    </div>
+                    <div className="w-full h-3 bg-muted rounded-full overflow-hidden shadow-inner">
+                      <div className="h-full bg-destructive rounded-full transition-all duration-1000" style={{ width: `${Math.min(100, ((financialSummary?.orderPipeline?.pending || 0) / Math.max(1, (financialSummary?.orderPipeline?.pending || 0) + (financialSummary?.orderPipeline?.completed || 0))) * 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <span className="text-sm font-bold text-blue-500 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"/> In Progress / Dispatched</span>
+                        <p className="text-[11px] text-muted-foreground mt-1">{financialSummary?.orderPipeline?.in_progress || 0} active orders</p>
+                      </div>
+                    </div>
+                    <div className="w-full h-3 bg-muted rounded-full overflow-hidden shadow-inner">
+                      <div className="h-full bg-blue-500 rounded-full transition-all duration-1000" style={{ width: `${Math.min(100, ((financialSummary?.orderPipeline?.in_progress || 0) / Math.max(1, (financialSummary?.orderPipeline?.completed || 0))) * 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <span className="text-sm font-bold text-success flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-success"/> Completed & Delivered</span>
+                        <p className="text-[11px] text-muted-foreground mt-1">{financialSummary?.orderPipeline?.completed || 0} finalized orders</p>
+                      </div>
+                      <span className="font-bold text-lg text-success">{formatCurrency(financialSummary?.orderPipeline?.total_value_completed || 0)}</span>
+                    </div>
+                    <div className="w-full h-3 bg-muted rounded-full overflow-hidden shadow-inner">
+                      <div className="h-full bg-success rounded-full transition-all duration-1000" style={{ width: `100%` }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Capital Outflow Distribution */}
+              <div className="lg:col-span-2 bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-sm">
+                <div className="flex flex-col md:flex-row gap-12 items-center">
+                  <div className="flex-1 w-full max-w-md">
+                    <div className="mb-8">
+                      <h3 className="text-2xl font-bold text-foreground">Capital Outflow Distribution</h3>
+                      <p className="text-sm text-muted-foreground mt-2">Where is your liquidity actually being deployed? This breaks down every dollar that left your accounts.</p>
+                    </div>
+                    <div className="space-y-5">
+                      {[
+                        { name: 'General Operating (OPEX)', value: financialSummary?.breakdown?.general || 0, color: '#3b82f6', desc: 'Rent, software, admin' },
+                        { name: 'Direct Payroll', value: financialSummary?.breakdown?.payroll || 0, color: '#f59e0b', desc: 'Salaries & wages' },
+                        { name: 'Manufacturing Operations', value: financialSummary?.breakdown?.manufacturing_spend || 0, color: '#8b5cf6', desc: 'Production runs & equipment' },
+                        { name: 'Inventory Procurement', value: financialSummary?.breakdown?.purchases || 0, color: '#ec4899', desc: 'Raw material & stock purchases' },
+                      ].map(item => (
+                        <div key={item.name} className="flex justify-between items-center group cursor-default">
+                          <div className="flex items-center gap-4">
+                            <div className="w-4 h-4 rounded-full shadow-sm group-hover:scale-125 transition-transform" style={{ backgroundColor: item.color }} />
+                            <div>
+                              <p className="font-semibold text-sm">{item.name}</p>
+                              <p className="text-[10px] text-muted-foreground">{item.desc}</p>
+                            </div>
+                          </div>
+                          <span className="font-bold text-base">{formatCurrency(item.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="w-[350px] h-[350px] relative">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                      <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-widest">Total Outflow</p>
+                      <p className="text-2xl font-bold mt-1">
+                        {formatCurrency(
+                          (financialSummary?.breakdown?.general || 0) + 
+                          (financialSummary?.breakdown?.payroll || 0) + 
+                          (financialSummary?.breakdown?.manufacturing_spend || 0) + 
+                          (financialSummary?.breakdown?.purchases || 0)
+                        )}
+                      </p>
+                    </div>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'OPEX', value: Math.max(1, financialSummary?.breakdown?.general || 0), color: '#3b82f6' },
+                            { name: 'Payroll', value: Math.max(1, financialSummary?.breakdown?.payroll || 0), color: '#f59e0b' },
+                            { name: 'Manufacturing', value: Math.max(1, financialSummary?.breakdown?.manufacturing_spend || 0), color: '#8b5cf6' },
+                            { name: 'Purchases', value: Math.max(1, financialSummary?.breakdown?.purchases || 0), color: '#ec4899' },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={110}
+                          outerRadius={150}
+                          paddingAngle={8}
+                          dataKey="value"
+                          stroke="none"
+                          cornerRadius={8}
+                        >
+                          {
+                            [
+                              { color: '#3b82f6' },
+                              { color: '#f59e0b' },
+                              { color: '#8b5cf6' },
+                              { color: '#ec4899' }
+                            ].map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))
+                          }
+                        </Pie>
+                        <Tooltip 
+                          formatter={(value: number) => [formatCurrency(value), 'Spend']}
+                          contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', backgroundColor: 'var(--background)' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              {/* Operating Burn & Actions */}
+              <div className="lg:col-span-1 bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-sm flex flex-col h-full justify-between">
                 <div>
-                  <p className="text-3xl font-bold text-foreground tracking-tight">{formatCurrency(stat.value)}</p>
-                  <p className="text-sm font-medium text-muted-foreground mt-1">{stat.title}</p>
+                  <h3 className="text-xl font-bold text-foreground">Operating Burn</h3>
+                  <p className="text-xs text-muted-foreground mt-1 mb-6">Opex vs Accrued Revenue</p>
+                  
+                  <div className="flex items-end gap-2 mb-8">
+                    <p className="text-5xl font-bold text-destructive tracking-tight">{financialSummary?.operatingRatio?.toFixed(1) || 0}%</p>
+                    <p className="text-sm text-muted-foreground mb-2 pb-1">of revenue</p>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
-      {/* --- BALANCE SHEET SECTION --- */}
-      {(userRole === 'admin' || userRole === 'manager') && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-slide-up" style={{ animationDelay: '50ms' }}>
-          {/* Assets Card */}
-          <div className="bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600">
-                  <Building2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-foreground">Assets (What you Own)</h3>
-                  <p className="text-xs text-muted-foreground">Total: {formatCurrency(
-                    (financialSummary?.assets?.stock || 0) +
-                    (financialSummary?.assets?.fixed_assets || 0) +
-                    (financialSummary?.assets?.receivables || 0) +
-                    actualCashBalance
-                  )}</p>
+                <div className="space-y-3 mt-auto">
+                  <Button 
+                    className="w-full h-12 rounded-xl font-bold shadow-lg shadow-primary/20" 
+                    onClick={() => setActiveTab('expenses')}
+                  >
+                    <Plus className="w-5 h-5 mr-2" />
+                    Record New Expense
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="w-full h-12 rounded-xl font-bold border-border/50"
+                    onClick={() => setActiveTab('expenses')}
+                  >
+                    <FileText className="w-5 h-5 mr-2" />
+                    View Expense Ledger
+                  </Button>
                 </div>
               </div>
             </div>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
-                <div className="text-sm font-medium">Cash & Bank</div>
-                <div className="font-bold">{formatCurrency(actualCashBalance)}</div>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
-                <div className="text-sm font-medium">Inventory Stock <span className="text-[10px] text-muted-foreground ml-1">(Raw + Finished)</span></div>
-                <div className="font-bold text-blue-600">{formatCurrency(financialSummary?.assets?.stock || 0)}</div>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
-                <div className="text-sm font-medium">Equipment & Fixed Assets</div>
-                <div className="font-bold">{formatCurrency(financialSummary?.assets?.fixed_assets || 0)}</div>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
-                <div className="text-sm font-medium">Receivables (Owed by Customers)</div>
-                <div className="font-bold">{formatCurrency(financialSummary?.assets?.receivables || 0)}</div>
-              </div>
-            </div>
-          </div>
+          </TabsContent>
 
-          {/* Liabilities Card */}
-          <div className="bg-card/60 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-600">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-foreground">Liabilities (What you Owe)</h3>
-                  <p className="text-xs text-muted-foreground">Total: {formatCurrency(financialSummary?.liabilities?.total || 0)}</p>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
-                <div className="text-sm font-medium">Supplier Payables</div>
-                <div className="font-bold text-red-500">{formatCurrency(financialSummary?.liabilities?.payables || 0)}</div>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-card rounded-2xl border border-border/50">
-                <div className="text-sm font-medium">Pending Payroll</div>
-                <div className="font-bold text-orange-500">{formatCurrency(financialSummary?.liabilities?.payroll || 0)}</div>
-              </div>
-              <div className="mt-8 pt-6 border-t border-border/50">
-                <div className="flex justify-between items-center">
-                  <div className="text-sm font-bold text-muted-foreground">Owner's Equity</div>
-                  <div className="text-2xl font-bold text-success">{formatCurrency(financialSummary?.equity || 0)}</div>
-                </div>
-                <p className="text-[10px] text-muted-foreground text-right mt-1">Assets - Liabilities</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Operational insights */}
-      {(userRole === 'admin' || userRole === 'manager') && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Manufacturing Spend Card */}
-          <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm relative overflow-hidden">
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Manufacturing Spend</p>
-                  <p className="text-lg font-bold text-foreground">{formatCurrency(totalManufacturingSpend)}</p>
-                </div>
-                <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                  <Building2 className="w-4 h-4" />
-                </div>
-              </div>
-              <div className="space-y-1 text-xs text-muted-foreground/80">
-                <div className="flex justify-between">
-                  <span>Materials</span>
-                  <span className="text-foreground font-semibold">
-                    {formatCurrency(financialSummary?.breakdown?.manufacturing_details?.materials || 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Equipment</span>
-                  <span className="text-foreground font-semibold">
-                    {formatCurrency(financialSummary?.breakdown?.manufacturing_details?.equipment || 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Production Runs</span>
-                  <span className="text-foreground font-semibold">
-                    {formatCurrency(financialSummary?.breakdown?.manufacturing_details?.production || 0)}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-3 opacity-60">
-              Source: Machines + {formatCurrency(financialSummary?.breakdown?.manufacturing_details?.production || 0)} Production
-            </p>
-          </div>
-
-          {/* ... Rest of existing dashboard widgets (retained but condensed) ... */}
-          <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">30-day cashflow</p>
-                <p className="text-lg font-bold text-foreground">In {formatCurrency(cashIn30)}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Out</p>
-                <p className="text-base font-semibold text-destructive">-{formatCurrency(cashOut30)}</p>
-              </div>
-            </div>
-            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary rounded-full transition-all"
-                style={{ width: cashIn30 + cashOut30 === 0 ? '0%' : `${Math.min(100, (cashIn30 / (cashIn30 + cashOut30)) * 100)}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Collections vs payouts</p>
-                <p className="text-lg font-bold text-foreground">{formatCurrency(financialSummary?.revenue || 0)}</p>
-              </div>
-              <CreditCard className="w-5 h-5 text-primary" />
-            </div>
-            <div className="space-y-1 text-xs text-muted-foreground">
-              <div className="flex justify-between">
-                <span>Creditor payouts</span>
-                <span className="text-destructive font-semibold">-{formatCurrency(creditorPayouts)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Pending payables</span>
-                <span className="text-foreground font-semibold">{formatCurrency(payables)}</span>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      )}
-
+          <TabsContent value="expenses" className="space-y-6 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
         <div className="xl:col-span-2">
           {/* Expense Form Section - Retained */}
@@ -748,7 +1012,7 @@ export default function Accounting() {
                         })}
                       </p>
                     </div>
-                    {!expense.id.startsWith('bank-') && (
+                    {!expense.id?.startsWith('bank-') && (
                       <button
                         onClick={() => handleDeleteExpense(expense.id, expense.description)}
                         className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all"
@@ -761,14 +1025,14 @@ export default function Accounting() {
               ))}
             </div>
           )}
+          </div>
         </div>
-      </div>
+      </TabsContent>
 
-      {(userRole === 'admin' || userRole === 'manager') && (
-        <>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-            {/* Premium P&L & Expenses */}
-            <div className="lg:col-span-2 space-y-6">
+      <TabsContent value="overview" className="space-y-6 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+          {/* Premium P&L & Expenses */}
+          <div className="lg:col-span-2 space-y-6">
               <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner overflow-hidden">
                 <div className="flex items-center justify-between mb-8">
                   <div>
@@ -909,6 +1173,11 @@ export default function Accounting() {
               </div>
             </div>
 
+              <div></div>{/* Filler for Grid */}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="expenses" className="space-y-6 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
             {/* Elevated Transaction Ledger */}
             <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner flex flex-col">
               <div className="flex items-center justify-between mb-8">
@@ -934,7 +1203,7 @@ export default function Accounting() {
                   {unifiedLedger.slice(0, 15).map((item, idx) => {
                     const isIncome = item.type === 'income';
                     return (
-                      <div key={item.id} className="group flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
+                      <div key={item.id || `ledger-${idx}`} className="group flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
                         <div className="flex items-center gap-4">
                           <div className={cn(
                             'w-10 h-10 rounded-xl flex items-center justify-center shadow-inner transition-transform group-hover:rotate-12',
@@ -974,153 +1243,309 @@ export default function Accounting() {
                 View All Transactions
               </button>
             </div>
-          </div>
+          </TabsContent>
 
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-6">
-            <div className="space-y-6 xl:col-span-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
+          <TabsContent value="balance_sheet" className="space-y-6 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
+            {/* TRADITIONAL BALANCE SHEET */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-6">
+              {/* ASSETS */}
+              <div className="space-y-6">
+                <div className="bg-card/80 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-sm h-full flex flex-col hover:border-primary/30 transition-colors">
+                  <div className="flex items-center justify-between mb-8">
                     <div>
-                      <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Working Capital</p>
-                      <p className="text-3xl font-bold text-foreground">{formatCurrency(workingCapital)}</p>
-                      <p className="text-xs text-muted-foreground mt-1">Cash + receivables - payables</p>
+                      <h3 className="text-2xl font-black text-foreground tracking-tight">Assets</h3>
+                      <p className="text-sm text-muted-foreground font-medium mt-1">Resources owned by the business</p>
                     </div>
-                    <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">Liquidity</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 mt-6">
-                    <div className="p-4 rounded-2xl bg-success/5 border border-success/10">
-                      <p className="text-[11px] font-semibold text-success uppercase">Receivables</p>
-                      <p className="text-lg font-bold text-foreground mt-1">{formatCurrency(receivables)}</p>
-                      <p className="text-[11px] text-muted-foreground">Expected inflow</p>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-warning/5 border border-warning/10">
-                      <p className="text-[11px] font-semibold text-warning uppercase">Payables</p>
-                      <p className="text-lg font-bold text-foreground mt-1">{formatCurrency(payables)}</p>
-                      <p className="text-[11px] text-muted-foreground">Upcoming outflow</p>
+                    <div className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary font-black text-lg shadow-inner">
+                      {formatCurrency((actualCashBalance || 0) + (receivables || 0) + (financialSummary?.assets?.inventory || 0) + (financialSummary?.assets?.rawMaterials || 0) + (financialSummary?.assets?.equipment || 0))}
                     </div>
                   </div>
-                  <div className="mt-5 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Liquidity cover</span>
-                    <span className="text-sm font-semibold text-primary">{liquidityCover}x</span>
+
+                  <div className="space-y-8 flex-1">
+                    <div>
+                      <h4 className="text-[11px] font-bold text-primary uppercase tracking-[0.2em] mb-4 border-b border-border/50 pb-3">Current Assets</h4>
+                      <div className="space-y-4">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between group">
+                            <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Cash & Equivalents</span>
+                            <span className="text-base font-black text-foreground">{formatCurrency(actualCashBalance || 0)}</span>
+                          </div>
+                          <div className="flex flex-col gap-1 pl-4 border-l-2 border-border/50 ml-1">
+                            {Object.entries(paymentMethodBreakdown)
+                              .filter(([method, amount]) => method !== 'credit' && amount > 0)
+                              .sort((a, b) => b[1] - a[1])
+                              .map(([method, amount]) => (
+                                <div key={method} className="flex items-center justify-between">
+                                  <span className="text-[11px] font-medium text-muted-foreground capitalize flex items-center gap-2">
+                                    <span className="w-1 h-1 rounded-full bg-primary/40"></span>
+                                    {method === 'nat' ? 'Bank' : method === 'mpesa' ? 'M-Pesa' : method.replaceAll('_', ' ')}
+                                  </span>
+                                  <span className="text-[11px] font-bold text-muted-foreground/80">{formatCurrency(amount)}</span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between group">
+                          <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Accounts Receivable</span>
+                          <span className="text-base font-black text-foreground">{formatCurrency(receivables || 0)}</span>
+                        </div>
+                        <div className="flex items-center justify-between group">
+                          <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Finished Goods Inventory</span>
+                          <span className="text-base font-black text-foreground">{formatCurrency(financialSummary?.assets?.inventory || 0)}</span>
+                        </div>
+                        <div className="flex items-center justify-between group">
+                          <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Raw Materials Inventory</span>
+                          <span className="text-base font-black text-foreground">{formatCurrency(financialSummary?.assets?.rawMaterials || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-[11px] font-bold text-primary uppercase tracking-[0.2em] mb-4 border-b border-border/50 pb-3">Fixed Assets</h4>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between group">
+                          <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Machinery & Equipment</span>
+                          <span className="text-base font-black text-foreground">{formatCurrency(financialSummary?.assets?.equipment || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                <div className="bg-card rounded-3xl border border-border/50 p-6 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
+              {/* LIABILITIES & EQUITY */}
+              <div className="space-y-6">
+                <div className="bg-card/80 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-sm h-full flex flex-col hover:border-warning/30 transition-colors">
+                  <div className="flex items-center justify-between mb-8">
                     <div>
-                      <p className="text-sm font-semibold text-foreground">Cash Availability</p>
-                      <p className="text-xs text-muted-foreground">Receivables + cash reserves</p>
+                      <h3 className="text-2xl font-black text-foreground tracking-tight">Liabilities & Equity</h3>
+                      <p className="text-sm text-muted-foreground font-medium mt-1">How assets are financed</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-2xl bg-secondary/60 flex items-center justify-center">
-                        <Wallet className="w-5 h-5 text-primary" />
+                    <div className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary font-black text-lg shadow-inner">
+                      {formatCurrency((actualCashBalance || 0) + (receivables || 0) + (financialSummary?.assets?.inventory || 0) + (financialSummary?.assets?.rawMaterials || 0) + (financialSummary?.assets?.equipment || 0))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-8 flex-1">
+                    <div>
+                      <h4 className="text-[11px] font-bold text-warning uppercase tracking-[0.2em] mb-4 border-b border-border/50 pb-3">Current Liabilities</h4>
+                      <div className="space-y-4">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between group">
+                            <span className="text-sm font-semibold text-foreground group-hover:text-warning transition-colors">Accounts Payable</span>
+                            <span className="text-base font-black text-destructive">{formatCurrency(payables || 0)}</span>
+                          </div>
+                          {(financialSummary?.liabilities?.creditorsList?.length || 0) > 0 && (
+                            <div className="flex flex-col gap-1 pl-4 border-l-2 border-border/50 ml-1">
+                              {financialSummary?.liabilities?.creditorsList?.map((creditor: any, idx: number) => (
+                                <div key={idx} className="flex items-center justify-between">
+                                  <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-2 truncate max-w-[150px]">
+                                    <span className="w-1 h-1 rounded-full bg-warning/40"></span>
+                                    {creditor.name || 'Unknown Supplier'}
+                                  </span>
+                                  <span className="text-[11px] font-bold text-destructive/80">{formatCurrency(Math.abs(creditor.outstanding_balance))}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col gap-2 pt-2 border-t border-border/30">
+                          <div className="flex items-center justify-between group">
+                            <span className="text-sm font-semibold text-foreground group-hover:text-warning transition-colors">Pending Payroll</span>
+                            <span className="text-base font-black text-destructive">{formatCurrency(pendingPayroll || 0)}</span>
+                          </div>
+                          {(financialSummary?.liabilities?.payrollList?.length || 0) > 0 && (
+                            <div className="flex flex-col gap-1 pl-4 border-l-2 border-border/50 ml-1">
+                              {financialSummary?.liabilities?.payrollList?.map((p: any, idx: number) => (
+                                <div key={idx} className="flex items-center justify-between">
+                                  <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-2 truncate max-w-[150px]">
+                                    <span className="w-1 h-1 rounded-full bg-warning/40"></span>
+                                    {p.employee?.full_name || 'Unknown Employee'}
+                                  </span>
+                                  <span className="text-[11px] font-bold text-destructive/80">{formatCurrency(p.net_salary)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Ready</p>
-                        <p className="text-sm font-semibold text-foreground">{formatCurrency(cashBalance + receivables)}</p>
+                    </div>
+
+                    <div className="mt-auto pt-6">
+                      <h4 className="text-[11px] font-bold text-success uppercase tracking-[0.2em] mb-4 border-b border-border/50 pb-3">Shareholder's Equity</h4>
+                      <div className="space-y-4">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between group">
+                            <span className="text-sm font-semibold text-foreground group-hover:text-success transition-colors">Retained Earnings / Net Worth</span>
+                            <span className="text-base font-black text-success">
+                              {formatCurrency(retainedEarningsSum)}
+                            </span>
+                          </div>
+                          <div className="flex flex-col gap-1 pl-4 border-l-2 border-border/50 ml-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-2">
+                                <span className="w-1 h-1 rounded-full bg-primary/40"></span>
+                                Total Assets
+                              </span>
+                              <span className="text-[11px] font-bold text-muted-foreground/80">{formatCurrency(totalAssetsSum)}</span>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-2">
+                                  <span className="w-1 h-1 rounded-full bg-destructive/40"></span>
+                                  Less: Liabilities
+                                </span>
+                                <span className="text-[11px] font-bold text-destructive/80">-{formatCurrency(totalLiabilitiesSum)}</span>
+                              </div>
+                              <div className="flex flex-col gap-1 pl-4 border-l border-border/30 ml-1 mb-1">
+                                {payables > 0 && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-medium text-muted-foreground/70 flex items-center gap-2">
+                                      ↳ Accounts Payable
+                                    </span>
+                                    <span className="text-[10px] font-bold text-muted-foreground/70">-{formatCurrency(payables)}</span>
+                                  </div>
+                                )}
+                                {pendingPayroll > 0 && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-medium text-muted-foreground/70 flex items-center gap-2">
+                                      ↳ Pending Payroll
+                                    </span>
+                                    <span className="text-[10px] font-bold text-muted-foreground/70">-{formatCurrency(pendingPayroll)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-xs font-medium">
-                      <span className="text-muted-foreground">Cash on hand</span>
-                      <span className="text-foreground">{formatCurrency(cashBalance)}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs font-medium">
-                      <span className="text-muted-foreground">Receivables pipeline</span>
-                      <span className="text-foreground">{formatCurrency(receivables)}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs font-medium">
-                      <span className="text-muted-foreground">Payables</span>
-                      <span className="text-destructive">{formatCurrency(payables)}</span>
+
+                  <div className="mt-10 bg-primary/5 rounded-2xl p-5 border border-primary/10 shadow-inner">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-black uppercase tracking-wider text-primary">Total L&E</span>
+                      <span className="text-xl font-black text-primary">{formatCurrency(totalAssetsSum)}</span>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-6">
-              <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-inner">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-foreground">Cash & Banks</h3>
-                    <p className="text-xs text-muted-foreground">Active treasury positions</p>
+            {/* WORKING CAPITAL & BANKS */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-6">
+              <div className="xl:col-span-2">
+                <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner h-full">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <p className="text-xs font-bold uppercase text-muted-foreground tracking-widest mb-1">Working Capital</p>
+                      <p className="text-4xl font-black text-foreground tracking-tight">{formatCurrency(workingCapital)}</p>
+                      <p className="text-xs text-muted-foreground font-medium mt-2">Cash + receivables - payables</p>
+                    </div>
+                    <span className="px-4 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-bold border border-primary/20 shadow-sm">Liquidity Profile</span>
                   </div>
-                  <span className="text-[11px] px-3 py-1 rounded-full bg-muted text-muted-foreground font-semibold">
-                    {bankAccounts.length + (actualCashBalance > 0 ? 1 : 0)} accounts
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {actualCashBalance > 0 && (
-                    <div className="flex items-center justify-between p-3 bg-card rounded-2xl border border-border/50">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center text-green-600">
-                          <Wallet className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">Cash in Hand</p>
-                          <p className="text-[11px] text-muted-foreground">Main Cash Register</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-foreground">{formatCurrency(actualCashBalance)}</p>
-                        <span className="text-[10px] font-semibold text-success uppercase">Active</span>
-                      </div>
+                  <div className="grid grid-cols-3 gap-4 mt-8">
+                    <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col justify-between hover:scale-105 transition-transform duration-300">
+                      <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Cash on Hand</p>
+                      <p className="text-xl font-black text-foreground mt-3 tracking-tight">{formatCurrency(actualCashBalance)}</p>
+                      <p className="text-[10px] font-semibold text-muted-foreground mt-1">Ready liquidity</p>
                     </div>
-                  )}
-                  {bankAccounts.map((account) => (
-                    <div
-                      key={account.id}
-                      className="flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{account.account_name}</p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {account.bank_name} - {account.account_number}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-foreground">{formatCurrency(account.current_balance)}</p>
-                        <span className="text-[10px] font-semibold text-success uppercase">Active</span>
-                      </div>
+                    <div className="p-5 rounded-2xl bg-success/5 border border-success/10 flex flex-col justify-between hover:scale-105 transition-transform duration-300">
+                      <p className="text-[10px] font-black text-success uppercase tracking-[0.2em]">Receivables</p>
+                      <p className="text-xl font-black text-foreground mt-3 tracking-tight">{formatCurrency(receivables)}</p>
+                      <p className="text-[10px] font-semibold text-muted-foreground mt-1">Expected inflow</p>
                     </div>
-                  ))}
+                    <div className="p-5 rounded-2xl bg-warning/5 border border-warning/10 flex flex-col justify-between hover:scale-105 transition-transform duration-300">
+                      <p className="text-[10px] font-black text-warning uppercase tracking-[0.2em]">Payables</p>
+                      <p className="text-xl font-black text-foreground mt-3 tracking-tight">{formatCurrency(payables)}</p>
+                      <p className="text-[10px] font-semibold text-muted-foreground mt-1">Upcoming outflow</p>
+                    </div>
+                  </div>
+                  <div className="mt-8 pt-4 border-t border-border/50 flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="font-semibold uppercase tracking-wider">Liquidity cover ratio</span>
+                    <span className="text-base font-black text-primary">{liquidityCover}x</span>
+                  </div>
                 </div>
               </div>
-
-              <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-6 shadow-inner">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-foreground">Payment Methods</h3>
-                    <p className="text-xs text-muted-foreground">Collections by channel</p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {topPaymentMethods.map(([method, amount]) => (
-                    <div key={method} className="flex items-center justify-between p-3 bg-card rounded-2xl border border-border/50">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground capitalize">{method.replaceAll('_', ' ')}</p>
-                        <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Method</p>
-                      </div>
-                      <p className="text-sm font-bold text-foreground">{formatCurrency(amount)}</p>
+              
+              <div>
+                <div className="bg-card/40 backdrop-blur-md rounded-3xl border border-border/50 p-8 shadow-inner h-full flex flex-col">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground">Cash & Banks</h3>
+                      <p className="text-xs text-muted-foreground font-medium mt-1">Active treasury positions</p>
                     </div>
-                  ))}
+                    <span className="text-[11px] px-3 py-1 rounded-full bg-muted text-muted-foreground font-bold">
+                      {bankAccounts.length + (actualCashBalance > 0 ? 1 : 0)} accounts
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-3 flex-1 overflow-y-auto">
+                    {actualCashBalance > 0 && (
+                      <div className="flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center text-green-600 shadow-sm">
+                            <Wallet className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-foreground">Cash in Hand</p>
+                            <p className="text-[11px] text-muted-foreground font-medium mt-0.5">Main Cash Register</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black text-foreground">{formatCurrency(actualCashBalance)}</p>
+                          <span className="text-[10px] font-bold text-success uppercase tracking-wider">Active</span>
+                        </div>
+                      </div>
+                    )}
+                    {bankAccounts.map((account) => (
+                      <div
+                        key={account.id}
+                        className="flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
+                            <Building2 className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-foreground">Bank Account</p>
+                            <p className="text-[11px] text-muted-foreground font-medium mt-0.5">Treasury Account</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black text-foreground">{formatCurrency(account.current_balance)}</p>
+                          <span className="text-[10px] font-bold text-success uppercase tracking-wider">Active</span>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {bankAccounts.length === 0 && actualCashBalance === 0 && (
+                      <div className="py-12 flex flex-col items-center justify-center text-center opacity-50">
+                        <Wallet className="w-12 h-12 mb-4 text-muted-foreground" />
+                        <p className="text-sm font-bold">No active treasury</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </TabsContent>
 
+          <TabsContent value="overview" className="space-y-6 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
           {/* Premium Quick Actions */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
             {[
-              { label: 'Balance Sheet', icon: FileText, desc: 'Equity & Liability overview', action: () => { } },
+              { label: 'Ledger & Expenses', icon: FileText, desc: 'View all transactions', primary: true, action: () => setActiveTab('expenses') },
+              { label: 'Balance Sheet', icon: Building2, desc: 'Equity & Liability overview', action: () => setActiveTab('balance_sheet') },
               { label: 'Cash Flow', icon: TrendingUp, desc: 'Opex vs Capex streams', action: () => { } },
-              { label: 'Reconciliation', icon: Building2, desc: 'Sync with bank ledgers', action: () => { } },
               {
-                label: 'Record Expense', icon: Plus, desc: 'Register a direct outflow', primary: true, action: () => {
-                  document.querySelector('form')?.scrollIntoView({ behavior: 'smooth' });
-                  document.getElementById('category')?.focus();
+                label: 'Record Expense', icon: Plus, desc: 'Register a direct outflow', action: () => {
+                  setActiveTab('expenses');
+                  setTimeout(() => {
+                    document.querySelector('form')?.scrollIntoView({ behavior: 'smooth' });
+                    document.getElementById('category')?.focus();
+                  }, 300);
                 }
               },
             ].map((action) => {
@@ -1154,13 +1579,15 @@ export default function Accounting() {
             })}
           </div>
 
+          </TabsContent>
+        </Tabs>
+      )}
+
           <TransactionLedgerModal
             open={isLedgerModalOpen}
             onClose={() => setIsLedgerModalOpen(false)}
             transactions={unifiedLedger}
           />
-        </>
-      )}
     </div>
   );
 }

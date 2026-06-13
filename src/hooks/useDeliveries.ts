@@ -45,7 +45,7 @@ export function useDeliveries() {
           delivery_agent:employees!sales_orders_delivery_agent_id_fkey(id, full_name, phone, user_id),
           third_party_provider:third_party_providers(id, name, image_url, phone)
         `)
-                .in('status', ['dispatched', 'in_transit', 'delivered', 'ready_for_pickup'])
+                .in('status', ['dispatched', 'in_transit', 'ready_for_pickup'])
                 .order('dispatched_at', { ascending: false });
 
             if (error) throw error;

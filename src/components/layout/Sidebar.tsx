@@ -19,8 +19,9 @@ import {
   Truck,
   Wallet,
   Banknote,
-  ChevronLeft,
-  ChevronRight,
+  PanelLeftClose,
+  PanelLeft,
+  Smartphone,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -34,39 +35,70 @@ interface NavItem {
   children?: { label: string; path: string }[];
 }
 
-const navItems: NavItem[] = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { label: 'Point of Sale', icon: ShoppingCart, path: '/pos' },
-  { label: 'All Orders', icon: ClipboardList, path: '/orders' },
-  { label: 'Customers', icon: Users, path: '/customers' },
-  { label: 'Inventory', icon: Package, path: '/inventory' },
-  { label: 'Purchases', icon: ShoppingBag, path: '/purchases', roles: ['admin', 'manager'] },
-  { label: 'Categories', icon: Folder, path: '/categories' },
-  { label: 'Manufacturing', icon: Factory, path: '/manufacturing', roles: ['admin', 'manager'] },
-  { label: 'Accounting', icon: Calculator, path: '/accounting', roles: ['admin', 'manager', 'clerk'] },
-  { label: 'Employees', icon: Users, path: '/hr', roles: ['admin', 'manager'] },
-  { label: 'Payroll', icon: Wallet, path: '/payroll', roles: ['admin', 'manager'] },
-  { label: 'Field Sales', icon: MapPin, path: '/field-sales' },
-  { label: 'Commissions', icon: Banknote, path: '/commissions' },
-  { label: 'Deliveries', icon: Truck, path: '/deliveries' },
-  { label: 'Audit', icon: ClipboardCheck, path: '/audit', roles: ['admin', 'manager'] },
-  { label: 'Reports', icon: BarChart3, path: '/reports' },
-  { label: 'Settings', icon: Settings, path: '/settings', roles: ['admin'] },
+interface NavGroup {
+  name: string;
+  items: NavItem[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    name: "Overview",
+    items: [
+      { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+      { label: 'Reports', icon: BarChart3, path: '/reports' },
+    ]
+  },
+  {
+    name: "Sales & Orders",
+    items: [
+      { label: 'Point of Sale', icon: ShoppingCart, path: '/pos' },
+      { label: 'All Orders', icon: ClipboardList, path: '/orders' },
+      { label: 'Customers', icon: Users, path: '/customers' },
+      { label: 'Field Sales', icon: MapPin, path: '/field-sales' },
+      { label: 'Deliveries', icon: Truck, path: '/deliveries' },
+    ]
+  },
+  {
+    name: "Inventory & Production",
+    items: [
+      { label: 'Inventory', icon: Package, path: '/inventory' },
+      { label: 'Categories', icon: Folder, path: '/categories' },
+      { label: 'Purchases', icon: ShoppingBag, path: '/purchases', roles: ['admin', 'manager'] },
+      { label: 'Manufacturing', icon: Factory, path: '/manufacturing', roles: ['admin', 'manager'] },
+    ]
+  },
+  {
+    name: "Finance & HR",
+    items: [
+      { label: 'Accounting', icon: Calculator, path: '/accounting', roles: ['admin', 'manager', 'clerk'] },
+      { label: 'Employees', icon: Users, path: '/hr', roles: ['admin', 'manager'] },
+      { label: 'Payroll', icon: Wallet, path: '/payroll', roles: ['admin', 'manager'] },
+      { label: 'Commissions', icon: Banknote, path: '/commissions' },
+    ]
+  },
+  {
+    name: "System",
+    items: [
+      { label: 'Audit', icon: ClipboardCheck, path: '/audit', roles: ['admin', 'manager'] },
+      { label: 'Mobile Apps', icon: Smartphone, path: '/mobile-apps', roles: ['admin'] },
+      { label: 'Settings', icon: Settings, path: '/settings', roles: ['admin'] },
+    ]
+  }
 ];
 
 interface SidebarProps {
-  collapsed: boolean;
-  setCollapsed: (collapsed: boolean) => void;
+  isPinned: boolean;
+  setIsPinned: (pinned: boolean) => void;
+  isHovered: boolean;
+  setIsHovered: (hovered: boolean) => void;
 }
 
-export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
+export default function Sidebar({ isPinned, setIsPinned, isHovered, setIsHovered }: SidebarProps) {
   const { profile, userRole, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
-  const filteredNavItems = navItems.filter(
-    item => !item.roles || item.roles.includes(userRole || '')
-  );
+  // No longer using filteredNavItems directly, we filter per group
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
@@ -78,63 +110,95 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
     }
   };
 
+  const expanded = isPinned || isHovered;
+
   return (
-    <aside className={cn(
-      "fixed left-0 top-0 h-screen bg-sidebar flex flex-col transition-all duration-300 z-50",
-      collapsed ? "w-20" : "w-64"
-    )}>
+    <aside 
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className={cn(
+        "fixed left-0 top-0 h-screen bg-sidebar flex flex-col transition-all duration-300 z-50",
+        expanded ? "w-64" : "w-20",
+        !isPinned && isHovered && "shadow-2xl border-r border-sidebar-border/50"
+      )}>
       {/* Header with Logo and Collapse Toggle */}
       <div className="h-16 flex items-center border-b border-sidebar-border px-4 relative">
         <div className={cn(
           "flex items-center transition-all duration-300 w-full",
-          collapsed ? "justify-center" : "justify-start gap-4"
+          expanded ? "justify-start gap-4" : "justify-center"
         )}>
           <div className={cn(
             "flex items-center justify-center transition-all duration-300",
-            collapsed ? "w-8 h-8" : "w-28 h-28"
+            expanded ? "w-28 h-28" : "w-8 h-8"
           )}>
             <img src="/brand/logo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className={cn(
-              "p-1.5 rounded-full hover:bg-sidebar-accent transition-all duration-300 flex items-center justify-center shadow-md",
-              collapsed
-                ? "absolute -right-3 top-6 bg-sidebar border border-sidebar-border z-[60] text-orange-500"
-                : "ml-auto text-orange-500 hover:rotate-180"
-            )}
-          >
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
+          {expanded && (
+            <button
+              onClick={() => setIsPinned(!isPinned)}
+              className={cn(
+                "p-1.5 rounded-md hover:bg-sidebar-accent transition-all duration-300 flex items-center justify-center shadow-sm border border-transparent ml-auto",
+                isPinned ? "text-primary bg-primary/10 border-primary/20" : "text-muted-foreground hover:text-foreground"
+              )}
+              title={isPinned ? "Unpin Sidebar" : "Pin Sidebar"}
+            >
+              {isPinned ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 overflow-y-auto scrollbar-thin">
-        <ul className="space-y-1">
-          {filteredNavItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+      <nav className="flex-1 py-4 px-3 overflow-y-auto scrollbar-hide">
+        <div className="space-y-1">
+          {navGroups.map((group, groupIdx) => {
+            const visibleItems = group.items.filter(
+              item => !item.roles || item.roles.includes(userRole || '')
+            );
+
+            if (visibleItems.length === 0) return null;
 
             return (
-              <li key={item.path}>
-                <NavLink
-                  to={item.path}
-                  className={cn(
-                    "sidebar-link",
-                    isActive && "sidebar-link-active"
-                  )}
-                >
-                  <Icon className={cn(
-                    "flex-shrink-0 transition-transform duration-300",
-                    collapsed ? "w-[21px] h-[21px] scale-105" : "w-5 h-5"
+              <div key={group.name} className={cn("mb-8", groupIdx !== 0 && "mt-8")}>
+                {groupIdx !== 0 && (
+                  <div className={cn(
+                    "h-[1px] bg-sidebar-border opacity-40 mb-6",
+                    !expanded ? "w-8 mx-auto" : "w-full"
                   )} />
-                  {!collapsed && <span className="truncate">{item.label}</span>}
-                </NavLink>
-              </li>
+                )}
+                {expanded && (
+                  <p className="px-4 text-[10px] font-bold text-sidebar-muted uppercase tracking-widest mb-3 opacity-60">
+                    {group.name}
+                  </p>
+                )}
+                <ul className="space-y-1">
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+
+                    return (
+                      <li key={item.path}>
+                        <NavLink
+                          to={item.path}
+                          className={cn(
+                            "sidebar-link",
+                            isActive && "sidebar-link-active"
+                          )}
+                        >
+                          <Icon className={cn(
+                            "flex-shrink-0 transition-transform duration-300",
+                            !expanded ? "w-[21px] h-[21px] scale-105" : "w-5 h-5"
+                          )} />
+                          {expanded && <span className="truncate font-medium">{item.label}</span>}
+                        </NavLink>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             );
           })}
-        </ul>
+        </div>
       </nav>
 
       {/* User Section */}
@@ -143,7 +207,7 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
           onClick={() => navigate('/profile')}
           className={cn(
             "w-full flex items-center gap-3 p-3 rounded-lg bg-sidebar-accent hover:bg-sidebar-accent/80 transition-all",
-            collapsed && "justify-center"
+            !expanded && "justify-center"
           )}
         >
           <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
@@ -151,7 +215,7 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
               {profile?.full_name?.charAt(0) || 'U'}
             </span>
           </div>
-          {!collapsed && (
+          {expanded && (
             <div className="flex-1 min-w-0 animate-fade-in text-left">
               <p className="text-sidebar-foreground font-medium text-sm truncate">
                 {profile?.full_name || 'User'}
@@ -169,11 +233,11 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
           onClick={signOut}
           className={cn(
             "w-full mt-2 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sidebar-muted hover:text-destructive hover:bg-destructive/10 transition-all duration-200",
-            collapsed && "justify-center"
+            !expanded && "justify-center"
           )}
         >
           <LogOut className="w-5 h-5" />
-          {!collapsed && <span>Sign Out</span>}
+          {expanded && <span>Sign Out</span>}
         </button>
       </div>
     </aside>

@@ -55,6 +55,7 @@ export interface CreditorTransaction {
   transaction_type: string;
   amount: number;
   reference_number: string | null;
+  notes: string | null;
   created_at: string;
   creditor?: { name?: string | null };
 }
@@ -64,6 +65,21 @@ export interface Payroll {
   net_salary: number;
   paid_at: string | null;
   status: string;
+}
+
+export function useLandedMarkup() {
+  return useQuery({
+    queryKey: ['landed_markup'],
+    queryFn: async () => {
+      const [{ data: allTimeFreight }, { data: allTimePurchaseItems }] = await Promise.all([
+        supabase.from('expenses').select('amount').in('category', ['Shipping Freight Charges', 'Shipping Handling Costs', 'Custom Taxes']),
+        supabase.from('purchase_order_items').select('quantity')
+      ]);
+      const totalAllTimeFreight = allTimeFreight?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      const totalAllTimeItemsProcured = allTimePurchaseItems?.reduce((sum, p) => sum + Number(p.quantity), 0) || 0;
+      return totalAllTimeItemsProcured > 0 ? (totalAllTimeFreight / totalAllTimeItemsProcured) : 0;
+    }
+  });
 }
 
 export function usePayroll() {
@@ -121,23 +137,24 @@ export function useExpenses(dateRange?: DateRange) {
       const fromDate = dateRange?.from ? new Date(dateRange.from).toISOString() : '2000-01-01';
       const toDate = dateRange?.to ? new Date(dateRange.to).toISOString() : new Date().toISOString();
 
-      const [{ data: expenses, error }, { data: bankTx, error: bankError }] = await Promise.all([
-        supabase
-          .from('expenses')
-          .select('*')
-          .gte('expense_date', fromDate)
-          .lte('expense_date', toDate)
-          .order('expense_date', { ascending: false }),
-        supabase
-          .from('bank_transactions')
-          .select('id, transaction_type, amount, transaction_date, description, reference_number')
-          .gte('transaction_date', fromDate)
-          .lte('transaction_date', toDate)
-          .order('transaction_date', { ascending: false }),
+      const [{ data: expenses }, { data: bankTx }] = await Promise.all([
+        fetchAllPages(
+          supabase
+            .from('expenses')
+            .select('*')
+            .gte('expense_date', fromDate)
+            .lte('expense_date', toDate)
+            .order('expense_date', { ascending: false })
+        ),
+        fetchAllPages(
+          supabase
+            .from('bank_transactions')
+            .select('id, transaction_type, amount, transaction_date, description, reference_number')
+            .gte('transaction_date', fromDate)
+            .lte('transaction_date', toDate)
+            .order('transaction_date', { ascending: false })
+        ),
       ]);
-
-      if (error) throw error;
-      if (bankError) throw bankError;
 
       const bankOutflows: Expense[] = (bankTx || [])
         .filter(txn => {
@@ -167,14 +184,15 @@ export function usePayments(dateRange?: DateRange) {
       const fromDate = dateRange?.from ? new Date(dateRange.from).toISOString() : '2000-01-01';
       const toDate = dateRange?.to ? new Date(dateRange.to).toISOString() : new Date().toISOString();
 
-      const { data, error } = await supabase
-        .from('payments')
-        .select('*')
-        .gte('created_at', fromDate)
-        .lte('created_at', toDate)
-        .order('created_at', { ascending: false });
+      const { data } = await fetchAllPages(
+        supabase
+          .from('payments')
+          .select('*, sales_orders(customer_name)')
+          .gte('created_at', fromDate)
+          .lte('created_at', toDate)
+          .order('created_at', { ascending: false })
+      );
 
-      if (error) throw error;
       return data as Payment[];
     },
   });
@@ -216,7 +234,7 @@ export function useCreditorTransactions(dateRange?: DateRange) {
 
       const { data, error } = await supabase
         .from('creditor_transactions')
-        .select('id, creditor_id, transaction_type, amount, reference_number, created_at, creditor:creditors(name)')
+        .select('id, creditor_id, transaction_type, amount, reference_number, notes, created_at, creditor:creditors(name)')
         .gte('created_at', fromDate)
         .lte('created_at', toDate)
         .order('created_at', { ascending: false });
@@ -231,10 +249,24 @@ export interface DateRange {
   from: Date;
   to: Date;
 }
+const fetchAllPages = async (queryBuilder: any) => {
+  let allData: any[] = [];
+  let from = 0;
+  const step = 999;
+  while (true) {
+    const { data, error } = await queryBuilder.range(from, from + step);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length <= step) break;
+    from += step + 1;
+  }
+  return { data: allData };
+};
 
 export function useFinancialSummary(dateRange?: DateRange) {
   return useQuery({
-    queryKey: ['financial_summary', dateRange],
+    queryKey: ['financial_summary_v2', dateRange],
     queryFn: async () => {
       // Default to "All Time" (or realistic bounds) if no range provided
       // For "All Time" start date, we use a very old date.
@@ -255,19 +287,25 @@ export function useFinancialSummary(dateRange?: DateRange) {
         { data: inventory },
         { data: rawMaterials },
         { data: productionBatches },
-        { data: inventoryTransactions } // Needed for historical stock reconstruction
+        { data: inventoryTransactions },
+        { data: bankTx }, // Add bank transactions for complete outflow tracking
+        { data: purchaseOrders },
+        { data: salesOrderItems },
+        { data: allTimeFreight },
+        { data: allTimePurchaseItems },
+        { data: creditorTx }
       ] = await Promise.all([
-        supabase.from('payments').select('amount, created_at').gte('created_at', fromDate).lte('created_at', toDate),
-        supabase.from('sales_orders').select('total_amount, created_at').gte('created_at', fromDate).lte('created_at', toDate),
-        supabase.from('expenses').select('amount, category, is_manufacturing_cost, expense_date').gte('expense_date', fromDate).lte('expense_date', toDate),
-        supabase.from('payroll').select('net_salary, status, paid_at'), // Payroll is tricky with dates, using paid_at for cash basis
-        supabase.from('bank_accounts').select('current_balance').eq('is_active', true),
-        supabase.from('customers').select('credit_balance'),
-        supabase.from('creditors').select('outstanding_balance'),
-        supabase.from('machines').select('purchase_cost'),
-        supabase.from('inventory').select('id, variant_id, quantity, variant:product_variants(cost_price)'),
-        supabase.from('raw_materials').select('quantity_in_stock, unit_cost'),
-        supabase.from('production_runs').select('production_cost, start_date').gte('start_date', fromDate).lte('start_date', toDate),
+        fetchAllPages(supabase.from('payments').select('amount, created_at, payment_method, order_id').gte('created_at', fromDate).lte('created_at', toDate)),
+        fetchAllPages(supabase.from('sales_orders').select('id, total_amount, created_at, status, payment_method').gte('created_at', fromDate).lte('created_at', toDate)),
+        fetchAllPages(supabase.from('expenses').select('amount, category, is_manufacturing_cost, expense_date').gte('expense_date', fromDate).lte('expense_date', toDate)),
+        fetchAllPages(supabase.from('payroll').select('net_salary, status, paid_at, created_at, employee:employees(full_name)')),
+        fetchAllPages(supabase.from('bank_accounts').select('current_balance').eq('is_active', true)),
+        fetchAllPages(supabase.from('customers').select('credit_balance')),
+        fetchAllPages(supabase.from('creditors').select('name, outstanding_balance')),
+        fetchAllPages(supabase.from('machines').select('purchase_cost')),
+        fetchAllPages(supabase.from('inventory').select('id, variant_id, quantity, variant:product_variants(cost_price)')),
+        fetchAllPages(supabase.from('raw_materials').select('quantity_in_stock, unit_cost')),
+        fetchAllPages(supabase.from('production_runs').select('production_cost, start_date').gte('start_date', fromDate).lte('start_date', toDate)),
         // Fetch ALL transactions to reconstruct history? Ideally we filter, but for "Opening Stock" we need `txn_date > fromDate`.
         // To get Closing Stock, we need `txn_date > toDate`.
         // Optimization: Fetch transactions ONLY if we need to rollback from "Current State".
@@ -275,15 +313,40 @@ export function useFinancialSummary(dateRange?: DateRange) {
         // 1. Current Stock (Live) is known.
         // 2. To get Stock @ EndDate: Current - (Txns > EndDate)
         // 3. To get Stock @ StartDate: Current - (Txns > StartDate)
-        supabase.from('inventory_transactions').select('variant_id, quantity_change, created_at').gt('created_at', fromDate)
+        fetchAllPages(supabase.from('inventory_transactions').select('variant_id, quantity_change, created_at').gt('created_at', fromDate)),
+        fetchAllPages(supabase.from('bank_transactions').select('id, transaction_type, amount, transaction_date, description').gte('transaction_date', fromDate).lte('transaction_date', toDate)),
+        fetchAllPages(supabase.from('purchase_orders').select('total_amount, status').in('status', ['completed', 'delivered', 'received']).gte('created_at', fromDate).lte('created_at', toDate)),
+        fetchAllPages(supabase.from('sales_order_items').select('order_id, quantity, product_variants(cost_price)').gte('created_at', fromDate).lte('created_at', toDate)),
+        fetchAllPages(supabase.from('expenses').select('amount').in('category', ['Shipping Freight Charges', 'Shipping Handling Costs', 'Custom Taxes'])),
+        fetchAllPages(supabase.from('purchase_order_items').select('quantity')),
+        fetchAllPages(supabase.from('creditor_transactions').select('*').gte('created_at', fromDate).lte('created_at', toDate))
       ]);
 
       // --- Revenue ---
-      // User can toggle between Cash Basis (payments) or Accrual (salesOrders). 
-      // For standard accounting, we often default to Accrual for "Profitability" but Cash for "Cash Flow".
-      // Let's use Accrual (Sales Orders) for Gross Profit as per standard.
-      const salesTotal = salesOrders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
-      const revenue = salesTotal;
+      // Accrual Revenue (Completed/Delivered Orders)
+      const validOrders = salesOrders?.filter(o => 
+        o.status === 'delivered' || o.status === 'completed' || o.status === 'approved' || o.status === 'in_transit' || o.status === 'ready_for_pickup' || o.status === 'dispatched'
+      ) || [];
+      const revenue = validOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
+
+      // --- Order Pipeline ---
+      const orderPipeline = {
+        pending: salesOrders?.filter(o => o.status === 'pending').length || 0,
+        in_progress: salesOrders?.filter(o => ['approved', 'dispatched', 'in_transit', 'ready_for_pickup'].includes(o.status)).length || 0,
+        completed: salesOrders?.filter(o => ['delivered', 'completed'].includes(o.status)).length || 0,
+        total_value_pending: salesOrders?.filter(o => o.status === 'pending').reduce((sum, o) => sum + Number(o.total_amount), 0) || 0,
+        total_value_completed: revenue
+      };
+
+      // --- Explicit Period Credit Issued ---
+      const periodCreditIssued = validOrders
+        .filter(o => o.payment_method === 'credit')
+        .reduce((sum, o) => sum + Number(o.total_amount), 0);
+
+      // --- Calculate Landed Cost Markup ---
+      const totalAllTimeFreight = allTimeFreight?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      const totalAllTimeItemsProcured = allTimePurchaseItems?.reduce((sum, p) => sum + Number(p.quantity), 0) || 0;
+      const landedMarkupPerItem = totalAllTimeItemsProcured > 0 ? (totalAllTimeFreight / totalAllTimeItemsProcured) : 0;
 
       // --- Helper: Stock Value Calculator ---
       // Map Current Stock state
@@ -303,8 +366,11 @@ export function useFinancialSummary(dateRange?: DateRange) {
       const calculateStockValueAt = (cutoffDateStr: string) => {
         const cutoff = new Date(cutoffDateStr).getTime();
 
-        // Clone current stats to modify
-        const historicalSnapshot = new Map(currentStats);
+        // Deep clone current stats to modify, preventing shared object mutation across multiple calls
+        const historicalSnapshot = new Map<string, { qty: number, cost: number }>();
+        for (const [k, v] of currentStats.entries()) {
+          historicalSnapshot.set(k, { qty: v.qty, cost: v.cost });
+        }
 
         // We want state AT cutoff. 
         // Current State = State @ Cutoff + (Changes > Cutoff)
@@ -322,15 +388,16 @@ export function useFinancialSummary(dateRange?: DateRange) {
           }
         });
 
-        // Calculate Value
+        // Calculate Value with Landed Cost
         let totalValue = 0;
         for (const stat of historicalSnapshot.values()) {
-          totalValue += (stat.qty * stat.cost);
+          const effectiveCostPrice = stat.cost + landedMarkupPerItem;
+          totalValue += (stat.qty * effectiveCostPrice);
         }
 
         // Add Raw Materials (Assuming they are constant for now or need their own transaction table)
         // For now, we take current raw material value as proxy if no history available
-        const rawMatValue = rawMaterials?.reduce((sum, m) => sum + (m.quantity_in_stock * m.unit_cost), 0) || 0;
+        const rawMatValue = rawMaterials?.reduce((sum, m) => sum + (m.quantity_in_stock * (m.unit_cost + landedMarkupPerItem)), 0) || 0;
 
         return totalValue + rawMatValue;
       };
@@ -338,19 +405,53 @@ export function useFinancialSummary(dateRange?: DateRange) {
       const openingStock = calculateStockValueAt(fromDate);
       const closingStock = calculateStockValueAt(toDate);
 
-      // --- Purchases ---
-      // Purchases during the period
-      const allExpenses = expenses || [];
-      const inventoryPurchases = allExpenses.filter(e =>
+      // --- Purchases & Expenses ---
+      // Map bank outflows as expenses if not explicitly categorised
+      const bankOutflows = (bankTx || [])
+        .filter(txn => {
+          const t = (txn.transaction_type || '').toLowerCase();
+          return !t.includes('credit') && !t.includes('deposit') && !t.includes('receive') && !t.includes('inflow') && !t.includes('payroll');
+        })
+        .map(txn => ({
+          id: `bank-${txn.id || Math.random().toString(36).substr(2, 9)}`,
+          description: txn.description || 'Bank Outflow',
+          category: 'Bank Outflow',
+          amount: Number(txn.amount || 0),
+          expense_date: txn.transaction_date,
+          is_manufacturing_cost: false
+        }));
+
+      // Combine direct expenses and bank outflows
+      const allExpenses = [...(expenses || []), ...bankOutflows];
+      
+      const explicitInventoryExpenses = allExpenses.filter(e =>
         e.category === 'Inventory Purchase' ||
         e.category === 'Stock Purchase' ||
         e.category === 'Raw Materials' ||
         e.category === 'Inventory'
       ).reduce((sum, e) => sum + Number(e.amount), 0);
+      
+      const actualPurchaseOrders = purchaseOrders?.reduce((sum, p) => sum + Number(p.total_amount || 0), 0) || 0;
+
+      const inventoryPurchases = explicitInventoryExpenses + actualPurchaseOrders;
 
       // --- COGS ---
-      // Formula: Opening Stock + Purchases - Closing Stock
-      const totalCOGS = (openingStock + inventoryPurchases) - closingStock;
+      const validOrderIds = new Set(validOrders.map(o => o.id));
+      let pureSupplierCOGS = 0;
+      let totalLandedMarkupCOGS = 0;
+
+      const totalCOGS = salesOrderItems?.filter(item => validOrderIds.has(item.order_id)).reduce((sum, item) => {
+        // Handle potentially array response from joined table
+        const costPrice = Array.isArray(item.product_variants) 
+          ? Number(item.product_variants[0]?.cost_price || 0) 
+          : Number((item.product_variants as any)?.cost_price || 0);
+        
+        pureSupplierCOGS += item.quantity * costPrice;
+        totalLandedMarkupCOGS += item.quantity * landedMarkupPerItem;
+
+        const effectiveCostPrice = costPrice + landedMarkupPerItem;
+        return sum + (item.quantity * effectiveCostPrice);
+      }, 0) || 0;
 
       // --- Operating Expenses (OPEX) ---
       // Exclude inventory purchases
@@ -368,7 +469,10 @@ export function useFinancialSummary(dateRange?: DateRange) {
         e.category !== 'Inventory Purchase' &&
         e.category !== 'Stock Purchase' &&
         e.category !== 'Raw Materials' &&
-        e.category !== 'Inventory'
+        e.category !== 'Inventory' &&
+        e.category !== 'Shipping Freight Charges' &&
+        e.category !== 'Shipping Handling Costs' &&
+        e.category !== 'Custom Taxes'
       );
 
       const totalOpex = operatingExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
@@ -381,6 +485,50 @@ export function useFinancialSummary(dateRange?: DateRange) {
 
       const totalExpenses = totalOpex + periodPayroll;
 
+      // --- Manufacturing Spend Breakdown ---
+      // Materials: raw material value consumed (current stock value is a proxy for total materials)
+      const rawMaterialsValue = rawMaterials?.reduce((sum, m) => sum + (m.quantity_in_stock * m.unit_cost), 0) || 0;
+      // Equipment: machines purchase cost (fixed assets allocated to manufacturing)
+      const equipmentCost = machines?.reduce((sum, m) => sum + Number(m.purchase_cost), 0) || 0;
+      // Production: total production run costs in period
+      const productionRunCost = productionBatches?.reduce((sum, b) => sum + Number(b.production_cost), 0) || 0;
+      // Manufacturing expenses from expense table
+      const mfgExpensesTotal = manufacturingExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+      // Total manufacturing spend = production runs + manufacturing expenses
+      const totalManufacturingSpend = productionRunCost + mfgExpensesTotal;
+
+      // --- Timeseries for Charts ---
+      const trendMap = new Map<string, { date: string, revenue: number, expenses: number, payroll: number }>();
+      
+      const addToTrend = (dateStr: string, key: 'revenue' | 'expenses' | 'payroll', amount: number) => {
+        if (!dateStr) return;
+        const dateKey = dateStr.split('T')[0]; // Format: YYYY-MM-DD
+        if (!trendMap.has(dateKey)) {
+          trendMap.set(dateKey, { date: dateKey, revenue: 0, expenses: 0, payroll: 0 });
+        }
+        const data = trendMap.get(dateKey)!;
+        data[key] += amount;
+      };
+
+      // Add actual cash-in (Payments) as cash-basis revenue trend, or use accrual
+      // Let's use accrual valid orders for revenue trend
+      validOrders.forEach(o => addToTrend(o.created_at, 'revenue', Number(o.total_amount)));
+      operatingExpenses.forEach(e => addToTrend(e.expense_date, 'expenses', Number(e.amount)));
+      manufacturingExpenses.forEach(e => addToTrend(e.expense_date, 'expenses', Number(e.amount)));
+      
+      payroll?.forEach(p => {
+        if (p.status === 'paid' && p.paid_at) {
+          addToTrend(p.paid_at, 'payroll', Number(p.net_salary));
+        }
+      });
+
+      const trends = Array.from(trendMap.values())
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        .map(t => ({
+           ...t,
+           date: new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        }));
+
       // --- Owner's Equity (Assets - Liabilities) ---
       // Note: This is usually a "Current State" metric, not historical.
       // We will return the CURRENT Equity.
@@ -389,32 +537,127 @@ export function useFinancialSummary(dateRange?: DateRange) {
       const cashBalance = accounts?.reduce((sum, a) => sum + Number(a.current_balance), 0) || 0;
       const totalReceivables = receivables?.reduce((sum, c) => sum + Number(c.credit_balance), 0) || 0;
       const currentStockValue = calculateStockValueAt(new Date().toISOString()); // Current
-      const fixedAssets = machines?.reduce((sum, m) => sum + Number(m.purchase_cost), 0) || 0;
+      const fixedAssets = equipmentCost;
 
       const totalAssets = cashBalance + totalReceivables + currentStockValue + fixedAssets;
 
-      // Liabilities
-      const totalPayables = payables?.reduce((sum, c) => sum + Number(c.outstanding_balance), 0) || 0;
-      const pendingPayroll = payroll?.filter(p => p.status === 'pending').reduce((sum, p) => sum + Number(p.net_salary), 0) || 0;
+      // Liabilities (Take absolute value of payables since debt is sometimes stored as negative)
+      const totalPayables = payables?.reduce((sum, c) => sum + Math.abs(Number(c.outstanding_balance)), 0) || 0;
+      
+      // Filter pending payroll to only include payroll generated within the selected period
+      const pendingPayrollList = payroll?.filter(p => {
+        if (p.status !== 'pending') return false;
+        if (!p.created_at) return true;
+        const cd = new Date(p.created_at);
+        return cd >= new Date(fromDate) && cd <= new Date(toDate);
+      }) || [];
+      
+      const pendingPayroll = pendingPayrollList.reduce((sum, p) => sum + Number(p.net_salary), 0);
 
       const totalLiabilities = totalPayables + pendingPayroll;
+
+      const grossProfit = revenue - totalCOGS;
+      const netProfit = grossProfit - totalExpenses;
+
+      // --- True Cash Collected Calculation with Duplicate Capping ---
+      const trueCashPayments = payments?.filter(p => p.payment_method?.toLowerCase() !== 'credit') || [];
+      const orderMap = new Map<string, { total: number, paid: number, paidByMethod: Record<string, number> }>();
+      
+      salesOrders?.forEach(o => {
+        orderMap.set(o.id, { total: Number(o.total_amount), paid: 0, paidByMethod: {} });
+      });
+
+      let cappedCashCollected = 0;
+      const paymentBreakdown: Record<string, number> = {};
+      
+      const normalizeMethod = (m: string | null) => {
+        const lower = (m || 'other').toLowerCase();
+        if (lower.includes('mpesa') || lower.includes('m-pesa')) return 'mpesa';
+        if (lower.includes('cash')) return 'cash';
+        if (lower.includes('bank') || lower.includes('transfer')) return 'bank';
+        return 'other';
+      };
+
+      trueCashPayments.forEach(p => {
+        const amt = Number(p.amount);
+        const method = normalizeMethod(p.payment_method);
+
+        if (!p.order_id) {
+          cappedCashCollected += amt; // Pre-payments or wallet top-ups
+          paymentBreakdown[method] = (paymentBreakdown[method] || 0) + amt;
+        } else {
+          const order = orderMap.get(p.order_id);
+          if (order) {
+            order.paid += amt;
+            order.paidByMethod[method] = (order.paidByMethod[method] || 0) + amt;
+          } else {
+            cappedCashCollected += amt; // Orphaned payments
+            paymentBreakdown[method] = (paymentBreakdown[method] || 0) + amt;
+          }
+        }
+      });
+
+      for (const order of orderMap.values()) {
+        const cappedTotal = Math.min(order.paid, order.total); // Cap duplicates
+        cappedCashCollected += cappedTotal;
+
+        // Distribute capped amount proportionally across methods
+        if (order.paid > 0) {
+          const ratio = cappedTotal / order.paid;
+          for (const [method, amt] of Object.entries(order.paidByMethod)) {
+            paymentBreakdown[method] = (paymentBreakdown[method] || 0) + (amt * ratio);
+          }
+        }
+      }
+
+      // Add legacy sales orders (those delivered/completed with payment_method but no payments record)
+      // This ensures both cappedCashCollected and paymentBreakdown stay perfectly synchronized
+      const ordersWithPayments = new Set(payments?.map(p => p.order_id).filter(Boolean));
+      validOrders.forEach(o => {
+        if (!ordersWithPayments.has(o.id) && o.payment_method && o.payment_method !== 'credit') {
+          const method = normalizeMethod(o.payment_method);
+          const amt = Number(o.total_amount);
+          paymentBreakdown[method] = (paymentBreakdown[method] || 0) + amt;
+          cappedCashCollected += amt;
+        }
+      });
 
       return {
         revenue,
         expenses: totalExpenses,
-        grossProfit: revenue - totalCOGS,
-        netProfit: revenue - totalCOGS - totalExpenses, // Net Profit = GP - Opex
+        grossProfit,
+        netProfit, // Net Profit = GP - Opex
+        grossMargin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
+        netMargin: revenue > 0 ? (netProfit / revenue) * 100 : 0,
+        operatingRatio: revenue > 0 ? (totalExpenses / revenue) * 100 : 0,
 
         breakdown: {
           general: totalOpex,
           payroll: periodPayroll,
           cogs: totalCOGS,
+          pureSupplierCOGS,
+          totalLandedMarkupCOGS,
+
+          // Manufacturing spend breakdown
+          manufacturing_spend: totalManufacturingSpend,
+          manufacturing_details: {
+            materials: rawMaterialsValue,
+            equipment: equipmentCost,
+            production: productionRunCost,
+          },
 
           // Inventory accounting breakdown
           opening_stock: openingStock,
           purchases: inventoryPurchases,
           closing_stock: closingStock,
         },
+
+        // Dashboard specific aggregations
+        orderPipeline,
+        trends,
+        cashCollected: cappedCashCollected,
+        periodCreditIssued,
+        paymentBreakdown,
 
         // Balance Sheet Data (Snapshot)
         assets: {
@@ -427,9 +670,47 @@ export function useFinancialSummary(dateRange?: DateRange) {
         liabilities: {
           payables: totalPayables,
           payroll: pendingPayroll,
+          creditorsList: payables?.filter(c => Math.abs(Number(c.outstanding_balance)) >= 0.01) || [],
+          payrollList: pendingPayrollList,
           total: totalLiabilities
         },
-        equity: totalAssets - totalLiabilities
+        equity: totalAssets - totalLiabilities,
+
+        // Raw Lists for UI (Avoids redundant parallel queries)
+        expensesList: expenses || [],
+        bankTransactionsList: bankTx || [],
+        bankAccountsList: accounts || [],
+        paymentsList: payments || [],
+        productionRunsList: productionBatches || [],
+        payrollEntriesList: payroll || [],
+        creditorTransactionsList: creditorTx || [],
+        expenseCategories: (() => {
+          const bOutflows = (bankTx || [])
+            .filter(txn => {
+              const t = (txn.transaction_type || '').toLowerCase();
+              return !t.includes('credit') && !t.includes('deposit') && !t.includes('receive') && !t.includes('inflow') && !t.includes('payroll');
+            })
+            .map(txn => ({
+              category: 'Bank Outflow',
+              amount: Number(txn.amount || 0),
+            }));
+
+          const allExp = [...(expenses || []), ...bOutflows];
+          const grouped = allExp.reduce((acc, expense) => {
+            const cat = expense.category || 'Other';
+            if (!acc[cat]) acc[cat] = 0;
+            acc[cat] += Number(expense.amount || 0);
+            return acc;
+          }, {} as Record<string, number>);
+
+          const total = Object.values(grouped).reduce((sum, v) => sum + v, 0);
+
+          return Object.entries(grouped).map(([name, amount]) => ({
+            name,
+            amount,
+            percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
+          }));
+        })()
       };
     },
   });
@@ -442,21 +723,22 @@ export function useExpensesByCategory(dateRange?: DateRange) {
       const fromDate = dateRange?.from ? new Date(dateRange.from).toISOString() : '2000-01-01';
       const toDate = dateRange?.to ? new Date(dateRange.to).toISOString() : new Date().toISOString();
 
-      const [{ data: expenses, error }, { data: bankTx, error: bankError }] = await Promise.all([
-        supabase
-          .from('expenses')
-          .select('category, amount')
-          .gte('expense_date', fromDate)
-          .lte('expense_date', toDate),
-        supabase
-          .from('bank_transactions')
-          .select('transaction_type, amount')
-          .gte('transaction_date', fromDate)
-          .lte('transaction_date', toDate),
+      const [{ data: expenses }, { data: bankTx }] = await Promise.all([
+        fetchAllPages(
+          supabase
+            .from('expenses')
+            .select('category, amount')
+            .gte('expense_date', fromDate)
+            .lte('expense_date', toDate)
+        ),
+        fetchAllPages(
+          supabase
+            .from('bank_transactions')
+            .select('transaction_type, amount')
+            .gte('transaction_date', fromDate)
+            .lte('transaction_date', toDate)
+        ),
       ]);
-
-      if (error) throw error;
-      if (bankError) throw bankError;
 
       const bankOutflows = (bankTx || [])
         .filter(txn => {

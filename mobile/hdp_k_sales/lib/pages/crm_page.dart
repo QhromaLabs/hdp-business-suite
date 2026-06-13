@@ -8,7 +8,8 @@ import 'package:hdp_k_sales/pages/customer_details_page.dart';
 
 class CRMPage extends StatefulWidget {
   final Function(int)? onTabChange;
-  const CRMPage({super.key, this.onTabChange});
+  final Function(Map<String, dynamic>)? onNavigateToPOSWithCustomer;
+  const CRMPage({super.key, this.onTabChange, this.onNavigateToPOSWithCustomer});
 
   @override
   State<CRMPage> createState() => _CRMPageState();
@@ -291,6 +292,7 @@ class _CRMPageState extends State<CRMPage> {
                                   MaterialPageRoute(builder: (_) => CustomerDetailsPage(
                                     customer: c,
                                     onTabChange: widget.onTabChange,
+                                    onNavigateToPOSWithCustomer: widget.onNavigateToPOSWithCustomer,
                                   ))
                                 );
                               },
@@ -320,8 +322,7 @@ class _CRMPageState extends State<CRMPage> {
                                     const SizedBox(height: 12),
                                     Row(
                                       children: [
-                                        // Removed Balance Display as per request
-                                        // Added prominent location indicator if available
+                                        // Location indicator
                                         if (c['address'] != null || dist != null)
                                           Expanded(
                                             child: Row(
@@ -331,25 +332,42 @@ class _CRMPageState extends State<CRMPage> {
                                                 Expanded(
                                                   child: Text(
                                                     c['address'] ?? (dist != null ? '${(dist / 1000).toStringAsFixed(1)} km away' : 'Location available'),
-                                                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                                                      style: GoogleFonts.inter(fontSize: 13, color: Colors.grey[700]),
+                                                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                                                    style: GoogleFonts.inter(fontSize: 13, color: Colors.grey[700]),
                                                   ),
                                                 ),
                                               ],
                                             ),
                                           ),
-                                        
+
                                         if (c['address'] == null && dist == null)
-                                           Text("No location info", style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[400])),
+                                          Expanded(child: Text("No location info", style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[400]))),
 
-                                        if (c['address'] != null || dist != null) // Only spacer if we have content on left
-                                          const SizedBox(width: 8),
+                                        const SizedBox(width: 8),
 
-                                        // Keep "Log Visit" as a quick action or remove if it is in details? 
-                                        // User said "opens the customer info... below is log history".
-                                        // The action can be inside.
-                                        // Let's keep a chevron to indicate navigation.
-                                        const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                                        // Quick "New Sale" action button
+                                        if (widget.onNavigateToPOSWithCustomer != null)
+                                          GestureDetector(
+                                            onTap: () => widget.onNavigateToPOSWithCustomer!(c),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFFF6600).withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: const Color(0xFFFF6600).withOpacity(0.3)),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(Icons.shopping_cart_outlined, size: 13, color: Color(0xFFFF6600)),
+                                                  const SizedBox(width: 4),
+                                                  Text('New Sale', style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFFF6600), fontWeight: FontWeight.w600)),
+                                                ],
+                                              ),
+                                            ),
+                                          )
+                                        else
+                                          const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
                                       ],
                                     ),
                                   ],
@@ -363,13 +381,14 @@ class _CRMPageState extends State<CRMPage> {
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          widget.onTabChange?.call(1); // POS Tab
+          widget.onTabChange?.call(1); // POS Tab (no customer preselected)
         },
         backgroundColor: const Color(0xFFFF6600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-        child: const Icon(Icons.add, color: Colors.white, size: 28),
+        icon: const Icon(Icons.add, color: Colors.white, size: 24),
+        label: Text('New Sale', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
   }

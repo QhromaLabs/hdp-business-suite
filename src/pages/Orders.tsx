@@ -79,7 +79,7 @@ export default function Orders() {
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(25);
+    const [pageSize, setPageSize] = useState(50);
 
     const updateStatus = useUpdateSalesOrderStatus();
     const deleteOrder = useDeleteSalesOrder();
@@ -193,6 +193,7 @@ export default function Orders() {
         approved: 'bg-primary/10 text-primary border-primary/20',
         dispatched: 'bg-info/10 text-info border-info/20',
         delivered: 'bg-success/10 text-success border-success/20',
+        completed: 'bg-green-500/20 text-green-700 border-green-500/30',
         cancelled: 'bg-destructive/10 text-destructive border-destructive/20',
     };
 
@@ -214,8 +215,8 @@ export default function Orders() {
                     <h1 className="text-3xl font-black text-foreground tracking-tight">Orders History</h1>
                     <p className="text-muted-foreground mt-1 text-sm font-medium">Track and manage all business sales</p>
                 </div>
-                <div className="flex items-center gap-2 bg-card p-1 rounded-xl border border-border/50 shadow-sm">
-                    {['all', 'pending', 'approved', 'dispatched', 'in_transit', 'ready_for_pickup', 'returned'].map((status) => (
+                <div className="flex items-center gap-2 bg-card p-1 rounded-xl border border-border/50 shadow-sm flex-wrap">
+                    {['all', 'pending', 'approved', 'dispatched', 'in_transit', 'delivered', 'completed', 'returned'].map((status) => (
                         <button
                             key={status}
                             onClick={() => {
@@ -396,7 +397,10 @@ export default function Orders() {
                                     </tr>
                                 ) : (
                                     filteredOrders.map((order) => (
-                                        <tr key={order.id} className="group hover:bg-accent/5 transition-colors">
+                                        <tr key={order.id} 
+                                            className="group hover:bg-accent/5 transition-colors"
+                                            style={order.status === 'completed' ? { backgroundColor: 'rgba(34, 197, 94, 0.12)' } : undefined}
+                                        >
                                             <td className="px-6 py-5">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
@@ -480,19 +484,26 @@ export default function Orders() {
                                                         </button>
                                                     )}
                                                     {(order.status === 'dispatched' || order.status === 'in_transit') && (
-                                                        <a
-                                                            href={`/deliveries?orderId=${order.id}`}
-                                                            className={cn(
-                                                                "hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all shadow-sm border text-[10px] font-black uppercase tracking-widest",
-                                                                order.status === 'in_transit'
-                                                                    ? "bg-green-500/10 text-green-600 border-green-500/20 hover:bg-green-600 hover:text-white"
-                                                                    : "bg-info/10 text-info border-info/20 hover:bg-info hover:text-white"
-                                                            )}
-                                                            title="View Progress"
+                                                        <button
+                                                            onClick={() => updateStatus.mutate({ id: order.id, status: 'delivered' })}
+                                                            disabled={updateStatus.isPending}
+                                                            className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-500/10 text-orange-600 hover:bg-orange-600 hover:text-white transition-all shadow-sm border border-orange-500/20 text-[10px] font-black uppercase tracking-widest"
+                                                            title="Mark Delivered"
                                                         >
-                                                            <Activity className="w-3.5 h-3.5" />
-                                                            <span>{order.status === 'in_transit' ? 'Progress' : 'Track'}</span>
-                                                        </a>
+                                                            {updateStatus.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PackageCheck className="w-3.5 h-3.5" />}
+                                                            <span>Delivered</span>
+                                                        </button>
+                                                    )}
+                                                    {order.status === 'delivered' && (
+                                                        <button
+                                                            onClick={() => updateStatus.mutate({ id: order.id, status: 'completed' })}
+                                                            disabled={updateStatus.isPending}
+                                                            className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 text-green-600 hover:bg-green-600 hover:text-white transition-all shadow-sm border border-green-500/20 text-[10px] font-black uppercase tracking-widest"
+                                                            title="Mark Complete"
+                                                        >
+                                                            {updateStatus.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                                            <span>Complete</span>
+                                                        </button>
                                                     )}
                                                     <button
                                                         onClick={() => setOrderToDelete(order)}
@@ -520,18 +531,21 @@ export default function Orders() {
             </div>
 
             {/* Pagination Controls */}
-            {!isLoading && filteredOrders.length > 0 && (
+            {!isLoading && totalCount > 0 && (
                 <div className="mt-6 flex flex-col md:flex-row items-center justify-between gap-4 px-6 py-4 bg-card rounded-2xl border border-border/50 shadow-sm">
                     {/* Page Info */}
                     <div className="text-sm text-muted-foreground font-medium">
-                        Showing <span className="font-bold text-foreground">{((currentPage - 1) * pageSize) + 1}</span> to{' '}
-                        <span className="font-bold text-foreground">{Math.min(currentPage * pageSize, totalCount)}</span> of{' '}
+                        Showing{' '}
+                        <span className="font-bold text-foreground">{((currentPage - 1) * pageSize) + 1}</span>
+                        {' '}–{' '}
+                        <span className="font-bold text-foreground">{Math.min(currentPage * pageSize, totalCount)}</span>
+                        {' '}of{' '}
                         <span className="font-bold text-foreground">{totalCount}</span> orders
                     </div>
 
                     {/* Page Navigation */}
-                    <div className="flex items-center gap-2">
-                        {/* First Page */}
+                    <div className="flex items-center gap-1">
+                        {/* First */}
                         <button
                             onClick={() => setCurrentPage(1)}
                             disabled={currentPage === 1}
@@ -541,7 +555,7 @@ export default function Orders() {
                             <ChevronsLeft className="w-4 h-4" />
                         </button>
 
-                        {/* Previous Page */}
+                        {/* Previous */}
                         <button
                             onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                             disabled={currentPage === 1}
@@ -551,51 +565,57 @@ export default function Orders() {
                             <ChevronLeft className="w-4 h-4" />
                         </button>
 
-                        {/* Page Numbers */}
+                        {/* Numbered Pages with ellipsis */}
                         <div className="flex items-center gap-1">
-                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                let pageNum;
-                                if (totalPages <= 5) {
-                                    pageNum = i + 1;
-                                } else if (currentPage <= 3) {
-                                    pageNum = i + 1;
-                                } else if (currentPage >= totalPages - 2) {
-                                    pageNum = totalPages - 4 + i;
+                            {(() => {
+                                const pages: (number | 'ellipsis-start' | 'ellipsis-end')[] = [];
+                                if (totalPages <= 7) {
+                                    // Show all pages if 7 or fewer
+                                    for (let i = 1; i <= totalPages; i++) pages.push(i);
                                 } else {
-                                    pageNum = currentPage - 2 + i;
+                                    pages.push(1);
+                                    if (currentPage > 4) pages.push('ellipsis-start');
+                                    const rangeStart = Math.max(2, currentPage - 2);
+                                    const rangeEnd = Math.min(totalPages - 1, currentPage + 2);
+                                    for (let i = rangeStart; i <= rangeEnd; i++) pages.push(i);
+                                    if (currentPage < totalPages - 3) pages.push('ellipsis-end');
+                                    pages.push(totalPages);
                                 }
-
-                                return (
-                                    <button
-                                        key={pageNum}
-                                        onClick={() => setCurrentPage(pageNum)}
-                                        className={cn(
-                                            "min-w-[36px] h-9 px-3 rounded-lg text-sm font-bold transition-all",
-                                            currentPage === pageNum
-                                                ? "bg-primary text-primary-foreground shadow-sm"
-                                                : "border border-border/50 hover:bg-muted"
-                                        )}
-                                    >
-                                        {pageNum}
-                                    </button>
+                                return pages.map((p, idx) =>
+                                    p === 'ellipsis-start' || p === 'ellipsis-end' ? (
+                                        <span key={p} className="min-w-[36px] h-9 flex items-center justify-center text-muted-foreground text-sm font-bold select-none">…</span>
+                                    ) : (
+                                        <button
+                                            key={p}
+                                            onClick={() => setCurrentPage(p as number)}
+                                            className={cn(
+                                                "min-w-[36px] h-9 px-3 rounded-lg text-sm font-bold transition-all",
+                                                currentPage === p
+                                                    ? "bg-primary text-primary-foreground shadow-sm scale-105"
+                                                    : "border border-border/50 hover:bg-muted hover:border-primary/40"
+                                            )}
+                                        >
+                                            {p}
+                                        </button>
+                                    )
                                 );
-                            })}
+                            })()}
                         </div>
 
-                        {/* Next Page */}
+                        {/* Next */}
                         <button
                             onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                            disabled={currentPage === totalPages}
+                            disabled={currentPage === totalPages || totalPages === 0}
                             className="p-2 rounded-lg border border-border/50 hover:bg-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                             title="Next Page"
                         >
                             <ChevronRight className="w-4 h-4" />
                         </button>
 
-                        {/* Last Page */}
+                        {/* Last */}
                         <button
                             onClick={() => setCurrentPage(totalPages)}
-                            disabled={currentPage === totalPages}
+                            disabled={currentPage === totalPages || totalPages === 0}
                             className="p-2 rounded-lg border border-border/50 hover:bg-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                             title="Last Page"
                         >
@@ -610,7 +630,7 @@ export default function Orders() {
                             value={pageSize}
                             onChange={(e) => {
                                 setPageSize(Number(e.target.value));
-                                setCurrentPage(1); // Reset to first page when changing page size
+                                setCurrentPage(1);
                             }}
                             className="px-3 py-2 bg-card border border-border/50 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none cursor-pointer hover:bg-muted transition-all"
                         >

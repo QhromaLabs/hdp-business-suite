@@ -204,8 +204,7 @@ export function useProductHistory(productId?: string) {
         .from('inventory_transactions')
         .select('*')
         .in('variant_id', variantIds)
-        .order('created_at', { ascending: false })
-        .limit(20);
+        .order('created_at', { ascending: false });
 
       // Fetch sales history
       const { data: salesHistory } = await supabase
@@ -215,8 +214,7 @@ export function useProductHistory(productId?: string) {
           order: sales_orders(created_at, status, customer: customers(name))
             `)
         .in('variant_id', variantIds)
-        .order('created_at', { ascending: false })
-        .limit(20);
+        .order('created_at', { ascending: false });
 
       return {
         stock: stockHistory || [],
@@ -294,6 +292,10 @@ export function useAddStock() {
         if (insertError) throw insertError;
       }
 
+      // Get active user for audit logging
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
       // Log transaction only when quantity changes
       if (quantity !== 0) {
         await supabase.from('inventory_transactions').insert({
@@ -302,6 +304,7 @@ export function useAddStock() {
           quantity_change: quantity,
           previous_quantity: previousQuantity,
           new_quantity: newQuantity,
+          created_by: userId || null,
         });
       }
 

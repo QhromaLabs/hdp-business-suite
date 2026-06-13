@@ -390,7 +390,8 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
                                         <tr>
                                             <th className="px-4 text-left font-medium">Item</th>
                                             <th className="px-4 text-center font-medium">Qty</th>
-                                            <th className="px-4 text-right font-medium">Cost</th>
+                                            <th className="px-4 text-right font-medium">Unit Cost</th>
+                                            <th className="px-4 text-right font-medium">Landed Unit</th>
                                             <th className="px-4 text-right font-medium">Total</th>
                                         </tr>
                                     </thead>
@@ -409,21 +410,31 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
                                                 <td colSpan={4} className="p-4 text-center text-muted-foreground">No items found</td>
                                             </tr>
                                         ) : (
-                                            items.map((item) => (
-                                                <tr key={item.id} className="hover:bg-muted/5">
-                                                    <td className="px-4 py-3">
-                                                        <div className="font-medium">{item.name}</div>
-                                                        {item.weight > 0 && (
-                                                            <div className="text-xs text-muted-foreground flex items-center gap-1">
-                                                                <Scale className="w-3 h-3" /> {item.weight} kg
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-center">{item.quantity}</td>
-                                                    <td className="px-4 py-3 text-right text-muted-foreground">{item.unit_cost?.toLocaleString()}</td>
-                                                    <td className="px-4 py-3 text-right font-mono font-medium">{item.subtotal?.toLocaleString()}</td>
-                                                </tr>
-                                            ))
+                                            items.map((item) => {
+                                                const itemsSubtotal = items.reduce((sum, i) => sum + (i.subtotal || 0), 0);
+                                                const variableCosts = (order.freight_cost || 0) + (order.customs_cost || 0) + (order.handling_cost || 0);
+                                                const share = itemsSubtotal > 0 ? (item.subtotal / itemsSubtotal) : 0;
+                                                const allocatedCost = variableCosts * share;
+                                                const totalItemCost = item.subtotal + allocatedCost;
+                                                const landedUnitCost = item.quantity > 0 ? totalItemCost / item.quantity : 0;
+
+                                                return (
+                                                    <tr key={item.id} className="hover:bg-muted/5">
+                                                        <td className="px-4 py-3">
+                                                            <div className="font-medium">{item.name}</div>
+                                                            {item.weight > 0 && (
+                                                                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                                                    <Scale className="w-3 h-3" /> {item.weight} kg
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center">{item.quantity}</td>
+                                                        <td className="px-4 py-3 text-right text-muted-foreground">{item.unit_cost?.toLocaleString()}</td>
+                                                        <td className="px-4 py-3 text-right text-primary font-medium">{landedUnitCost?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                                        <td className="px-4 py-3 text-right font-mono font-medium">{item.subtotal?.toLocaleString()}</td>
+                                                    </tr>
+                                                );
+                                            })
                                         )}
                                     </tbody>
                                 </table>

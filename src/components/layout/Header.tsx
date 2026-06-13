@@ -1,10 +1,11 @@
-import { Bell, Search, Loader2 } from 'lucide-react';
+import { Bell, Search, Loader2, Moon, Sun } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNotifications } from '@/hooks/useNotifications';
 import { formatDistanceToNow } from 'date-fns';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface HeaderProps {
   title: string;
@@ -12,6 +13,7 @@ interface HeaderProps {
 
 export default function Header({ title }: HeaderProps) {
   const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isNotificationsClosing, setIsNotificationsClosing] = useState(false);
@@ -53,7 +55,7 @@ export default function Header({ title }: HeaderProps) {
   };
 
   return (
-    <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6">
+    <header className="h-16 bg-background border-b border-border flex items-center justify-between px-6">
       <div className="flex items-center gap-4">
         <h1 className="text-xl font-semibold text-foreground">{title}</h1>
       </div>
@@ -70,6 +72,15 @@ export default function Header({ title }: HeaderProps) {
             className="input-field pl-10 w-64"
           />
         </div>
+
+        {/* Theme Toggle */}
+        <button
+          onClick={toggleTheme}
+          className="relative p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          aria-label="Toggle Theme"
+        >
+          {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
 
         {/* Notifications */}
         <div className="relative" ref={notifRef}>

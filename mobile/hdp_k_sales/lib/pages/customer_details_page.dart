@@ -11,8 +11,14 @@ import 'package:geolocator/geolocator.dart';
 class CustomerDetailsPage extends StatefulWidget {
   final Map<String, dynamic> customer;
   final Function(int)? onTabChange;
+  final Function(Map<String, dynamic>)? onNavigateToPOSWithCustomer;
 
-  const CustomerDetailsPage({super.key, required this.customer, this.onTabChange});
+  const CustomerDetailsPage({
+    super.key,
+    required this.customer,
+    this.onTabChange,
+    this.onNavigateToPOSWithCustomer,
+  });
 
   @override
   State<CustomerDetailsPage> createState() => _CustomerDetailsPageState();
@@ -198,13 +204,19 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-         widget.onTabChange?.call(1);
+          if (widget.onNavigateToPOSWithCustomer != null) {
+            Navigator.pop(context); // Close detail page first
+            widget.onNavigateToPOSWithCustomer!(widget.customer);
+          } else {
+            widget.onTabChange?.call(1);
+          }
         },
         backgroundColor: const Color(0xFFFF6600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-        child: const Icon(Icons.add, color: Colors.white, size: 28),
+        icon: const Icon(Icons.point_of_sale, color: Colors.white, size: 20),
+        label: Text('New Sale', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -215,8 +227,13 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
         "No orders found", 
         "Record New Sale",
         () {
-           Navigator.pop(context);
-           widget.onTabChange?.call(1); // Go to POS
+          if (widget.onNavigateToPOSWithCustomer != null) {
+            Navigator.pop(context);
+            widget.onNavigateToPOSWithCustomer!(widget.customer);
+          } else {
+            Navigator.pop(context);
+            widget.onTabChange?.call(1); // Go to POS
+          }
         }
       );
     }
