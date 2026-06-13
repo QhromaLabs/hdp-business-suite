@@ -16,6 +16,7 @@ import {
   Square,
 } from 'lucide-react';
 import { useInventory, useCategories } from '@/hooks/useProducts';
+import { useLandedMarkup } from '@/hooks/useAccounting';
 import { useDeleteProducts } from '@/hooks/useDeleteProducts';
 import { cn } from '@/lib/utils';
 import { AddProductModal } from '@/components/inventory/AddProductModal';
@@ -47,6 +48,7 @@ export default function Inventory() {
   const deleteProducts = useDeleteProducts();
   const queryClient = useQueryClient();
   const { userRole } = useAuth();
+  const { data: landedMarkup = 0 } = useLandedMarkup();
 
   const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
 
@@ -290,6 +292,9 @@ export default function Inventory() {
                     <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">SKU / Barcode</th>
                     <th className="text-left py-4 px-6 text-sm text-muted-foreground font-normal">Category</th>
                     <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Cost</th>
+                    <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">
+                      <span className="text-amber-500">Landed Cost</span>
+                    </th>
                     <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Price</th>
                     <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Value</th>
                   </>
@@ -375,6 +380,18 @@ export default function Inventory() {
                           <span className="text-muted-foreground">
                             {formatCurrency(cost)}
                           </span>
+                        </td>
+                        <td className="py-4 px-6 text-right">
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-amber-500 font-medium">
+                              {formatCurrency(cost + landedMarkup)}
+                            </span>
+                            {landedMarkup > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                +{formatCurrency(landedMarkup)} freight
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-4 px-6 text-right">
                           <span className="text-foreground">

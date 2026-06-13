@@ -383,12 +383,157 @@ class _CRMPageState extends State<CRMPage> {
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          widget.onTabChange?.call(1); // POS Tab (no customer preselected)
+          if (widget.onNavigateToPOSWithCustomer != null && customers.isNotEmpty) {
+            _showCustomerPickerForPOS();
+          } else {
+            widget.onTabChange?.call(1); // Fallback: POS with no customer
+          }
         },
         backgroundColor: const Color(0xFFFF6600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
         icon: const Icon(Icons.add, color: Colors.white, size: 24),
         label: Text('New Sale', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  void _showCustomerPickerForPOS() {
+    String pickerSearch = '';
+    List<Map<String, dynamic>> pickerList = List.from(customers);
+    pickerList.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final filtered = pickerSearch.isEmpty
+              ? pickerList
+              : pickerList.where((c) {
+                  final q = pickerSearch.toLowerCase();
+                  return c['name'].toString().toLowerCase().contains(q) ||
+                      (c['phone']?.toString().toLowerCase().contains(q) ?? false);
+                }).toList();
+
+          return DraggableScrollableSheet(
+            initialChildSize: 0.6,
+            minChildSize: 0.4,
+            maxChildSize: 0.92,
+            expand: false,
+            builder: (_, scrollController) => Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                children: [
+                  // Handle
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(4)),
+                  ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Select Customer for New Sale',
+                            style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 2),
+                        Text('Who are you selling to?',
+                            style: GoogleFonts.inter(fontSize: 13, color: Colors.grey[500])),
+                        const SizedBox(height: 14),
+                        TextField(
+                          autofocus: true,
+                          onChanged: (val) => setModalState(() => pickerSearch = val),
+                          decoration: InputDecoration(
+                            hintText: 'Search by name or phone...',
+                            prefixIcon: const Icon(Icons.search, size: 20),
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        // "Skip — no customer" option
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            widget.onTabChange?.call(1);
+                          },
+                          icon: const Icon(Icons.skip_next, size: 16),
+                          label: Text('Skip — go to POS without a customer',
+                              style: GoogleFonts.inter(fontSize: 13)),
+                          style: TextButton.styleFrom(foregroundColor: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? Center(
+                            child: Text('No customers found',
+                                style: GoogleFonts.inter(color: Colors.grey[400])))
+                        : ListView.builder(
+                            controller: scrollController,
+                            itemCount: filtered.length,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            itemBuilder: (_, i) {
+                              final c = filtered[i];
+                              final balance = (c['credit_balance'] as num?)?.toDouble() ?? 0.0;
+                              return ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                                leading: CircleAvatar(
+                                  backgroundColor: const Color(0xFFFF6600).withOpacity(0.1),
+                                  child: Text(
+                                    (c['name'] as String)[0].toUpperCase(),
+                                    style: GoogleFonts.inter(
+                                        color: const Color(0xFFFF6600),
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                title: Text(c['name'],
+                                    style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                                subtitle: Text(c['phone'] ?? 'No phone',
+                                    style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[500])),
+                                trailing: balance > 0
+                                    ? Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange[50],
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          'Bal: KES ${balance.toStringAsFixed(0)}',
+                                          style: GoogleFonts.inter(
+                                              fontSize: 11,
+                                              color: Colors.orange[800],
+                                              fontWeight: FontWeight.w600),
+                                        ),
+                                      )
+                                    : const Icon(Icons.arrow_forward_ios,
+                                        size: 14, color: Colors.grey),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  widget.onNavigateToPOSWithCustomer!(c);
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
