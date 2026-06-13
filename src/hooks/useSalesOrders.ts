@@ -157,17 +157,41 @@ export function useDashboardStats() {
       const todayOrders = todaySalesOrders.length;
       const todayOrderIds = todaySalesOrders.map(o => o.id);
 
-      // 3. Calculate COGS for today
+      // 3. Calculate COGS for today (including Landed Markup)
       let todayCOGS = 0;
       if (todayOrderIds.length > 0) {
-        const { data: items } = await supabase
-          .from('sales_order_items')
-          .select('quantity, variant:product_variants(cost_price)')
-          .in('order_id', todayOrderIds);
+        // Fetch items, expenses, and transactions in parallel to calculate landed markup
+        const [
+          { data: items },
+          { data: allExpenses },
+          { data: allTxns }
+        ] = await Promise.all([
+          supabase
+            .from('sales_order_items')
+            .select('quantity, variant:product_variants(cost_price)')
+            .in('order_id', todayOrderIds),
+          supabase.from('expenses').select('amount, category, description'),
+          supabase.from('inventory_transactions').select('quantity_change').gt('quantity_change', 0)
+        ]);
+
+        // Calculate landed markup per item (same logic as useAccounting)
+        const totalAllTimeFreight = allExpenses?.filter(e => 
+          e.category?.toLowerCase() === 'shipping' || 
+          e.category?.toLowerCase() === 'freight' || 
+          e.description?.toLowerCase().includes('freight')
+        ).reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+
+        const totalReceivedItems = allTxns?.reduce((sum, t) => sum + Number(t.quantity_change), 0) || 1;
+        const landedMarkupPerItem = totalAllTimeFreight / totalReceivedItems;
 
         todayCOGS = items?.reduce((sum: number, item: any) => {
-          const cost = item.variant?.cost_price || 0;
-          return sum + (cost * item.quantity);
+          const rawCost = Array.isArray(item.variant)
+            ? Number(item.variant[0]?.cost_price || 0)
+            : Number(item.variant?.cost_price || 0);
+            
+          // If the item has a valid cost, add the landed markup to get true cost
+          const finalCost = rawCost > 0 ? (rawCost + landedMarkupPerItem) : 0;
+          return sum + (finalCost * item.quantity);
         }, 0) || 0;
       }
 
@@ -284,70 +308,70 @@ export function useCreateSalesOrder() {
 
       if (orderError) throw orderError;
 
-      // Create order items
-      const items = order.items.map(item => ({
-        order_id: salesOrder.id,
-        variant_id: item.variant_id,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        discount: item.discount || 0,
-        total_price: (item.unit_price * item.quantity) - (item.discount || 0),
-      }));
+      // Wrap the rest of the operations in a try/catch to rollback the sales_order if anything fails
+      try {
+        // Create order items
+        const items = order.items.map(item => ({
+          order_id: salesOrder.id,
+          variant_id: item.variant_id,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          discount: item.discount || 0,
+          total_price: (item.unit_price * item.quantity) - (item.discount || 0),
+        }));
 
-      const { error: itemsError } = await supabase
-        .from('sales_order_items')
-        .insert(items);
+        const { error: itemsError } = await supabase
+          .from('sales_order_items')
+          .insert(items);
 
-      if (itemsError) throw itemsError;
+        if (itemsError) throw itemsError;
 
-      // 4. Update Customer Credit Balance (if credit sale)
-      if (order.is_credit_sale && order.customer_id) {
-        // Re-fetch strictly to be safe, or just use atomic increment logic if possible.
-        // For now, simpler read-modify-write as we did in validation, but purely incremental is safer.
-        // Supabase doesn't have atomic increment in simple update easily without RPC.
-        // We will just do a fresh fetch-update or assume the previous check is "close enough" but concurrency exists.
-        // Let's re-fetch current to be slightly safer.
-        const { data: freshCustomer } = await supabase
-          .from('customers')
-          .select('credit_balance')
-          .eq('id', order.customer_id)
-          .single();
+        // 4. Update Customer Credit Balance (if credit sale)
+        if (order.is_credit_sale && order.customer_id) {
+          const { data: freshCustomer } = await supabase
+            .from('customers')
+            .select('credit_balance')
+            .eq('id', order.customer_id)
+            .single();
 
-        const currentBalance = freshCustomer?.credit_balance || 0;
-        const newBalance = currentBalance + total;
+          const currentBalance = freshCustomer?.credit_balance || 0;
+          const newBalance = currentBalance + total;
 
-        const { error: balanceError } = await supabase
-          .from('customers')
-          .update({ credit_balance: newBalance })
-          .eq('id', order.customer_id);
+          const { error: balanceError } = await supabase
+            .from('customers')
+            .update({ credit_balance: newBalance })
+            .eq('id', order.customer_id);
 
-        if (balanceError) {
-          console.error('Failed to update credit balance:', balanceError);
-          toast.error('Order created but failed to update credit balance. Please check manually.');
+          if (balanceError) {
+            console.error('Failed to update credit balance:', balanceError);
+            toast.error('Order created but failed to update credit balance. Please check manually.');
+          }
         }
-      }
 
-      // 5. Create payment record for non-credit sales (POS cash/mpesa orders)
-      // This ensures the sale appears in the ledger immediately
-      if (!order.is_credit_sale) {
-        const now = new Date().toISOString();
-        const { error: paymentError } = await supabase
-          .from('payments')
-          .insert({
-            order_id: salesOrder.id,
-            customer_id: order.customer_id,
-            amount: total,
-            payment_method: order.payment_method,
-            created_at: now
-          });
+        // 5. Create payment record for non-credit sales (POS cash/mpesa orders)
+        if (!order.is_credit_sale) {
+          const now = new Date().toISOString();
+          const { error: paymentError } = await supabase
+            .from('payments')
+            .insert({
+              order_id: salesOrder.id,
+              customer_id: order.customer_id,
+              amount: total,
+              payment_method: order.payment_method,
+              created_at: now
+            });
 
-        if (paymentError) {
-          console.error('Failed to create payment record:', paymentError);
-          // Don't throw - allow order creation to succeed even if payment logging fails
+          if (paymentError) {
+            console.error('Failed to create payment record:', paymentError);
+          }
         }
-      }
 
-      return salesOrder;
+        return salesOrder;
+      } catch (err: any) {
+        // ROLLBACK: Delete the orphaned sales_order to prevent orders without items
+        await supabase.from('sales_orders').delete().eq('id', salesOrder.id);
+        throw err;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales_orders'] });
