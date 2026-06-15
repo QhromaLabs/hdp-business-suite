@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -183,6 +185,10 @@ function AppCard({ config, link, onLinkChange }: AppCardProps) {
   const [draft, setDraft] = useState(link);
   const Icon = config.icon;
 
+  useEffect(() => {
+    setDraft(link);
+  }, [link]);
+
   const handleSave = () => {
     if (draft && !isValidUrl(draft)) {
       toast.error('Please enter a valid URL (must start with https://)');
@@ -190,7 +196,6 @@ function AppCard({ config, link, onLinkChange }: AppCardProps) {
     }
     onLinkChange(config.id, draft.trim());
     setEditing(false);
-    toast.success(`${config.name} link updated`);
   };
 
   const handleCancel = () => {
@@ -457,14 +462,86 @@ function VersionCard({ links }: { links: AppLinks }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function MobileApps() {
-  const [links, setLinks] = useState<AppLinks>(loadLinks);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    saveLinks(links);
-  }, [links]);
+  const { data: dbLinks } = useQuery({
+    queryKey: ['mobile_app_links'],
+    queryFn: async (): Promise<AppLinks> => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from('mobile_app_links')
+          .select('id, link');
+        
+        if (error) {
+          if (error.code === '42P01') {
+            return loadLinks();
+          }
+          throw error;
+        }
+
+        const linksMap: AppLinks = { sales: '', delivery: '' };
+        if (data) {
+          data.forEach((row: any) => {
+            if (row.id === 'sales' || row.id === 'delivery') {
+              linksMap[row.id as 'sales' | 'delivery'] = row.link || '';
+            }
+          });
+        }
+        saveLinks(linksMap);
+        return linksMap;
+      } catch (err) {
+        return loadLinks();
+      }
+    }
+  });
+
+  const links = dbLinks || loadLinks();
+
+  const updateLinkMutation = useMutation({
+    mutationFn: async ({ id, value }: { id: AppConfig['id']; value: string }) => {
+      const current = { ...links, [id]: value };
+      saveLinks(current);
+
+      try {
+        const { error } = await (supabase as any)
+          .from('mobile_app_links')
+          .upsert({ id, link: value, updated_at: new Date().toISOString() });
+        
+        if (error) {
+          if (error.code === '42P01') {
+            return { links: current, isLocalOnly: true };
+          }
+          throw error;
+        }
+      } catch (err: any) {
+        console.error('Error upserting link to database:', err);
+        return { links: current, error: err.message || err };
+      }
+      return { links: current, isLocalOnly: false };
+    },
+    onMutate: async ({ id, value }) => {
+      await queryClient.cancelQueries({ queryKey: ['mobile_app_links'] });
+      const previousLinks = queryClient.getQueryData<AppLinks>(['mobile_app_links']) || loadLinks();
+      const newLinks = { ...previousLinks, [id]: value };
+      queryClient.setQueryData(['mobile_app_links'], newLinks);
+      return { previousLinks };
+    },
+    onSuccess: (result) => {
+      if (result.isLocalOnly) {
+        toast.warning('Saved locally, but database sync is pending (migration not applied yet).');
+      } else if (result.error) {
+        toast.error(`Saved locally, but database sync failed: ${result.error}`);
+      } else {
+        toast.success('App link updated successfully');
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['mobile_app_links'] });
+    }
+  });
 
   const handleLinkChange = (id: AppConfig['id'], value: string) => {
-    setLinks((prev) => ({ ...prev, [id]: value }));
+    updateLinkMutation.mutate({ id, value });
   };
 
   return (
