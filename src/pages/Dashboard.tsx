@@ -6,21 +6,17 @@ import {
     Users,
     Package,
     AlertTriangle,
-    ArrowRight,
     Wallet,
     Clock,
-    UserCheck,
-    UserX,
-    LogOut,
-    LogIn,
-    CalendarX,
+    Receipt,
+    User,
+    CheckCircle2,
 } from 'lucide-react';
-import { useDashboardStats, useTodaysSales } from '@/hooks/useSalesOrders';
-import { useMyAttendanceToday, useClockIn, useClockOut, useUpdateAttendanceStatus } from '@/hooks/useEmployees';
+import { useDashboardStats, useTodaysSales, useClerkDashboardStats } from '@/hooks/useSalesOrders';
+import { useMyAttendanceToday } from '@/hooks/useEmployees';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { DashboardSkeleton } from '@/components/loading/PageSkeletons';
-import { toast } from 'sonner';
+import { ClockInModal } from '@/components/attendance/ClockInModal';
 import {
     AreaChart,
     Area,
@@ -30,6 +26,7 @@ import {
     Tooltip,
     ResponsiveContainer
 } from 'recharts';
+import { format } from 'date-fns';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-KE', {
@@ -41,28 +38,346 @@ const formatCurrency = (amount: number) => {
 };
 
 export default function Dashboard() {
-    const { profile, userRole } = useAuth();
+    const { profile, userRole, user } = useAuth();
+    const isClerk = userRole === 'clerk';
+
     const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
     const { data: recentSales = [], isLoading: salesLoading } = useTodaysSales();
     const { data: attendance, isLoading: attendanceLoading } = useMyAttendanceToday();
-    const clockInMutation = useClockIn();
-    const clockOutMutation = useClockOut();
-    const updateStatusMutation = useUpdateAttendanceStatus();
+    const { data: clerkStats, isLoading: clerkStatsLoading } = useClerkDashboardStats(
+        isClerk ? user?.id : undefined
+    );
 
-    const isLoading = statsLoading || salesLoading || attendanceLoading;
+    const isLoading = isClerk
+        ? clerkStatsLoading || attendanceLoading
+        : statsLoading || salesLoading || attendanceLoading;
 
-    const isOnDuty = !!attendance?.check_in && !attendance?.check_out && attendance?.status === 'present';
-    const isClockedOut = !!attendance?.check_out;
-    const isOff = attendance?.status === 'leave' || attendance?.status === 'absent';
-
-    const formatTime = (dateString: string) => {
-        return new Date(dateString).toLocaleTimeString('en-KE', {
+    const formatTime = (dateString: string) =>
+        new Date(dateString).toLocaleTimeString('en-KE', {
             hour: '2-digit',
             minute: '2-digit',
-            hour12: true
+            hour12: true,
         });
+
+    const getTimeAgo = (dateString: string) => {
+        const diffMins = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins} mins ago`;
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        return new Date(dateString).toLocaleDateString('en-KE');
     };
 
+    const getColorClasses = (color: string) => {
+        switch (color) {
+            case 'primary': return 'bg-primary/10 text-primary';
+            case 'success': return 'bg-success/10 text-success';
+            case 'warning': return 'bg-warning/10 text-warning';
+            case 'destructive': return 'bg-destructive/10 text-destructive';
+            default: return 'bg-muted text-muted-foreground';
+        }
+    };
+
+    if (isLoading) return <DashboardSkeleton />;
+
+    /* ── CLERK DASHBOARD ─────────────────────────────────────── */
+    if (isClerk) {
+        const clerkOrderStats = [
+            {
+                title: "My Sales Today",
+                value: clerkStats?.myTodaySales || 0,
+                icon: Wallet,
+                color: 'primary',
+                isCurrency: true,
+            },
+            {
+                title: "My Orders Today",
+                value: clerkStats?.myTodayOrders || 0,
+                icon: ShoppingCart,
+                color: 'success',
+                isCurrency: false,
+            },
+            {
+                title: "Pending Orders",
+                value: clerkStats?.myPendingOrders || 0,
+                icon: Clock,
+                color: 'warning',
+                isCurrency: false,
+            },
+        ];
+
+        const statusColors: Record<string, string> = {
+            pending: 'bg-warning/10 text-warning border-warning/20',
+            approved: 'bg-primary/10 text-primary border-primary/20',
+            dispatched: 'bg-info/10 text-info border-info/20',
+            delivered: 'bg-success/10 text-success border-success/20',
+            completed: 'bg-green-500/20 text-green-700 border-green-500/30',
+            cancelled: 'bg-destructive/10 text-destructive border-destructive/20',
+        };
+
+        return (
+            <div className="space-y-6 animate-fade-in">
+                {/* Clock-in modal — shows automatically when not clocked in today */}
+                <ClockInModal userName={profile?.full_name} />
+
+                {/* Welcome Banner */}
+                <div className="bg-gradient-to-r from-sidebar via-sidebar to-sidebar/90 rounded-2xl p-6 text-sidebar-foreground">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-2xl font-bold">
+                                {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'}, {profile?.full_name?.split(' ')[0] || 'Clerk'}!
+                            </h2>
+                            <p className="text-sidebar-muted mt-1">
+                                {attendance?.check_in
+                                    ? `On duty since ${formatTime(attendance.check_in)}`
+                                    : "You haven't clocked in yet today."}
+                            </p>
+                        </div>
+                        <div className="hidden md:flex flex-col items-end gap-1">
+                            <div className={cn(
+                                "px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider",
+                                attendance?.check_in && !attendance?.check_out
+                                    ? "bg-success/20 text-success"
+                                    : attendance?.check_out
+                                    ? "bg-muted text-muted-foreground"
+                                    : "bg-warning/20 text-warning"
+                            )}>
+                                {attendance?.check_in && !attendance?.check_out
+                                    ? "On Duty"
+                                    : attendance?.check_out
+                                    ? "Shift Ended"
+                                    : "Not Clocked In"}
+                            </div>
+                            {attendance?.check_out && (
+                                <p className="text-xs text-sidebar-muted">Out at {formatTime(attendance.check_out)}</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Clerk Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {clerkOrderStats.map((stat, index) => {
+                        const Icon = stat.icon;
+                        return (
+                            <div
+                                key={stat.title}
+                                className="stat-card animate-slide-up"
+                                style={{ animationDelay: `${index * 50}ms` }}
+                            >
+                                <div className="flex items-start justify-between">
+                                    <div className={cn('p-3 rounded-xl', getColorClasses(stat.color))}>
+                                        <Icon className="w-5 h-5" />
+                                    </div>
+                                </div>
+                                <div className="mt-4">
+                                    <p className="text-2xl font-bold text-foreground">
+                                        {stat.isCurrency ? formatCurrency(stat.value as number) : (stat.value as number).toLocaleString()}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground mt-1">{stat.title}</p>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* 7-Day Performance Chart */}
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                    {/* Sales trend */}
+                    <div className="lg:col-span-3 bg-card rounded-xl border border-border p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 className="text-lg font-semibold text-foreground">My Sales — Last 7 Days</h3>
+                                <p className="text-xs text-muted-foreground mt-0.5">Your daily revenue this week</p>
+                            </div>
+                        </div>
+                        <div className="h-[220px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={clerkStats?.chartData || []}>
+                                    <defs>
+                                        <linearGradient id="clerkSalesGrad" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                                            <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                                    <XAxis
+                                        dataKey="date"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+                                        tickFormatter={(d) => new Date(d + 'T00:00:00').toLocaleDateString('en-KE', { weekday: 'short', day: 'numeric' })}
+                                    />
+                                    <YAxis
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+                                        tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                                        width={45}
+                                    />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: 'hsl(var(--card))',
+                                            borderColor: 'hsl(var(--border))',
+                                            borderRadius: '12px',
+                                            color: 'hsl(var(--foreground))',
+                                            fontSize: '12px',
+                                        }}
+                                        formatter={(v: number) => [formatCurrency(v), 'Sales']}
+                                        labelFormatter={(d) => new Date(d + 'T00:00:00').toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'short' })}
+                                    />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="sales"
+                                        stroke="hsl(var(--primary))"
+                                        strokeWidth={2.5}
+                                        fillOpacity={1}
+                                        fill="url(#clerkSalesGrad)"
+                                        dot={{ fill: 'hsl(var(--primary))', r: 3, strokeWidth: 0 }}
+                                        activeDot={{ r: 5, strokeWidth: 0 }}
+                                    />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Orders bar chart */}
+                    <div className="lg:col-span-2 bg-card rounded-xl border border-border p-6 shadow-sm flex flex-col">
+                        <div className="mb-4">
+                            <h3 className="text-lg font-semibold text-foreground">Orders per Day</h3>
+                            <p className="text-xs text-muted-foreground mt-0.5">Count of orders you recorded</p>
+                        </div>
+                        <div className="flex-1 flex items-end gap-2 pt-2">
+                            {(clerkStats?.chartData || []).map((d) => {
+                                const max = Math.max(...(clerkStats?.chartData || []).map(x => x.orders), 1);
+                                const pct = max > 0 ? (d.orders / max) * 100 : 0;
+                                const isToday = d.date === new Date().toLocaleDateString('en-CA');
+                                return (
+                                    <div key={d.date} className="flex-1 flex flex-col items-center gap-1 group">
+                                        <span className="text-[10px] font-bold text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {d.orders}
+                                        </span>
+                                        <div className="w-full rounded-t-lg transition-all duration-500" style={{
+                                            height: `${Math.max(pct, 4)}%`,
+                                            minHeight: '6px',
+                                            maxHeight: '160px',
+                                            backgroundColor: isToday
+                                                ? 'hsl(var(--primary))'
+                                                : 'hsl(var(--primary) / 0.35)',
+                                        }} />
+                                        <span className="text-[9px] text-muted-foreground font-medium">
+                                            {new Date(d.date + 'T00:00:00').toLocaleDateString('en-KE', { weekday: 'short' })}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="mt-4 pt-4 border-t border-border flex justify-between items-center">
+                            <span className="text-xs text-muted-foreground">7-day total</span>
+                            <span className="text-sm font-bold text-foreground">
+                                {(clerkStats?.chartData || []).reduce((s, d) => s + d.orders, 0)} orders
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Recent Orders by this Clerk */}
+                <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+                    <div className="p-6 border-b border-border flex items-center justify-between">
+                        <div>
+                            <h3 className="text-lg font-semibold text-foreground">My Recent Orders</h3>
+                            <p className="text-xs text-muted-foreground mt-0.5">Orders you recorded today</p>
+                        </div>
+                        <button
+                            onClick={() => window.location.href = '/orders'}
+                            className="text-primary text-sm font-semibold hover:underline flex items-center gap-1"
+                        >
+                            View All
+                        </button>
+                    </div>
+                    <div className="overflow-x-auto">
+                        {clerkStats?.recentOrders && clerkStats.recentOrders.length > 0 ? (
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="bg-muted/50 text-muted-foreground text-sm">
+                                        <th className="py-3 px-6 font-medium">Order #</th>
+                                        <th className="py-3 px-6 font-medium">Customer</th>
+                                        <th className="py-3 px-6 font-medium">Total</th>
+                                        <th className="py-3 px-6 font-medium">Status</th>
+                                        <th className="py-3 px-6 font-medium">Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border">
+                                    {clerkStats.recentOrders.map((order: any) => (
+                                        <tr key={order.id} className="hover:bg-muted/30 transition-colors">
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-2">
+                                                    <Receipt className="w-4 h-4 text-muted-foreground" />
+                                                    <span className="font-mono text-sm font-medium">#{order.order_number || order.id.slice(0, 8).toUpperCase()}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-2">
+                                                    <User className="w-3.5 h-3.5 text-muted-foreground" />
+                                                    <span className="text-sm">{(order.customer as any)?.name || 'Walk-in'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6 font-bold text-primary">
+                                                {formatCurrency(Number(order.total_amount))}
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <span className={cn(
+                                                    'px-2 py-1 rounded-lg text-xs font-semibold border',
+                                                    statusColors[order.status] || 'bg-muted text-muted-foreground border-border'
+                                                )}>
+                                                    {order.status}
+                                                </span>
+                                            </td>
+                                            <td className="py-4 px-6 text-sm text-muted-foreground">
+                                                {getTimeAgo(order.created_at)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <div className="py-12 text-center">
+                                <ShoppingCart className="w-10 h-10 mx-auto text-muted-foreground/40 mb-3" />
+                                <p className="text-muted-foreground font-medium">No orders recorded today</p>
+                                <p className="text-xs text-muted-foreground mt-1">Head to POS to start recording sales</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="grid grid-cols-2 gap-4">
+                    {[
+                        { label: 'New Sale', icon: ShoppingCart, path: '/pos' },
+                        { label: 'My Orders', icon: Receipt, path: '/orders' },
+                        { label: 'Customers', icon: Users, path: '/customers' },
+                        { label: 'Inventory', icon: Package, path: '/inventory' },
+                    ].map((action) => {
+                        const Icon = action.icon;
+                        return (
+                            <button
+                                key={action.label}
+                                onClick={() => window.location.href = action.path}
+                                className="bg-card rounded-xl border border-border p-4 flex items-center gap-3 hover:border-primary/30 hover:shadow-md transition-all duration-200"
+                            >
+                                <div className="p-2 rounded-lg bg-primary/10">
+                                    <Icon className="w-5 h-5 text-primary" />
+                                </div>
+                                <span className="font-medium text-foreground">{action.label}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    }
+
+    /* ── ADMIN / MANAGER / SALES REP DASHBOARD ───────────────── */
     const stats = [
         {
             title: "Today's Sales",
@@ -98,33 +413,6 @@ export default function Dashboard() {
         },
     ];
 
-    const getColorClasses = (color: string) => {
-        switch (color) {
-            case 'primary': return 'bg-primary/10 text-primary';
-            case 'success': return 'bg-success/10 text-success';
-            case 'warning': return 'bg-warning/10 text-warning';
-            case 'destructive': return 'bg-destructive/10 text-destructive';
-            default: return 'bg-muted text-muted-foreground';
-        }
-    };
-
-    const getTimeAgo = (dateString: string) => {
-        const now = new Date();
-        const date = new Date(dateString);
-        const diffMs = now.getTime() - date.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins} mins ago`;
-        const diffHours = Math.floor(diffMins / 60);
-        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-        return date.toLocaleDateString('en-KE');
-    };
-
-    if (isLoading) {
-        return <DashboardSkeleton />;
-    }
-
     return (
         <div className="space-y-6 animate-fade-in">
             {/* Welcome Banner */}
@@ -147,91 +435,6 @@ export default function Dashboard() {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Duty Status Card - Only for non-admin/manager roles */}
-                {userRole !== 'admin' && userRole !== 'manager' && (
-                    <div
-                        className={cn(
-                            "stat-card animate-slide-up border-2 transition-all duration-300",
-                            isOnDuty ? "border-success/30 bg-success/5" : isOff ? "border-destructive/30 bg-destructive/5" : "border-warning/30 bg-warning/5"
-                        )}
-                    >
-                        <div className="flex items-start justify-between">
-                            <div className={cn(
-                                'p-3 rounded-xl',
-                                isOnDuty ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
-                            )}>
-                                {isOnDuty ? <UserCheck className="w-5 h-5" /> : <UserX className="w-5 h-5" />}
-                            </div>
-                            <div className="text-right">
-                                <p className={cn(
-                                    "text-sm font-bold uppercase tracking-wider",
-                                    isOnDuty ? "text-success" : "text-warning"
-                                )}>
-                                    {isOnDuty ? 'On Duty' : isClockedOut ? 'Shift Ended' : isOff ? attendance?.status : 'Off Duty'}
-                                </p>
-                                {attendance?.check_in && (
-                                    <p className="text-[10px] text-muted-foreground mt-1">
-                                        Started: {formatTime(attendance.check_in)}
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                        <div className="mt-4 space-y-3">
-                            {!isOnDuty && !isClockedOut && (
-                                <Button
-                                    onClick={() => clockInMutation.mutate()}
-                                    disabled={clockInMutation.isPending}
-                                    className="w-full bg-warning hover:bg-warning/90 text-white font-bold py-5 rounded-xl shadow-lg shadow-warning/20 group"
-                                >
-                                    <LogIn className="w-4 h-4 mr-2 group-hover:translate-x-1 transition-transform" />
-                                    Clock In Now
-                                </Button>
-                            )}
-                            {isOnDuty && (
-                                <Button
-                                    onClick={() => clockOutMutation.mutate()}
-                                    disabled={clockOutMutation.isPending}
-                                    variant="outline"
-                                    className="w-full border-destructive/30 text-destructive hover:bg-destructive/5 font-bold py-5 rounded-xl group"
-                                >
-                                    <LogOut className="w-4 h-4 mr-2 group-hover:translate-x-1 transition-transform" />
-                                    Clock Out
-                                </Button>
-                            )}
-                            {isClockedOut && (
-                                <div className="p-3 rounded-lg bg-muted text-center">
-                                    <p className="text-sm font-medium text-muted-foreground">Shift Completed</p>
-                                    <p className="text-xs text-muted-foreground mt-1">Out at: {formatTime(attendance.check_out!)}</p>
-                                </div>
-                            )}
-                            {!isOnDuty && !isClockedOut && !isOff && (
-                                <Button
-                                    onClick={() => updateStatusMutation.mutate({ status: 'absent' })}
-                                    disabled={updateStatusMutation.isPending}
-                                    variant="ghost"
-                                    className="w-full text-muted-foreground hover:text-destructive hover:bg-destructive/5 text-xs"
-                                >
-                                    <CalendarX className="w-3 h-3 mr-1" />
-                                    Mark as Absent
-                                </Button>
-                            )}
-                            {isOff && (
-                                <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/10 text-center">
-                                    <p className="text-sm font-medium text-destructive capitalize">{attendance?.status}</p>
-                                    <Button
-                                        onClick={() => clockInMutation.mutate()}
-                                        disabled={clockInMutation.isPending}
-                                        variant="link"
-                                        className="text-[10px] h-auto p-0 text-primary mt-1"
-                                    >
-                                        Cancel and Clock In
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
                 {stats.map((stat, index) => {
                     const Icon = stat.icon;
                     const isPositive = stat.change > 0;
@@ -256,7 +459,7 @@ export default function Dashboard() {
                             </div>
                             <div className="mt-4">
                                 <p className="text-2xl font-bold text-foreground">
-                                    {stat.isCurrency ? formatCurrency(stat.value) : stat.value.toLocaleString()}
+                                    {stat.isCurrency ? formatCurrency(stat.value as number) : (stat.value as number).toLocaleString()}
                                 </p>
                                 <p className="text-sm text-muted-foreground mt-1">{stat.title}</p>
                             </div>

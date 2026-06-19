@@ -68,6 +68,24 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RoleRoute({ children, allowed }: { children: React.ReactNode; allowed: string[] }) {
+  const { userRole, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-sidebar flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!userRole || !allowed.includes(userRole)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -98,25 +116,25 @@ function AppRoutes() {
         }
       >
         <Route path="dashboard" element={<Dashboard />} />
-        <Route path="pos" element={<POS />} />
-        <Route path="customers" element={<Customers />} />
-        <Route path="inventory" element={<Inventory />} />
-        <Route path="purchases" element={<Purchases />} />
-        <Route path="categories" element={<Categories />} />
-        <Route path="manufacturing" element={<Manufacturing />} />
-        <Route path="accounting" element={<Accounting />} />
-        <Route path="hr" element={<HR />} />
-        <Route path="field-sales" element={<FieldSales />} />
-        <Route path="deliveries" element={<Deliveries />} />
-        <Route path="audit" element={<Audit />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="settings" element={<Settings />} />
+        <Route path="pos" element={<RoleRoute allowed={['admin', 'manager', 'sales_rep', 'clerk']}><POS /></RoleRoute>} />
+        <Route path="customers" element={<RoleRoute allowed={['admin', 'manager', 'sales_rep', 'clerk']}><Customers /></RoleRoute>} />
+        <Route path="inventory" element={<RoleRoute allowed={['admin', 'manager', 'sales_rep', 'clerk']}><Inventory /></RoleRoute>} />
+        <Route path="purchases" element={<RoleRoute allowed={['admin', 'manager']}><Purchases /></RoleRoute>} />
+        <Route path="categories" element={<RoleRoute allowed={['admin', 'manager']}><Categories /></RoleRoute>} />
+        <Route path="manufacturing" element={<RoleRoute allowed={['admin', 'manager']}><Manufacturing /></RoleRoute>} />
+        <Route path="accounting" element={<RoleRoute allowed={['admin', 'manager']}><Accounting /></RoleRoute>} />
+        <Route path="hr" element={<RoleRoute allowed={['admin', 'manager']}><HR /></RoleRoute>} />
+        <Route path="field-sales" element={<RoleRoute allowed={['admin', 'manager', 'sales_rep']}><FieldSales /></RoleRoute>} />
+        <Route path="deliveries" element={<RoleRoute allowed={['admin', 'manager', 'sales_rep']}><Deliveries /></RoleRoute>} />
+        <Route path="audit" element={<RoleRoute allowed={['admin', 'manager']}><Audit /></RoleRoute>} />
+        <Route path="reports" element={<RoleRoute allowed={['admin', 'manager', 'sales_rep']}><Reports /></RoleRoute>} />
+        <Route path="settings" element={<RoleRoute allowed={['admin']}><Settings /></RoleRoute>} />
         <Route path="profile" element={<Profile />} />
 
         <Route path="orders" element={<Orders />} />
-        <Route path="commissions" element={<Commissions />} />
-        <Route path="payroll" element={<Payroll />} />
-        <Route path="mobile-apps" element={<MobileApps />} />
+        <Route path="commissions" element={<RoleRoute allowed={['admin', 'manager', 'sales_rep']}><Commissions /></RoleRoute>} />
+        <Route path="payroll" element={<RoleRoute allowed={['admin', 'manager']}><Payroll /></RoleRoute>} />
+        <Route path="mobile-apps" element={<RoleRoute allowed={['admin']}><MobileApps /></RoleRoute>} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

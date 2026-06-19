@@ -212,8 +212,12 @@ export default function Orders() {
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-black text-foreground tracking-tight">Orders History</h1>
-                    <p className="text-muted-foreground mt-1 text-sm font-medium">Track and manage all business sales</p>
+                    <h1 className="text-3xl font-black text-foreground tracking-tight">
+                        {isClerk ? 'My Orders' : 'Orders History'}
+                    </h1>
+                    <p className="text-muted-foreground mt-1 text-sm font-medium">
+                        {isClerk ? 'Sales you have recorded' : 'Track and manage all business sales'}
+                    </p>
                 </div>
                 <div className="flex items-center gap-2 bg-card p-1 rounded-xl border border-border/50 shadow-sm flex-wrap">
                     {['all', 'pending', 'approved', 'dispatched', 'in_transit', 'delivered', 'completed', 'returned'].map((status) => (

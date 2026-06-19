@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useMyAttendanceToday } from '@/hooks/useEmployees';
+import { useMyAttendanceToday, useClockOut } from '@/hooks/useEmployees';
 import { useSaveLocation } from '@/hooks/useUserLocations';
 
 const TRACKING_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours
@@ -11,9 +11,32 @@ export default function DutyTracker() {
     const { user, userRole } = useAuth();
     const { data: attendance } = useMyAttendanceToday();
     const saveLocation = useSaveLocation();
+    const clockOut = useClockOut();
+    const autoClockOutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Auto clock-out at 9pm for clerk
     useEffect(() => {
-        // Only track for sales reps (or delivery agents if requested elsewhere)
+        if (userRole !== 'clerk') return;
+        if (!attendance?.check_in || attendance?.check_out) return;
+
+        const now = new Date();
+        const ninepm = new Date(now);
+        ninepm.setHours(21, 0, 0, 0);
+        const msUntil9pm = ninepm.getTime() - now.getTime();
+
+        if (msUntil9pm > 0) {
+            autoClockOutRef.current = setTimeout(() => {
+                clockOut.mutate();
+            }, msUntil9pm);
+        }
+
+        return () => {
+            if (autoClockOutRef.current) clearTimeout(autoClockOutRef.current);
+        };
+    }, [userRole, attendance?.check_in, attendance?.check_out]);
+
+    // Location tracking for sales reps
+    useEffect(() => {
         if (!user || userRole !== 'sales_rep') return;
 
         const trackLocation = () => {
@@ -34,7 +57,6 @@ export default function DutyTracker() {
                             }, {
                                 onSuccess: () => {
                                     localStorage.setItem(STORAGE_KEY, String(now));
-                                    console.log('DutyTracker: Location captured and saved.');
                                 }
                             });
                         },
@@ -43,20 +65,14 @@ export default function DutyTracker() {
                         },
                         { enableHighAccuracy: true }
                     );
-                } else {
-                    console.error('DutyTracker: Geolocation not supported.');
                 }
             }
         };
 
-        // Run check immediately
         trackLocation();
-
-        // And every minute
         const intervalId = setInterval(trackLocation, CHECK_INTERVAL);
-
         return () => clearInterval(intervalId);
     }, [user, userRole, attendance, saveLocation]);
 
-    return null; // Headless component
+    return null;
 }

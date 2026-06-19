@@ -458,7 +458,14 @@ class POSPageState extends State<POSPage> {
                                         GestureDetector(
                                           onTap: () => _showEditQuantityDialog(id, qty, setSheetState),
                                           onLongPress: () => _showEditQuantityDialog(id, qty, setSheetState),
-                                          child: Text('$qty', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text('$qty', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                                              const SizedBox(width: 2),
+                                              const Icon(Icons.edit, size: 11, color: Colors.grey),
+                                            ],
+                                          ),
                                         ),
 
                                       IconButton(
@@ -684,7 +691,6 @@ class POSPageState extends State<POSPage> {
   }
 
   Future<void> _processCheckout() async {
-    if (_isCheckingOut) return;
     if (cart.isEmpty) return;
     if (_selectedCustomer == null) {
       _showSnack('Please select a customer', Colors.red);
@@ -1198,6 +1204,12 @@ class POSPageState extends State<POSPage> {
                       ],
                     ),
                     const Spacer(),
+                    IconButton(
+                      onPressed: () => setState(() { cart.clear(); _customPrices.clear(); }),
+                      icon: const Icon(Icons.delete_sweep_rounded, color: Colors.red),
+                      tooltip: 'Clear cart',
+                    ),
+                    const SizedBox(width: 8),
                     ElevatedButton(
                       onPressed: _showCheckoutSheet,
                       style: ElevatedButton.styleFrom(
@@ -1206,11 +1218,11 @@ class POSPageState extends State<POSPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
-                      child: Row(
+                      child: const Row(
                         children: [
-                          const Text("Checkout"),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.arrow_forward, size: 16),
+                          Text("Checkout"),
+                          SizedBox(width: 8),
+                          Icon(Icons.arrow_forward, size: 16),
                         ],
                       ),
                     )

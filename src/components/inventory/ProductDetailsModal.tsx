@@ -37,12 +37,12 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
     const isClerk = userRole === 'clerk';
     const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
 
-    if (!product) return null;
-
-    const variant = product.variant || product;
+    const variant = product?.variant || product;
     const prod = variant?.product || product;
     const { data: history, isLoading: isHistoryLoading } = useProductHistory(prod?.id);
     const { data: landedMarkup = 0 } = useLandedMarkup();
+
+    if (!product) return null;
     
     const isLoading = isHistoryLoading;
 
@@ -236,7 +236,7 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {history?.sales.map((item: any) => (
+                                        {history?.sales.filter((item: any) => item.order != null).map((item: any) => (
                                             <TableRow key={item.id}>
                                                 <TableCell className="text-xs text-muted-foreground">
                                                     {new Date(item.order.created_at).toLocaleDateString()}

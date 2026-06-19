@@ -343,31 +343,7 @@ class _CRMPageState extends State<CRMPage> {
                                         if (c['address'] == null && dist == null)
                                           Expanded(child: Text("No location info", style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[400]))),
 
-                                        const SizedBox(width: 8),
-
-                                        // Quick "New Sale" action button
-                                        if (widget.onNavigateToPOSWithCustomer != null)
-                                          GestureDetector(
-                                            onTap: () => widget.onNavigateToPOSWithCustomer!(c),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFFF6600).withOpacity(0.1),
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(color: const Color(0xFFFF6600).withOpacity(0.3)),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  const Icon(Icons.shopping_cart_outlined, size: 13, color: Color(0xFFFF6600)),
-                                                  const SizedBox(width: 4),
-                                                  Text('New Sale', style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFFF6600), fontWeight: FontWeight.w600)),
-                                                ],
-                                              ),
-                                            ),
-                                          )
-                                        else
-                                          const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                                        const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
                                       ],
                                     ),
                                   ],
@@ -379,20 +355,6 @@ class _CRMPageState extends State<CRMPage> {
                       ),
           ),
         ],
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          if (widget.onNavigateToPOSWithCustomer != null && customers.isNotEmpty) {
-            _showCustomerPickerForPOS();
-          } else {
-            widget.onTabChange?.call(1); // Fallback: POS with no customer
-          }
-        },
-        backgroundColor: const Color(0xFFFF6600),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-        icon: const Icon(Icons.add, color: Colors.white, size: 24),
-        label: Text('New Sale', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
   }

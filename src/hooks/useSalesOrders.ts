@@ -246,6 +246,52 @@ export function useDashboardStats() {
   });
 }
 
+export function useClerkDashboardStats(userId?: string) {
+  const today = new Date().toLocaleDateString('en-CA');
+  const last7Days = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA');
+
+  return useQuery({
+    queryKey: ['clerk_dashboard_stats', userId, today],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data: orders } = await supabase
+        .from('sales_orders')
+        .select('id, total_amount, status, created_at, customer:customers(name)')
+        .eq('created_by', userId!)
+        .gte('created_at', last7Days)
+        .order('created_at', { ascending: false });
+
+      const allOrders = orders || [];
+      const todayOrders = allOrders.filter(o => o.created_at.startsWith(today));
+      const myTodaySales = todayOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
+      const myPendingOrders = todayOrders.filter(o => o.status === 'pending').length;
+
+      // Build daily chart data for the last 7 days
+      const dailyMap: Record<string, { sales: number; orders: number }> = {};
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA');
+        dailyMap[d] = { sales: 0, orders: 0 };
+      }
+      allOrders.forEach(o => {
+        const d = o.created_at.split('T')[0];
+        if (dailyMap[d]) {
+          dailyMap[d].sales += Number(o.total_amount);
+          dailyMap[d].orders += 1;
+        }
+      });
+      const chartData = Object.entries(dailyMap).map(([date, v]) => ({ date, ...v }));
+
+      return {
+        myTodaySales,
+        myTodayOrders: todayOrders.length,
+        myPendingOrders,
+        recentOrders: todayOrders.slice(0, 6),
+        chartData,
+      };
+    },
+  });
+}
+
 export function useCreateSalesOrder() {
   const queryClient = useQueryClient();
   const { taxEnabled } = useSettings();

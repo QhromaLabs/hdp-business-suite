@@ -177,7 +177,8 @@ export function useClockIn() {
     mutationFn: async () => {
       if (!employee) throw new Error('Employee record not found');
 
-      const today = new Date().toISOString().split('T')[0];
+      // Use local date (en-CA = YYYY-MM-DD) to match the query in useMyAttendanceToday
+      const today = new Date().toLocaleDateString('en-CA');
       const now = new Date().toISOString();
 
       const { error } = await supabase
@@ -192,8 +193,8 @@ export function useClockIn() {
       if (error) throw error;
     },
     onSuccess: () => {
-      const today = new Date().toISOString().split('T')[0];
-      queryClient.invalidateQueries({ queryKey: ['my_attendance', today] });
+      // Broad prefix invalidation catches the key regardless of employee id
+      queryClient.invalidateQueries({ queryKey: ['my_attendance'] });
       toast.success('Successfully clocked in');
     },
     onError: (error) => {
@@ -210,7 +211,7 @@ export function useClockOut() {
     mutationFn: async () => {
       if (!employee) throw new Error('Employee record not found');
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date().toLocaleDateString('en-CA');
       const now = new Date().toISOString();
 
       const { error } = await supabase
@@ -224,8 +225,7 @@ export function useClockOut() {
       if (error) throw error;
     },
     onSuccess: () => {
-      const today = new Date().toISOString().split('T')[0];
-      queryClient.invalidateQueries({ queryKey: ['my_attendance', today] });
+      queryClient.invalidateQueries({ queryKey: ['my_attendance'] });
       toast.success('Successfully clocked out');
     },
     onError: (error) => {

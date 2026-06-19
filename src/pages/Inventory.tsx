@@ -51,6 +51,7 @@ export default function Inventory() {
   const { data: landedMarkup = 0 } = useLandedMarkup();
 
   const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
+  const isClerk = userRole === 'clerk';
 
   // Realtime Sync for Inventory
   useEffect(() => {
@@ -299,6 +300,9 @@ export default function Inventory() {
                     <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Value</th>
                   </>
                 )}
+                {isClerk && (
+                  <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Selling Price</th>
+                )}
                 <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Stock</th>
                 <th className="text-right py-4 px-6 text-sm text-muted-foreground font-normal">Actions</th>
               </tr>
@@ -404,6 +408,11 @@ export default function Inventory() {
                           </span>
                         </td>
                       </>
+                    )}
+                    {isClerk && (
+                      <td className="py-4 px-6 text-right">
+                        <span className="text-foreground font-medium">{formatCurrency(price)}</span>
+                      </td>
                     )}
                     <td className="py-4 px-6 text-right">
                       <span className={cn(

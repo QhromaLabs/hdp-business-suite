@@ -6,7 +6,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Assuming shadcn Tabs component exists or using basic buttons
-import { User, Phone, Mail, MapPin, CreditCard, Calendar, Building, History, AlertCircle, Plus, Minus, DollarSign, Activity } from 'lucide-react';
+import { User, Phone, Mail, MapPin, CreditCard, Calendar, Building, History, AlertCircle, Plus, Minus, DollarSign, Activity, Loader2, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { useCustomerHistory } from '@/hooks/useCustomerHistory';
 import { useCustomer } from '@/hooks/useCustomers';

@@ -195,6 +195,14 @@ class _MainScreenState extends State<MainScreen> {
           const Spacer(),
           const Divider(),
           ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: Text('Settings', style: GoogleFonts.inter()),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).pushNamed('/settings');
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: Text('Logout', style: GoogleFonts.inter(color: Colors.red)),
             onTap: () async {

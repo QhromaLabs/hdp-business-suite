@@ -45,24 +45,25 @@ const navGroups: NavGroup[] = [
     name: "Overview",
     items: [
       { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-      { label: 'Reports', icon: BarChart3, path: '/reports' },
+      { label: 'Reports', icon: BarChart3, path: '/reports', roles: ['admin', 'manager', 'sales_rep'] },
     ]
   },
   {
     name: "Sales & Orders",
     items: [
-      { label: 'Point of Sale', icon: ShoppingCart, path: '/pos' },
-      { label: 'All Orders', icon: ClipboardList, path: '/orders' },
-      { label: 'Customers', icon: Users, path: '/customers' },
-      { label: 'Field Sales', icon: MapPin, path: '/field-sales' },
-      { label: 'Deliveries', icon: Truck, path: '/deliveries' },
+      { label: 'Point of Sale', icon: ShoppingCart, path: '/pos', roles: ['admin', 'manager', 'sales_rep', 'clerk'] },
+      { label: 'All Orders', icon: ClipboardList, path: '/orders', roles: ['admin', 'manager', 'sales_rep'] },
+      { label: 'My Orders', icon: ClipboardList, path: '/orders', roles: ['clerk'] },
+      { label: 'Customers', icon: Users, path: '/customers', roles: ['admin', 'manager', 'sales_rep', 'clerk'] },
+      { label: 'Field Sales', icon: MapPin, path: '/field-sales', roles: ['admin', 'manager', 'sales_rep'] },
+      { label: 'Deliveries', icon: Truck, path: '/deliveries', roles: ['admin', 'manager', 'sales_rep'] },
     ]
   },
   {
     name: "Inventory & Production",
     items: [
-      { label: 'Inventory', icon: Package, path: '/inventory' },
-      { label: 'Categories', icon: Folder, path: '/categories' },
+      { label: 'Inventory', icon: Package, path: '/inventory', roles: ['admin', 'manager', 'sales_rep', 'clerk'] },
+      { label: 'Categories', icon: Folder, path: '/categories', roles: ['admin', 'manager'] },
       { label: 'Purchases', icon: ShoppingBag, path: '/purchases', roles: ['admin', 'manager'] },
       { label: 'Manufacturing', icon: Factory, path: '/manufacturing', roles: ['admin', 'manager'] },
     ]
@@ -70,10 +71,10 @@ const navGroups: NavGroup[] = [
   {
     name: "Finance & HR",
     items: [
-      { label: 'Accounting', icon: Calculator, path: '/accounting', roles: ['admin', 'manager', 'clerk'] },
+      { label: 'Accounting', icon: Calculator, path: '/accounting', roles: ['admin', 'manager'] },
       { label: 'Employees', icon: Users, path: '/hr', roles: ['admin', 'manager'] },
       { label: 'Payroll', icon: Wallet, path: '/payroll', roles: ['admin', 'manager'] },
-      { label: 'Commissions', icon: Banknote, path: '/commissions' },
+      { label: 'Commissions', icon: Banknote, path: '/commissions', roles: ['admin', 'manager', 'sales_rep'] },
     ]
   },
   {
