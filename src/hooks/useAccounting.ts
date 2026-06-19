@@ -297,7 +297,7 @@ export function useFinancialSummary(dateRange?: DateRange) {
       ] = await Promise.all([
         fetchAllPages(supabase.from('payments').select('amount, created_at, payment_method, order_id').gte('created_at', fromDate).lte('created_at', toDate)),
         fetchAllPages(supabase.from('sales_orders').select('id, total_amount, created_at, status, payment_method').gte('created_at', fromDate).lte('created_at', toDate)),
-        fetchAllPages(supabase.from('expenses').select('amount, category, is_manufacturing_cost, expense_date').gte('expense_date', fromDate).lte('expense_date', toDate)),
+        fetchAllPages(supabase.from('expenses').select('id, amount, category, description, is_manufacturing_cost, expense_date, reference_number').gte('expense_date', fromDate).lte('expense_date', toDate).order('expense_date', { ascending: false })),
         fetchAllPages(supabase.from('payroll').select('net_salary, status, paid_at, created_at, employee:employees(full_name)')),
         fetchAllPages(supabase.from('bank_accounts').select('current_balance').eq('is_active', true)),
         fetchAllPages(supabase.from('customers').select('credit_balance')),

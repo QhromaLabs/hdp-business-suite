@@ -143,7 +143,7 @@ export default function Accounting() {
         .channel(`realtime_${table}`)
         .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
           // Invalidate ALL accounting related queries on any change
-          queryClient.invalidateQueries({ queryKey: ['financial_summary_v3'] });
+          queryClient.invalidateQueries({ queryKey: ['financial_summary_v2'] });
           queryClient.invalidateQueries({ queryKey: ['expenses'] });
           queryClient.invalidateQueries({ queryKey: ['expenses_by_category'] });
           queryClient.invalidateQueries({ queryKey: ['payments'] });
