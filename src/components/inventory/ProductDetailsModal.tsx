@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
     Dialog,
     DialogContent,
@@ -5,6 +6,7 @@ import {
     DialogTitle,
     DialogDescription,
 } from "@/components/ui/dialog";
+import PurchaseOrderDetailsModal from '@/pages/PurchaseOrderDetailsModal';
 import {
     Tabs,
     TabsContent,
@@ -25,6 +27,8 @@ import { useProductHistory } from '@/hooks/useProducts';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLandedMarkup } from '@/hooks/useAccounting';
 import { cn } from "@/lib/utils";
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ProductDetailsModalProps {
     isOpen: boolean;
@@ -37,23 +41,141 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
     const isClerk = userRole === 'clerk';
     const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
 
+    const [selectedPO, setSelectedPO] = useState<any>(null);
+    const [isPOModalOpen, setIsPOModalOpen] = useState(false);
+    const [loadingPO, setLoadingPO] = useState<string | null>(null);
+
+    const handlePOClick = async (poId: string) => {
+        setLoadingPO(poId);
+        try {
+            const { data, error } = await supabase
+                .from('purchase_orders')
+                .select('*, creditor:creditors(name)')
+                .eq('id', poId)
+                .single();
+
+            if (error) throw error;
+            setSelectedPO(data);
+            setIsPOModalOpen(true);
+        } catch (err) {
+            console.error('Error fetching purchase order:', err);
+        } finally {
+            setLoadingPO(null);
+        }
+    };
+
     const variant = product?.variant || product;
     const prod = variant?.product || product;
     const { data: history, isLoading: isHistoryLoading } = useProductHistory(prod?.id);
-    const { data: landedMarkup = 0 } = useLandedMarkup();
+
+    const { data: batchDetails } = useQuery({
+        queryKey: ['variant_batch_details', variant?.id],
+        queryFn: async () => {
+            if (!variant?.id) return null;
+            // 1. Try to find the latest batch linked to a Purchase Order
+            const { data: batches, error } = await supabase
+                .from('inventory_batches')
+                .select(`
+                    landed_cost_per_unit,
+                    purchase_order_id,
+                    purchase_orders (
+                        order_number
+                    )
+                `)
+                .eq('variant_id', variant.id)
+                .not('purchase_order_id', 'is', null)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (error) return null;
+
+            let latestBatch = null;
+            if (batches && batches.length > 0) {
+                latestBatch = batches[0];
+            } else {
+                // 2. Fallback to any latest batch (e.g. manual adjustments, manufactured, or correcting batches)
+                const { data: fallbackBatches } = await supabase
+                    .from('inventory_batches')
+                    .select(`
+                        landed_cost_per_unit,
+                        purchase_order_id
+                    `)
+                    .eq('variant_id', variant.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                
+                if (fallbackBatches && fallbackBatches.length > 0) {
+                    latestBatch = fallbackBatches[0];
+                }
+            }
+
+            if (!latestBatch) return null;
+
+            if (latestBatch.purchase_order_id) {
+                const { data: poItems } = await supabase
+                    .from('purchase_order_items')
+                    .select('unit_cost')
+                    .eq('purchase_order_id', latestBatch.purchase_order_id)
+                    .eq('variant_id', variant.id)
+                    .limit(1);
+
+                if (poItems && poItems.length > 0) {
+                    const factoryCost = Number(poItems[0].unit_cost);
+                    const landedCost = Number(latestBatch.landed_cost_per_unit);
+                    return {
+                        purchaseOrderId: latestBatch.purchase_order_id,
+                        factoryCost,
+                        landedCost,
+                        freightAllocated: landedCost - factoryCost,
+                        orderNumber: (latestBatch.purchase_orders as any)?.order_number
+                    };
+                }
+            }
+
+            const costVal = Number(latestBatch.landed_cost_per_unit);
+            return {
+                factoryCost: costVal,
+                landedCost: costVal,
+                freightAllocated: 0,
+                orderNumber: null
+            };
+        },
+        enabled: !!variant?.id && isOpen
+    });
 
     if (!product) return null;
     
     const isLoading = isHistoryLoading;
+
+    const factoryCost = batchDetails ? batchDetails.factoryCost : (variant?.cost_price || prod?.cost_price || 0);
+    const freightCost = batchDetails ? batchDetails.freightAllocated : 0;
+    const landedCost = batchDetails ? batchDetails.landedCost : (variant?.cost_price || prod?.cost_price || 0);
 
     const details = [
         { label: 'Category', value: prod?.category?.name || 'Uncategorized', icon: Tag },
         { label: 'SKU', value: variant?.sku, icon: Package },
         { label: 'Barcode', value: variant?.barcode || 'N/A', icon: Barcode },
         ...(isAdminOrManager ? [
-            { label: 'Factory Cost Price', value: `KES ${variant?.cost_price || prod?.cost_price || 0}`, icon: Wallet },
-            { label: 'Landed Markup (Freight/Customs)', value: `KES ${landedMarkup.toFixed(2)}`, icon: ArrowUpRight },
-            { label: 'Total Landed Cost', value: `KES ${((variant?.cost_price || prod?.cost_price || 0) + landedMarkup).toFixed(2)}`, icon: Wallet },
+            { label: 'Factory Cost Price', value: `KES ${factoryCost.toFixed(2)}`, icon: Wallet },
+            { 
+                label: 'Allocated Freight / Landed Markup', 
+                value: (
+                    <span className="flex flex-wrap items-center gap-1">
+                        KES {freightCost.toFixed(2)}
+                        {batchDetails?.orderNumber && batchDetails?.purchaseOrderId && (
+                            <button
+                                onClick={() => handlePOClick(batchDetails.purchaseOrderId)}
+                                disabled={!!loadingPO}
+                                className="text-xs text-primary hover:underline font-semibold ml-1 cursor-pointer transition-colors disabled:opacity-50"
+                            >
+                                {loadingPO === batchDetails.purchaseOrderId ? '(Loading...)' : `(from PO #${batchDetails.orderNumber})`}
+                            </button>
+                        )}
+                    </span>
+                ), 
+                icon: ArrowUpRight 
+            },
+            { label: 'Total Landed Cost', value: `KES ${landedCost.toFixed(2)}`, icon: Wallet },
             { label: 'Selling Price', value: `KES ${variant?.price || prod?.base_price || 0}`, icon: Wallet },
         ] : []),
         { label: 'Current Stock', value: product.quantity ?? 'N/A', icon: Package },
@@ -268,6 +390,14 @@ export function ProductDetailsModal({ isOpen, onClose, product }: ProductDetails
                     </TabsContent>
                 </Tabs>
             </DialogContent>
+            {selectedPO && (
+                <PurchaseOrderDetailsModal
+                    open={isPOModalOpen}
+                    order={selectedPO}
+                    onClose={() => setIsPOModalOpen(false)}
+                    onUpdate={() => {}}
+                />
+            )}
         </Dialog>
     );
 }

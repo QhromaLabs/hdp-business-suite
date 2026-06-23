@@ -168,29 +168,19 @@ export function useDashboardStats() {
         ] = await Promise.all([
           supabase
             .from('sales_order_items')
-            .select('quantity, variant:product_variants(cost_price)')
+            .select('quantity, landed_cost_at_sale, variant:product_variants(cost_price)')
             .in('order_id', todayOrderIds),
-          supabase.from('expenses').select('amount, category, description'),
-          supabase.from('inventory_transactions').select('quantity_change').gt('quantity_change', 0)
+          Promise.resolve({ data: [] }),
+          Promise.resolve({ data: [] })
         ]);
-
-        // Calculate landed markup per item (same logic as useAccounting)
-        const totalAllTimeFreight = allExpenses?.filter(e => 
-          e.category?.toLowerCase() === 'shipping' || 
-          e.category?.toLowerCase() === 'freight' || 
-          e.description?.toLowerCase().includes('freight')
-        ).reduce((sum, e) => sum + Number(e.amount), 0) || 0;
-
-        const totalReceivedItems = allTxns?.reduce((sum, t) => sum + Number(t.quantity_change), 0) || 1;
-        const landedMarkupPerItem = totalAllTimeFreight / totalReceivedItems;
 
         todayCOGS = items?.reduce((sum: number, item: any) => {
           const rawCost = Array.isArray(item.variant)
             ? Number(item.variant[0]?.cost_price || 0)
             : Number(item.variant?.cost_price || 0);
             
-          // If the item has a valid cost, add the landed markup to get true cost
-          const finalCost = rawCost > 0 ? (rawCost + landedMarkupPerItem) : 0;
+          const landedCost = Number(item.landed_cost_at_sale || 0);
+          const finalCost = landedCost > 0 ? landedCost : rawCost;
           return sum + (finalCost * item.quantity);
         }, 0) || 0;
       }

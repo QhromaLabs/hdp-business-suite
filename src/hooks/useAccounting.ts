@@ -71,13 +71,7 @@ export function useLandedMarkup() {
   return useQuery({
     queryKey: ['landed_markup'],
     queryFn: async () => {
-      const [{ data: allTimeFreight }, { data: allTimePurchaseItems }] = await Promise.all([
-        supabase.from('expenses').select('amount').in('category', ['Shipping Freight Charges', 'Shipping Handling Costs', 'Custom Taxes']),
-        supabase.from('purchase_order_items').select('quantity')
-      ]);
-      const totalAllTimeFreight = allTimeFreight?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
-      const totalAllTimeItemsProcured = allTimePurchaseItems?.reduce((sum, p) => sum + Number(p.quantity), 0) || 0;
-      return totalAllTimeItemsProcured > 0 ? (totalAllTimeFreight / totalAllTimeItemsProcured) : 0;
+      return 0; // Freight is now dynamically allocated per PO batch in the database
     }
   });
 }
@@ -316,9 +310,9 @@ export function useFinancialSummary(dateRange?: DateRange) {
         fetchAllPages(supabase.from('inventory_transactions').select('variant_id, quantity_change, created_at').gt('created_at', fromDate)),
         fetchAllPages(supabase.from('bank_transactions').select('id, transaction_type, amount, transaction_date, description').gte('transaction_date', fromDate).lte('transaction_date', toDate)),
         fetchAllPages(supabase.from('purchase_orders').select('total_amount, status').in('status', ['completed', 'delivered', 'received']).gte('created_at', fromDate).lte('created_at', toDate)),
-        fetchAllPages(supabase.from('sales_order_items').select('order_id, quantity, product_variants(cost_price)').gte('created_at', fromDate).lte('created_at', toDate)),
-        fetchAllPages(supabase.from('expenses').select('amount').in('category', ['Shipping Freight Charges', 'Shipping Handling Costs', 'Custom Taxes'])),
-        fetchAllPages(supabase.from('purchase_order_items').select('quantity')),
+        fetchAllPages(supabase.from('sales_order_items').select('order_id, quantity, landed_cost_at_sale, product_variants(cost_price)').gte('created_at', fromDate).lte('created_at', toDate)),
+        Promise.resolve({ data: [] }),
+        Promise.resolve({ data: [] }),
         fetchAllPages(supabase.from('creditor_transactions').select('*').gte('created_at', fromDate).lte('created_at', toDate))
       ]);
 
@@ -344,9 +338,7 @@ export function useFinancialSummary(dateRange?: DateRange) {
         .reduce((sum, o) => sum + Number(o.total_amount), 0);
 
       // --- Calculate Landed Cost Markup ---
-      const totalAllTimeFreight = allTimeFreight?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
-      const totalAllTimeItemsProcured = allTimePurchaseItems?.reduce((sum, p) => sum + Number(p.quantity), 0) || 0;
-      const landedMarkupPerItem = totalAllTimeItemsProcured > 0 ? (totalAllTimeFreight / totalAllTimeItemsProcured) : 0;
+      const landedMarkupPerItem = 0; // Freight is now dynamically allocated per PO batch in the database
 
       // --- Helper: Stock Value Calculator ---
       // Map Current Stock state
@@ -388,16 +380,15 @@ export function useFinancialSummary(dateRange?: DateRange) {
           }
         });
 
-        // Calculate Value with Landed Cost
+        // Calculate Value with Landed Cost (stat.cost is already the variant's landed cost from the PO batch)
         let totalValue = 0;
         for (const stat of historicalSnapshot.values()) {
-          const effectiveCostPrice = stat.cost + landedMarkupPerItem;
+          const effectiveCostPrice = stat.cost;
           totalValue += (stat.qty * effectiveCostPrice);
         }
 
-        // Add Raw Materials (Assuming they are constant for now or need their own transaction table)
-        // For now, we take current raw material value as proxy if no history available
-        const rawMatValue = rawMaterials?.reduce((sum, m) => sum + (m.quantity_in_stock * (m.unit_cost + landedMarkupPerItem)), 0) || 0;
+        // Add Raw Materials
+        const rawMatValue = rawMaterials?.reduce((sum, m) => sum + (m.quantity_in_stock * m.unit_cost), 0) || 0;
 
         return totalValue + rawMatValue;
       };
@@ -446,10 +437,12 @@ export function useFinancialSummary(dateRange?: DateRange) {
           ? Number(item.product_variants[0]?.cost_price || 0) 
           : Number((item.product_variants as any)?.cost_price || 0);
         
-        pureSupplierCOGS += item.quantity * costPrice;
-        totalLandedMarkupCOGS += item.quantity * landedMarkupPerItem;
+        const landedCost = Number(item.landed_cost_at_sale || 0);
+        const effectiveCostPrice = landedCost > 0 ? landedCost : costPrice;
 
-        const effectiveCostPrice = costPrice + landedMarkupPerItem;
+        pureSupplierCOGS += item.quantity * costPrice;
+        totalLandedMarkupCOGS += item.quantity * (effectiveCostPrice - costPrice);
+
         return sum + (item.quantity * effectiveCostPrice);
       }, 0) || 0;
 

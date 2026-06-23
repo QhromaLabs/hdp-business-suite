@@ -273,7 +273,20 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
 
                 if (transError) throw transError;
 
-                // C. Update Product Cost Price
+                // C. Create Inventory Batch for Landed Cost Tracking
+                const { error: batchError } = await supabase
+                    .from('inventory_batches')
+                    .insert([{
+                        variant_id: item.variant_id,
+                        purchase_order_id: order.id,
+                        initial_quantity: item.quantity,
+                        quantity_remaining: item.quantity,
+                        landed_cost_per_unit: newUnitCost
+                    }]);
+
+                if (batchError) throw batchError;
+
+                // D. Update Product Cost Price
                 const { error: varError } = await supabase
                     .from('product_variants')
                     .update({ cost_price: newUnitCost })
