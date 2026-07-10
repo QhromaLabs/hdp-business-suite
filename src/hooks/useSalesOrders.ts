@@ -193,12 +193,12 @@ export function useDashboardStats() {
 
       const todayExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
 
-      // 5. Calculate Net Profit (Gross Revenue - COGS - Expenses)
+      // 5. Calculate Gross Sales Profit (Gross Revenue - COGS)
       // Note: Using total_amount (Revenue) might include tax. Ideally we use subtotal for Gross Profit.
       // Let's use Subtotal if available, else Total. 
-      // Profit = (Sum of Subtotals) - COGS - Expenses
+      // Profit = (Sum of Subtotals) - COGS
       const todayRevenue = todaySalesOrders.reduce((sum, o) => sum + Number(o.subtotal || o.total_amount), 0);
-      const todayProfit = todayRevenue - todayCOGS - todayExpenses;
+      const todayProfit = todayRevenue - todayCOGS;
 
       // 6. Process historical chart data
       const dailyTotals: { [key: string]: number } = {};
@@ -660,6 +660,7 @@ export function useOrderItems(orderId: string) {
             sku,
             variant_name,
             weight,
+            cost_price,
             product:products (
               name
             )

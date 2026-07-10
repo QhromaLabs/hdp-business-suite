@@ -281,7 +281,8 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
                         purchase_order_id: order.id,
                         initial_quantity: item.quantity,
                         quantity_remaining: item.quantity,
-                        landed_cost_per_unit: newUnitCost
+                        landed_cost_per_unit: newUnitCost,
+                        factory_cost_per_unit: item.unit_cost
                     }]);
 
                 if (batchError) throw batchError;

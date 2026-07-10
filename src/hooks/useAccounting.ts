@@ -310,7 +310,7 @@ export function useFinancialSummary(dateRange?: DateRange) {
         fetchAllPages(supabase.from('inventory_transactions').select('variant_id, quantity_change, created_at').gt('created_at', fromDate)),
         fetchAllPages(supabase.from('bank_transactions').select('id, transaction_type, amount, transaction_date, description').gte('transaction_date', fromDate).lte('transaction_date', toDate)),
         fetchAllPages(supabase.from('purchase_orders').select('total_amount, status').in('status', ['completed', 'delivered', 'received']).gte('created_at', fromDate).lte('created_at', toDate)),
-        fetchAllPages(supabase.from('sales_order_items').select('order_id, quantity, landed_cost_at_sale, product_variants(cost_price)').gte('created_at', fromDate).lte('created_at', toDate)),
+        fetchAllPages(supabase.from('sales_order_items').select('order_id, quantity, landed_cost_at_sale, factory_cost_at_sale, product_variants(cost_price)').gte('created_at', fromDate).lte('created_at', toDate)),
         Promise.resolve({ data: [] }),
         Promise.resolve({ data: [] }),
         fetchAllPages(supabase.from('creditor_transactions').select('*').gte('created_at', fromDate).lte('created_at', toDate))
@@ -384,7 +384,8 @@ export function useFinancialSummary(dateRange?: DateRange) {
         let totalValue = 0;
         for (const stat of historicalSnapshot.values()) {
           const effectiveCostPrice = stat.cost;
-          totalValue += (stat.qty * effectiveCostPrice);
+          const qty = Math.max(0, stat.qty); // Clamp to 0 to prevent negative values from data discrepancies or partial history
+          totalValue += (qty * effectiveCostPrice);
         }
 
         // Add Raw Materials
@@ -440,8 +441,11 @@ export function useFinancialSummary(dateRange?: DateRange) {
         const landedCost = Number(item.landed_cost_at_sale || 0);
         const effectiveCostPrice = landedCost > 0 ? landedCost : costPrice;
 
-        pureSupplierCOGS += item.quantity * costPrice;
-        totalLandedMarkupCOGS += item.quantity * (effectiveCostPrice - costPrice);
+        const factoryCost = Number(item.factory_cost_at_sale || 0);
+        const effectiveFactoryCost = factoryCost > 0 ? factoryCost : costPrice;
+
+        pureSupplierCOGS += item.quantity * effectiveFactoryCost;
+        totalLandedMarkupCOGS += item.quantity * (effectiveCostPrice - effectiveFactoryCost);
 
         return sum + (item.quantity * effectiveCostPrice);
       }, 0) || 0;

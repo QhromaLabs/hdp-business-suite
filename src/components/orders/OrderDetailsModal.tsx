@@ -23,7 +23,8 @@ import {
     MapPin,
     Activity,
     Globe,
-    ShoppingBag
+    ShoppingBag,
+    TrendingUp
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DispatchOrderModal } from './DispatchOrderModal';
@@ -32,6 +33,7 @@ import { ReceiptContent } from '../printing/Receipt';
 import { createRoot } from 'react-dom/client';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface OrderDetailsModalProps {
     order: SalesOrder;
@@ -79,12 +81,20 @@ export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
     };
     const handleCancel = () => updateStatus.mutate({ id: order.id, status: 'cancelled' });
 
+    const { userRole } = useAuth();
     const { taxEnabled, taxRate } = useSettings();
     const subtotalAmount = Number(order.subtotal) || 0;
     const discountAmount = Number(order.discount_amount) || 0;
     const totals = calculateTotals(subtotalAmount, discountAmount, taxEnabled);
     const displayedTax = taxEnabled ? Number(order.tax_amount) || totals.tax : totals.tax;
     const displayedTotal = taxEnabled ? Number(order.total_amount) || totals.total : totals.total;
+
+    const orderProfit = items.reduce((sum, item) => {
+        const itemPrice = Number(item.total_price) || 0;
+        const landedCost = Number(item.landed_cost_at_sale || item.variant?.cost_price || 0);
+        const itemCost = (item.quantity || 0) * landedCost;
+        return sum + (itemPrice - itemCost);
+    }, 0);
 
     const handleThermalPrint = () => {
         const printWindow = window.open('', '', 'width=400,height=600');
@@ -489,6 +499,36 @@ export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
                                 <span className="font-black text-primary">{formatCurrency(displayedTotal)}</span>
                             </div>
                         </div>
+                        {userRole === 'admin' && (
+                            <div className="w-full max-w-[240px] mt-4 p-3.5 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-800/30 rounded-2xl text-xs space-y-2 text-emerald-800 dark:text-emerald-400">
+                                <div className="font-bold flex items-center gap-1.5 text-emerald-900 dark:text-emerald-300">
+                                    <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500" />
+                                    Profit Analysis (Admin)
+                                </div>
+                                <div className="space-y-1 font-mono pt-1">
+                                    <div className="flex justify-between">
+                                        <span>Revenue:</span>
+                                        <span>{formatCurrency(displayedTotal)}</span>
+                                    </div>
+                                    <div className="flex flex-col text-destructive/80 dark:text-red-400/80">
+                                        <div className="flex justify-between">
+                                            <span>Landed Cost:</span>
+                                            <span>-{formatCurrency(items.reduce((sum, item) => sum + (item.quantity * Number(item.landed_cost_at_sale || item.variant?.cost_price || 0)), 0))}</span>
+                                        </div>
+                                        <div className="text-[10px] text-right opacity-80 mt-0.5 font-sans">
+                                            [{items.map(item => `${item.quantity} × ${formatCurrency(Number(item.landed_cost_at_sale || item.variant?.cost_price || 0))}`).join(' + ')}]
+                                        </div>
+                                    </div>
+                                    <div className="pt-1.5 border-t border-emerald-200/40 dark:border-emerald-800/20 flex justify-between font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                                        <span>Net Profit:</span>
+                                        <span>{formatCurrency(orderProfit)}</span>
+                                    </div>
+                                </div>
+                                <div className="text-[10px] text-emerald-700/70 dark:text-emerald-400/60 italic leading-relaxed pt-1">
+                                    Formula: Revenue - Landed Cost (Buying Price + Freight/Tax)
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
