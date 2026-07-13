@@ -46,6 +46,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { CardGridSkeleton, PageHeaderSkeleton, StatsSkeleton, TableSkeleton } from '@/components/loading/PageSkeletons';
 import TransactionLedgerModal from '@/components/accounting/TransactionLedgerModal';
+import GeneralLedgerPanel from '@/components/accounting/GeneralLedgerPanel';
 import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 
 const formatCurrency = (amount: number) => {
@@ -476,10 +477,11 @@ export default function Accounting() {
         </div>
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="bg-card/50 backdrop-blur-md border border-border/50 p-1 rounded-xl h-12 w-full max-w-md grid grid-cols-3 mb-6">
+          <TabsList className="bg-card/50 backdrop-blur-md border border-border/50 p-1 rounded-xl h-12 w-full max-w-lg grid grid-cols-4 mb-6">
             <TabsTrigger value="overview" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-semibold h-9">Overview</TabsTrigger>
             <TabsTrigger value="balance_sheet" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-semibold h-9">Balance Sheet</TabsTrigger>
             <TabsTrigger value="expenses" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-semibold h-9">Expenses & Ledger</TabsTrigger>
+            <TabsTrigger value="general_ledger" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-semibold h-9">General Ledger</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-8 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-700">
@@ -1530,6 +1532,10 @@ export default function Accounting() {
                 </div>
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="general_ledger" className="space-y-6 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
+            <GeneralLedgerPanel />
           </TabsContent>
 
           <TabsContent value="overview" className="space-y-6 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
