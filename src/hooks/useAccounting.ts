@@ -287,7 +287,8 @@ export function useFinancialSummary(dateRange?: DateRange) {
         { data: salesOrderItems },
         { data: allTimeFreight },
         { data: allTimePurchaseItems },
-        { data: creditorTx }
+        { data: creditorTx },
+        { data: inventoryBatches }
       ] = await Promise.all([
         fetchAllPages(supabase.from('payments').select('amount, created_at, payment_method, order_id').gte('created_at', fromDate).lte('created_at', toDate)),
         fetchAllPages(supabase.from('sales_orders').select('id, total_amount, created_at, status, payment_method').gte('created_at', fromDate).lte('created_at', toDate)),
@@ -296,7 +297,7 @@ export function useFinancialSummary(dateRange?: DateRange) {
         fetchAllPages(supabase.from('bank_accounts').select('current_balance').eq('is_active', true)),
         fetchAllPages(supabase.from('customers').select('credit_balance')),
         fetchAllPages(supabase.from('creditors').select('name, outstanding_balance')),
-        fetchAllPages(supabase.from('machines').select('purchase_cost')),
+        fetchAllPages(supabase.from('machines').select('purchase_cost, accumulated_depreciation')),
         fetchAllPages(supabase.from('inventory').select('id, variant_id, quantity, variant:product_variants(cost_price)')),
         fetchAllPages(supabase.from('raw_materials').select('quantity_in_stock, unit_cost')),
         fetchAllPages(supabase.from('production_runs').select('production_cost, start_date').gte('start_date', fromDate).lte('start_date', toDate)),
@@ -313,22 +314,26 @@ export function useFinancialSummary(dateRange?: DateRange) {
         fetchAllPages(supabase.from('sales_order_items').select('order_id, quantity, landed_cost_at_sale, factory_cost_at_sale, product_variants(cost_price)').gte('created_at', fromDate).lte('created_at', toDate)),
         Promise.resolve({ data: [] }),
         Promise.resolve({ data: [] }),
-        fetchAllPages(supabase.from('creditor_transactions').select('*').gte('created_at', fromDate).lte('created_at', toDate))
+        fetchAllPages(supabase.from('creditor_transactions').select('*').gte('created_at', fromDate).lte('created_at', toDate)),
+        fetchAllPages(supabase.from('inventory_batches').select('quantity_remaining, landed_cost_per_unit'))
       ]);
 
       // --- Revenue ---
-      // Accrual Revenue (Completed/Delivered Orders)
-      const validOrders = salesOrders?.filter(o => 
-        o.status === 'delivered' || o.status === 'completed' || o.status === 'approved' || o.status === 'in_transit' || o.status === 'ready_for_pickup' || o.status === 'dispatched'
+      // Recognized at delivery, matching the general ledger: only delivered/completed
+      // orders count as revenue. In-flight orders are pipeline, not income.
+      const validOrders = salesOrders?.filter(o =>
+        o.status === 'delivered' || o.status === 'completed'
       ) || [];
       const revenue = validOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
 
       // --- Order Pipeline ---
+      const inProgressOrders = salesOrders?.filter(o => ['approved', 'dispatched', 'in_transit', 'ready_for_pickup'].includes(o.status)) || [];
       const orderPipeline = {
         pending: salesOrders?.filter(o => o.status === 'pending').length || 0,
-        in_progress: salesOrders?.filter(o => ['approved', 'dispatched', 'in_transit', 'ready_for_pickup'].includes(o.status)).length || 0,
-        completed: salesOrders?.filter(o => ['delivered', 'completed'].includes(o.status)).length || 0,
+        in_progress: inProgressOrders.length,
+        completed: validOrders.length,
         total_value_pending: salesOrders?.filter(o => o.status === 'pending').reduce((sum, o) => sum + Number(o.total_amount), 0) || 0,
+        total_value_in_progress: inProgressOrders.reduce((sum, o) => sum + Number(o.total_amount), 0),
         total_value_completed: revenue
       };
 
@@ -485,8 +490,16 @@ export function useFinancialSummary(dateRange?: DateRange) {
       // --- Manufacturing Spend Breakdown ---
       // Materials: raw material value consumed (current stock value is a proxy for total materials)
       const rawMaterialsValue = rawMaterials?.reduce((sum, m) => sum + (m.quantity_in_stock * m.unit_cost), 0) || 0;
-      // Equipment: machines purchase cost (fixed assets allocated to manufacturing)
+      // Equipment: machines at gross purchase cost (manufacturing spend view)
       const equipmentCost = machines?.reduce((sum, m) => sum + Number(m.purchase_cost), 0) || 0;
+      // Net book value for the balance sheet: purchase cost less accumulated depreciation
+      const equipmentNetBookValue = machines?.reduce(
+        (sum, m) => sum + Number(m.purchase_cost) - Number((m as any).accumulated_depreciation || 0), 0
+      ) || 0;
+      // Finished goods at FIFO landed cost, straight from the live inventory batches
+      const finishedGoodsValue = inventoryBatches?.reduce(
+        (sum, b) => sum + Number(b.quantity_remaining) * Number(b.landed_cost_per_unit), 0
+      ) || 0;
       // Production: total production run costs in period
       const productionRunCost = productionBatches?.reduce((sum, b) => sum + Number(b.production_cost), 0) || 0;
       // Manufacturing expenses from expense table
@@ -534,12 +547,13 @@ export function useFinancialSummary(dateRange?: DateRange) {
       const cashBalance = accounts?.reduce((sum, a) => sum + Number(a.current_balance), 0) || 0;
       const totalReceivables = receivables?.reduce((sum, c) => sum + Number(c.credit_balance), 0) || 0;
       const currentStockValue = calculateStockValueAt(new Date().toISOString()); // Current
-      const fixedAssets = equipmentCost;
+      const fixedAssets = equipmentNetBookValue;
 
-      const totalAssets = cashBalance + totalReceivables + currentStockValue + fixedAssets;
+      const totalAssets = cashBalance + totalReceivables + finishedGoodsValue + rawMaterialsValue + fixedAssets;
 
-      // Liabilities (Take absolute value of payables since debt is sometimes stored as negative)
-      const totalPayables = payables?.reduce((sum, c) => sum + Math.abs(Number(c.outstanding_balance)), 0) || 0;
+      // Liabilities: only positive balances are debt; a negative outstanding_balance
+      // means the supplier was overpaid (an asset, not a liability).
+      const totalPayables = payables?.reduce((sum, c) => sum + Math.max(0, Number(c.outstanding_balance)), 0) || 0;
       
       // Filter pending payroll to only include payroll generated within the selected period
       const pendingPayrollList = payroll?.filter(p => {
@@ -662,6 +676,9 @@ export function useFinancialSummary(dateRange?: DateRange) {
           receivables: totalReceivables,
           stock: currentStockValue,
           fixed_assets: fixedAssets,
+          inventory: finishedGoodsValue,
+          rawMaterials: rawMaterialsValue,
+          equipment: equipmentNetBookValue,
           total: totalAssets
         },
         liabilities: {
@@ -784,7 +801,7 @@ export function useRecordExpense() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      queryClient.invalidateQueries({ queryKey: ['financial_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['financial_summary_v2'] });
       queryClient.invalidateQueries({ queryKey: ['expenses_by_category'] });
     },
   });
@@ -809,7 +826,7 @@ export function useDeleteExpense() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      queryClient.invalidateQueries({ queryKey: ['financial_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['financial_summary_v2'] });
       queryClient.invalidateQueries({ queryKey: ['expenses_by_category'] });
     },
   });

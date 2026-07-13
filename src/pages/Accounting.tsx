@@ -36,6 +36,7 @@ import {
   useRecordExpense,
   useDeleteExpense,
 } from '@/hooks/useAccounting';
+import { useBalanceSheetGL, useInvalidateGL } from '@/hooks/useGeneralLedger';
 // import { usePayrollEntries } from '@/hooks/useEmployees';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -111,6 +112,8 @@ export default function Accounting() {
   const queryDateRange = dateRange ? { from: dateRange.from!, to: dateRange.to! } : undefined;
   const { userRole } = useAuth();
   const { data: financialSummary, isLoading: summaryLoading } = useFinancialSummary(queryDateRange);
+  const { data: glBalanceSheet } = useBalanceSheetGL();
+  const invalidateGL = useInvalidateGL();
   const expenseCategories = financialSummary?.expenseCategories || [];
   const transactions = financialSummary?.bankTransactionsList || [];
   const bankAccounts = financialSummary?.bankAccountsList || [];
@@ -151,6 +154,7 @@ export default function Accounting() {
           queryClient.invalidateQueries({ queryKey: ['creditor_transactions'] });
           queryClient.invalidateQueries({ queryKey: ['payroll'] });
           queryClient.invalidateQueries({ queryKey: ['production_batches'] });
+          invalidateGL(); // journal entries post via DB triggers on these same tables
         })
         .subscribe();
     });
@@ -201,20 +205,22 @@ export default function Accounting() {
     }
   }
 
-  // Calculate cash from payment methods (actual cash received) using financialSummary for legacy support
+  // Payment-method breakdown of collections (kept for the Overview cash-collected card)
   const paymentMethodBreakdown = financialSummary?.paymentBreakdown || {};
 
-  // Calculate actual cash balance across all non-credit payment methods (Cash, M-Pesa, Bank, etc.)
-  const actualCashBalance = Object.entries(paymentMethodBreakdown)
-    .filter(([method]) => method !== 'credit')
-    .reduce((sum, [_, amount]) => sum + amount, 0);
+  // Cash & bank per the general ledger books (Cash on Hand 1010 + Bank Accounts 1015).
+  // This is what the business actually holds per double-entry records — NOT cumulative
+  // collections, which ignore money that has since been spent.
+  const glCashOnHand = Number(glBalanceSheet?.find((a) => a.code === '1010')?.balance || 0);
+  const glBank = Number(glBalanceSheet?.find((a) => a.code === '1015')?.balance || 0);
+  const booksCash = glCashOnHand + glBank;
 
   // Derived Totals for Balance Sheet
-  const totalAssetsSum = actualCashBalance + receivables + (financialSummary?.assets?.inventory || 0) + (financialSummary?.assets?.rawMaterials || 0) + (financialSummary?.assets?.equipment || 0);
+  const totalAssetsSum = booksCash + receivables + (financialSummary?.assets?.inventory || 0) + (financialSummary?.assets?.rawMaterials || 0) + (financialSummary?.assets?.equipment || 0);
   const totalLiabilitiesSum = payables + pendingPayroll;
   const retainedEarningsSum = totalAssetsSum - totalLiabilitiesSum;
 
-  const workingCapital = actualCashBalance + receivables - payables;
+  const workingCapital = booksCash + receivables - payables;
 
   const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -263,7 +269,7 @@ export default function Accounting() {
 
 
 
-  const liquidityCover = payables > 0 ? ((actualCashBalance + receivables) / payables).toFixed(2) : 'N/A';
+  const liquidityCover = payables > 0 ? ((booksCash + receivables) / payables).toFixed(2) : 'N/A';
   const topExpenses = expenses.slice(0, 6);
 
   // Create unified transaction ledger (income + expenses)
@@ -540,29 +546,26 @@ export default function Accounting() {
                 </div>
                 <div className="relative z-10 mt-auto">
                   <div className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1.5 cursor-help">
-                    Accrued Revenue 
+                    Recognized Revenue
                     <TooltipProvider delayDuration={100}>
                       <UITooltip>
                         <TooltipTrigger asChild>
                           <Info className="w-3.5 h-3.5 text-muted-foreground/70 hover:text-foreground transition-colors" />
                         </TooltipTrigger>
                         <TooltipContent className="max-w-[250px] bg-card border border-border text-foreground font-medium p-3 rounded-lg shadow-xl" sideOffset={8}>
-                          <p>Total value of all sales generated (invoiced), regardless of whether cash has been fully collected yet.</p>
+                          <p>Revenue from delivered and completed orders only — recognized at delivery, matching the general ledger. In-flight orders show below as pipeline, not income.</p>
                         </TooltipContent>
                       </UITooltip>
                     </TooltipProvider>
                   </div>
                   <p className="text-3xl font-bold text-foreground tracking-tight">{formatCurrency(financialSummary?.revenue || 0)}</p>
                   <div className="text-[11px] font-semibold text-primary mt-1.5 opacity-80 group-hover:opacity-100 transition-opacity flex flex-col gap-1">
-                    <span className="flex items-center gap-1.5 text-muted-foreground font-medium mb-0.5">
-                       Generated from {(financialSummary?.orderPipeline?.completed || 0) + (financialSummary?.orderPipeline?.in_progress || 0)} valid orders:
-                    </span>
                     <span className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-                      {financialSummary?.orderPipeline?.completed || 0} delivered & completed
+                      {financialSummary?.orderPipeline?.completed || 0} delivered & completed orders
                     </span>
                     <span className="flex items-center gap-1.5 text-muted-foreground ml-3">
-                      ↳ {financialSummary?.orderPipeline?.in_progress || 0} approved & in-transit
+                      ↳ + {formatCurrency(financialSummary?.orderPipeline?.total_value_in_progress || 0)} in pipeline ({financialSummary?.orderPipeline?.in_progress || 0} orders, not yet revenue)
                     </span>
                   </div>
                 </div>
@@ -1259,7 +1262,7 @@ export default function Accounting() {
                       <p className="text-sm text-muted-foreground font-medium mt-1">Resources owned by the business</p>
                     </div>
                     <div className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary font-black text-lg shadow-inner">
-                      {formatCurrency((actualCashBalance || 0) + (receivables || 0) + (financialSummary?.assets?.inventory || 0) + (financialSummary?.assets?.rawMaterials || 0) + (financialSummary?.assets?.equipment || 0))}
+                      {formatCurrency(totalAssetsSum)}
                     </div>
                   </div>
 
@@ -1269,22 +1272,24 @@ export default function Accounting() {
                       <div className="space-y-4">
                         <div className="flex flex-col gap-2">
                           <div className="flex items-center justify-between group">
-                            <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Cash & Equivalents</span>
-                            <span className="text-base font-black text-foreground">{formatCurrency(actualCashBalance || 0)}</span>
+                            <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Cash & Bank (per books)</span>
+                            <span className="text-base font-black text-foreground">{formatCurrency(booksCash)}</span>
                           </div>
                           <div className="flex flex-col gap-1 pl-4 border-l-2 border-border/50 ml-1">
-                            {Object.entries(paymentMethodBreakdown)
-                              .filter(([method, amount]) => method !== 'credit' && amount > 0)
-                              .sort((a, b) => b[1] - a[1])
-                              .map(([method, amount]) => (
-                                <div key={method} className="flex items-center justify-between">
-                                  <span className="text-[11px] font-medium text-muted-foreground capitalize flex items-center gap-2">
-                                    <span className="w-1 h-1 rounded-full bg-primary/40"></span>
-                                    {method === 'nat' ? 'Bank' : method === 'mpesa' ? 'M-Pesa' : method.replaceAll('_', ' ')}
-                                  </span>
-                                  <span className="text-[11px] font-bold text-muted-foreground/80">{formatCurrency(amount)}</span>
-                                </div>
-                              ))}
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-2">
+                                <span className="w-1 h-1 rounded-full bg-primary/40"></span>
+                                Cash on Hand
+                              </span>
+                              <span className="text-[11px] font-bold text-muted-foreground/80">{formatCurrency(glCashOnHand)}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-2">
+                                <span className="w-1 h-1 rounded-full bg-primary/40"></span>
+                                Bank & Mobile Money
+                              </span>
+                              <span className="text-[11px] font-bold text-muted-foreground/80">{formatCurrency(glBank)}</span>
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center justify-between group">
@@ -1324,7 +1329,7 @@ export default function Accounting() {
                       <p className="text-sm text-muted-foreground font-medium mt-1">How assets are financed</p>
                     </div>
                     <div className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary font-black text-lg shadow-inner">
-                      {formatCurrency((actualCashBalance || 0) + (receivables || 0) + (financialSummary?.assets?.inventory || 0) + (financialSummary?.assets?.rawMaterials || 0) + (financialSummary?.assets?.equipment || 0))}
+                      {formatCurrency(totalAssetsSum)}
                     </div>
                   </div>
 
@@ -1449,9 +1454,9 @@ export default function Accounting() {
                   </div>
                   <div className="grid grid-cols-3 gap-4 mt-8">
                     <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col justify-between hover:scale-105 transition-transform duration-300">
-                      <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Cash on Hand</p>
-                      <p className="text-xl font-black text-foreground mt-3 tracking-tight">{formatCurrency(actualCashBalance)}</p>
-                      <p className="text-[10px] font-semibold text-muted-foreground mt-1">Ready liquidity</p>
+                      <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Cash & Bank</p>
+                      <p className="text-xl font-black text-foreground mt-3 tracking-tight">{formatCurrency(booksCash)}</p>
+                      <p className="text-[10px] font-semibold text-muted-foreground mt-1">Per books</p>
                     </div>
                     <div className="p-5 rounded-2xl bg-success/5 border border-success/10 flex flex-col justify-between hover:scale-105 transition-transform duration-300">
                       <p className="text-[10px] font-black text-success uppercase tracking-[0.2em]">Receivables</p>
@@ -1479,12 +1484,12 @@ export default function Accounting() {
                       <p className="text-xs text-muted-foreground font-medium mt-1">Active treasury positions</p>
                     </div>
                     <span className="text-[11px] px-3 py-1 rounded-full bg-muted text-muted-foreground font-bold">
-                      {bankAccounts.length + (actualCashBalance > 0 ? 1 : 0)} accounts
+                      {bankAccounts.length + (glCashOnHand > 0 ? 1 : 0) + (glBank > 0 ? 1 : 0)} accounts
                     </span>
                   </div>
-                  
+
                   <div className="space-y-3 flex-1 overflow-y-auto">
-                    {actualCashBalance > 0 && (
+                    {glCashOnHand > 0 && (
                       <div className="flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all">
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center text-green-600 shadow-sm">
@@ -1492,11 +1497,28 @@ export default function Accounting() {
                           </div>
                           <div>
                             <p className="text-sm font-bold text-foreground">Cash in Hand</p>
-                            <p className="text-[11px] text-muted-foreground font-medium mt-0.5">Main Cash Register</p>
+                            <p className="text-[11px] text-muted-foreground font-medium mt-0.5">Per general ledger</p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-black text-foreground">{formatCurrency(actualCashBalance)}</p>
+                          <p className="text-sm font-black text-foreground">{formatCurrency(glCashOnHand)}</p>
+                          <span className="text-[10px] font-bold text-success uppercase tracking-wider">Active</span>
+                        </div>
+                      </div>
+                    )}
+                    {glBank > 0 && (
+                      <div className="flex items-center justify-between p-4 bg-card rounded-2xl border border-border/50 hover:border-primary/30 transition-all">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
+                            <Building2 className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-foreground">Bank & Mobile Money</p>
+                            <p className="text-[11px] text-muted-foreground font-medium mt-0.5">Per general ledger</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black text-foreground">{formatCurrency(glBank)}</p>
                           <span className="text-[10px] font-bold text-success uppercase tracking-wider">Active</span>
                         </div>
                       </div>
@@ -1522,7 +1544,7 @@ export default function Accounting() {
                       </div>
                     ))}
                     
-                    {bankAccounts.length === 0 && actualCashBalance === 0 && (
+                    {bankAccounts.length === 0 && booksCash === 0 && (
                       <div className="py-12 flex flex-col items-center justify-center text-center opacity-50">
                         <Wallet className="w-12 h-12 mb-4 text-muted-foreground" />
                         <p className="text-sm font-bold">No active treasury</p>
@@ -1535,7 +1557,7 @@ export default function Accounting() {
           </TabsContent>
 
           <TabsContent value="general_ledger" className="space-y-6 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
-            <GeneralLedgerPanel />
+            <GeneralLedgerPanel dateRange={queryDateRange} />
           </TabsContent>
 
           <TabsContent value="overview" className="space-y-6 outline-none animate-in fade-in-50 slide-in-from-bottom-2 duration-500">

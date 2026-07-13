@@ -636,7 +636,7 @@ export function usePayPayrollEntry() {
         const { error: txnError } = await supabase
           .from('bank_transactions')
           .insert({
-            account_id: accountId,
+            bank_account_id: accountId,
             transaction_type: 'Payroll Payout',
             amount: amount,
             transaction_date: new Date().toISOString(),
@@ -653,7 +653,7 @@ export function usePayPayrollEntry() {
       queryClient.invalidateQueries({ queryKey: ['payroll_summary'] });
       queryClient.invalidateQueries({ queryKey: ['bank_accounts'] });
       queryClient.invalidateQueries({ queryKey: ['bank_transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['financial_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['financial_summary_v2'] });
       toast.success('Payroll entry marked as paid');
     },
     onError: (error) => {
