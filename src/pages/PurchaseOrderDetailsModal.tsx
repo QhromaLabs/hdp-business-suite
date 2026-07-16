@@ -211,10 +211,18 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
     };
 
     const handleReceiveClick = () => {
+        if (order.received_at) {
+            toast.error('This purchase order has already been received.');
+            return;
+        }
         setShowConfirmReceive(true);
     };
 
     const confirmReceiveItems = async () => {
+        if (order.received_at) {
+            toast.error('This purchase order has already been received.');
+            return;
+        }
         setReceiving(true);
         setShowConfirmReceive(false);
         try {
