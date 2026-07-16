@@ -106,17 +106,21 @@ export function useNetIncomeGL() {
   });
 }
 
-export function useJournalEntries(limit = 50) {
+export function useJournalEntries(page = 1, pageSize = 25) {
   return useQuery({
-    queryKey: ['journal_entries', limit],
+    queryKey: ['journal_entries', page, pageSize],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const offset = (page - 1) * pageSize;
+      const { data, error, count } = await supabase
         .from('journal_entries')
-        .select('id, entry_date, memo, source_type, created_at, journal_entry_lines(id, debit, credit, memo, chart_of_accounts(code, name))')
+        .select('id, entry_date, memo, source_type, created_at, journal_entry_lines(id, debit, credit, memo, chart_of_accounts(code, name))', { count: 'exact' })
         .order('created_at', { ascending: false })
-        .limit(limit);
+        .range(offset, offset + pageSize - 1);
       if (error) throw error;
-      return (data || []) as unknown as JournalEntry[];
+      return {
+        entries: (data || []) as unknown as JournalEntry[],
+        totalCount: count || 0
+      };
     },
   });
 }
