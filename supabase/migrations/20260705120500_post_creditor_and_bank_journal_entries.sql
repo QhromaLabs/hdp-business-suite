@@ -19,7 +19,8 @@
 -- likely failing today. Worth fixing independently of this migration.)
 
 INSERT INTO public.chart_of_accounts (code, name, account_type, normal_balance)
-VALUES ('9000', 'Suspense / Uncategorized', 'liability', 'credit');
+VALUES ('9000', 'Suspense / Uncategorized', 'liability', 'credit')
+ON CONFLICT (code) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION public.post_creditor_transaction_journal_entry()
 RETURNS TRIGGER

@@ -53,7 +53,8 @@ INSERT INTO public.chart_of_accounts (code, name, account_type, normal_balance) 
     ('5015', 'Manufacturing Overhead', 'expense', 'debit'),
     ('5020', 'Operating Expenses', 'expense', 'debit'),
     ('5030', 'Payroll Expense', 'expense', 'debit'),
-    ('5040', 'Depreciation Expense', 'expense', 'debit');
+    ('5040', 'Depreciation Expense', 'expense', 'debit')
+ON CONFLICT (code) DO NOTHING;
 
 -- Wire up parent hierarchy (Assets > Cash, AR, Inventory, Fixed Assets ...)
 UPDATE public.chart_of_accounts child
