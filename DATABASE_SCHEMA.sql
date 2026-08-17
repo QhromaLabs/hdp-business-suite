@@ -67,6 +67,9 @@ CREATE TABLE public.products (
     base_price NUMERIC NOT NULL DEFAULT 0,
     cost_price NUMERIC NOT NULL DEFAULT 0,
     is_active BOOLEAN DEFAULT TRUE,
+    image_url TEXT,
+    attributes JSONB DEFAULT '{}'::jsonb,
+    product_type TEXT DEFAULT 'finished_good',
     created_by UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -84,6 +87,7 @@ CREATE TABLE public.product_variants (
     price NUMERIC NOT NULL DEFAULT 0,
     cost_price NUMERIC NOT NULL DEFAULT 0,
     reorder_level INTEGER DEFAULT 10,
+    weight NUMERIC DEFAULT 0,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -157,6 +161,11 @@ CREATE TABLE public.sales_orders (
     approved_at TIMESTAMP WITH TIME ZONE,
     dispatched_by UUID,
     dispatched_at TIMESTAMP WITH TIME ZONE,
+    delivery_agent_id UUID REFERENCES public.employees(id),
+    sales_agent_id UUID REFERENCES public.employees(id),
+    delivery_code TEXT,
+    delivery_accepted_at TIMESTAMP WITH TIME ZONE,
+    delivery_completed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

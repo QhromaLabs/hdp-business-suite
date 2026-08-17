@@ -9,6 +9,9 @@ create table if not exists public.purchase_orders (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     expected_date date,
     notes text,
+    freight_cost decimal(10,2) default 0,
+    customs_cost decimal(10,2) default 0,
+    handling_cost decimal(10,2) default 0,
     created_by uuid references auth.users(id)
 );
 
