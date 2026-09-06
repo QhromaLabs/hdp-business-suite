@@ -79,14 +79,14 @@ export class AiChatbotService {
       // 1. Monthly Orders Data (Last 30 Days)
       const { data: monthlyOrders } = await supabase
         .from('sales_orders')
-        .select('order_number, status, total_amount, created_at')
+        .select('order_number, status, total_amount, created_at, customers (name)')
         .gte('created_at', thirtyDaysAgo)
         .order('created_at', { ascending: false });
 
       const orders = monthlyOrders || [];
-      const totalMonthlyRevenue = orders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
-      const deliveredCount = orders.filter(o => o.status === 'delivered').length;
-      const inTransitCount = orders.filter(o => o.status === 'in_transit' || o.status === 'approved' || o.status === 'dispatched').length;
+      const totalMonthlyRevenue = orders.reduce((sum, o: any) => sum + (Number(o.total_amount) || 0), 0);
+      const deliveredCount = orders.filter((o: any) => o.status === 'delivered' || o.status === 'completed').length;
+      const inTransitCount = orders.filter((o: any) => o.status === 'in_transit' || o.status === 'approved' || o.status === 'dispatched' || o.status === 'pending').length;
 
       // 2. Stock Changes (Recent Inventory Transactions)
       const { data: rawTx } = await supabase
@@ -95,26 +95,55 @@ export class AiChatbotService {
         .order('created_at', { ascending: false })
         .limit(20);
 
-      const stockChanges = (rawTx || []).map(t => ({
+      const stockChanges = (rawTx || []).map((t: any) => ({
         type: t.transaction_type,
         change: t.quantity_change,
         createdAt: t.created_at
       }));
 
-      // 3. Products Catalog & Stock Levels
-      const { data: productsData } = await supabase
+      // 3. Products Catalog & Stock Levels (Joined via product_variants and inventory)
+      const { data: productsData, error: prodErr } = await supabase
         .from('products')
-        .select('name, price, stock_quantity, description, product_categories(name)')
+        .select(`
+          id,
+          name,
+          base_price,
+          description,
+          product_categories (name),
+          product_variants (
+            id,
+            variant_name,
+            price,
+            inventory (
+              quantity
+            )
+          )
+        `)
         .order('created_at', { ascending: false })
-        .limit(35);
+        .limit(100);
 
-      const inStockProducts = (productsData || []).map((p: any) => ({
-        name: p.name,
-        category: p.product_categories?.name || 'General',
-        price: p.price,
-        stock: p.stock_quantity,
-        description: p.description || ''
-      }));
+      if (prodErr) {
+        console.error('[Harry AI] Error querying products:', prodErr);
+      }
+
+      const inStockProducts = (productsData || []).map((p: any) => {
+        let totalStock = 0;
+        const variants = p.product_variants || [];
+        variants.forEach((v: any) => {
+          const invList = v.inventory || [];
+          invList.forEach((inv: any) => {
+            totalStock += (inv.quantity || 0);
+          });
+        });
+        const price = variants[0]?.price || p.base_price || 0;
+        return {
+          name: p.name,
+          category: p.product_categories?.name || 'General',
+          price: Number(price),
+          stock: totalStock,
+          description: p.description || ''
+        };
+      });
 
       // 4. Store Info
       const { data: storeData } = await supabase
@@ -134,10 +163,11 @@ export class AiChatbotService {
           deliveredCount,
           inTransitCount
         },
-        recentMonthlyOrders: orders.slice(0, 10).map(o => ({
+        recentMonthlyOrders: orders.slice(0, 15).map((o: any) => ({
           orderNumber: o.order_number,
+          customerName: o.customers?.name || undefined,
           status: o.status,
-          totalAmount: o.total_amount,
+          totalAmount: Number(o.total_amount),
           createdAt: o.created_at
         })),
         stockChanges,
@@ -174,32 +204,34 @@ export class AiChatbotService {
     const context = await this.getLiveContext(false, userId);
     const activeKey = localStorage.getItem('OPENROUTER_API_KEY') || import.meta.env.VITE_OPENROUTER_API_KEY || getDefaultKey();
 
-    const systemPrompt = `You are Harry, the intelligent AI Assistant for ${context.storeName}.
-You are helpful, sharp, friendly, and reasoned. You analyze live database telemetry to answer questions accurately.
+    const systemPrompt = `You are Harry, the sharp, intelligent AI Business & Data Assistant for ${context.storeName}.
+You analyze live database telemetry (monthly orders, revenue, inventory catalog, stock movements) to answer user and admin questions accurately.
 
-LIVE BUSINESS TELEMETRY & REASONING CONTEXT (Updated ${context.lastUpdated}):
-• Store: ${context.storeName} (${context.currency})
+LIVE BUSINESS TELEMETRY & CONTEXT (Updated ${context.lastUpdated}):
+• Store Name: ${context.storeName} (${context.currency})
 • Contact Phone: ${context.contactPhone} | Email: ${context.contactEmail}
 
-LAST 30-DAY MONTHLY PERFORMANCE:
-• Total Monthly Orders: ${context.monthlyStats.totalMonthlyOrders}
+LAST 30-DAY FINANCIAL & SALES PERFORMANCE:
+• Total Monthly Orders: ${context.monthlyStats.totalMonthlyOrders} orders
 • Total Monthly Revenue: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()}
-• Delivered Orders: ${context.monthlyStats.deliveredCount} | Active In-Transit Orders: ${context.monthlyStats.inTransitCount}
+• Delivered/Completed Orders: ${context.monthlyStats.deliveredCount} | Active In-Transit/Pending: ${context.monthlyStats.inTransitCount}
 
-RECENT MONTHLY ORDERS SAMPLE:
-${context.recentMonthlyOrders.map(o => `- ${o.orderNumber}: ${context.currency} ${o.totalAmount.toLocaleString()} [Status: ${o.status.toUpperCase()}] (${new Date(o.createdAt).toLocaleDateString()})`).join('\n')}
+RECENT MONTHLY SALES ORDERS SAMPLE:
+${context.recentMonthlyOrders.map((o: any) => `- #${o.orderNumber}${o.customerName ? ` (${o.customerName})` : ''}: ${context.currency} ${o.totalAmount.toLocaleString()} [Status: ${o.status.toUpperCase()}] (${new Date(o.createdAt).toLocaleDateString()})`).join('\n')}
 
-PRODUCT INVENTORY & STOCK LEVELS:
-${context.inStockProducts.map(p => `- ${p.name} (${p.category}): ${context.currency} ${p.price.toLocaleString()} | Stock: ${p.stock} units`).join('\n')}
+REAL PRODUCT CATALOG & STOCK LEVELS (${context.inStockProducts.length} Products Cataloged):
+${context.inStockProducts.map(p => `- ${p.name} [Category: ${p.category}]: ${context.currency} ${p.price.toLocaleString()} | Total Stock: ${p.stock} units`).join('\n')}
 
 RECENT STOCK MOVEMENTS:
-${context.stockChanges.map(s => `- ${s.type.toUpperCase()}: Change ${s.change > 0 ? '+' : ''}${s.change} units (${new Date(s.createdAt).toLocaleDateString()})`).join('\n')}
+${context.stockChanges.map(s => `- ${s.type.toUpperCase()}: ${s.change > 0 ? '+' : ''}${s.change} units on ${new Date(s.createdAt).toLocaleDateString()}`).join('\n')}
 
-HARRY'S REASONING INSTRUCTIONS:
-1. Always introduce yourself as Harry when asked or starting a greeting.
-2. Synthesize figures accurately using the monthly performance and live product/order data above.
-3. If asked about stock or pricing for a product (e.g. "desktop", "chair"), check the INVENTORY list above. If the exact product is in stock, state the stock count and price in ${context.currency}. If stock is 0 or not listed, state clearly that it is currently out of stock.
-4. Keep tone confident, clean, and nicely formatted in Markdown.`;
+HARRY'S REASONING & RESPONSE GUIDELINES:
+1. Always introduce yourself as Harry when greeted or asked.
+2. ALWAYS stick strictly to the actual product catalog and financial stats provided above. NEVER invent or mention unlisted mock products (such as "Desktop", "Laptop", "Router", "Headphones").
+3. Search through the real product catalog using case-insensitive matching. For instance, if the user asks for "nets" or "mosquito net", look for items containing "NET", "MOSQUITO NET", "RAILS", "STAND", etc. (e.g. R100 MOSQUITO NET, R120 MOSQUITO NET, 4 STAND 4*6, 4 STAND 5*6, 4 STAND 6*6).
+4. If a product is requested that is NOT in the real catalog, clearly state that it is not currently carried in the store catalog, and suggest similar items from the ACTUAL listed products (e.g. Wardrobes, Cooking Pots, Carpets, Duvets, Mosquito Nets, Shoe Racks).
+5. For financial and order inquiries, summarize total revenue (${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()}), order count (${context.monthlyStats.totalMonthlyOrders}), and recent sample orders.
+6. Present information clearly with bold headers, bullet points, and clean Markdown formatting.`;
 
     const messagesPayload = [
       { role: 'system', content: systemPrompt },
@@ -221,8 +253,8 @@ HARRY'S REASONING INSTRUCTIONS:
           body: JSON.stringify({
             model,
             messages: messagesPayload,
-            temperature: 0.5,
-            max_tokens: 600
+            temperature: 0.3,
+            max_tokens: 700
           })
         });
 
@@ -231,6 +263,7 @@ HARRY'S REASONING INSTRUCTIONS:
           let aiText = data.choices?.[0]?.message?.content;
           if (aiText) {
             aiText = aiText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            aiText = aiText.replace(/^(Here's a thinking process|Let's think through this|Thinking Process):[\s\S]*?(?=(Hello|Hi|#|\*\*|\n\n|\d+\.))/i, '').trim();
             return aiText;
           }
         } else {
@@ -243,6 +276,7 @@ HARRY'S REASONING INSTRUCTIONS:
     }
 
     // Fallback response if all network calls fail
-    return `Hi! I'm **Harry**, your live AI Assistant at **${context.storeName}**.\n\nI just checked our database context (${context.lastUpdated}):\n\n• **30-Day Orders**: ${context.monthlyStats.totalMonthlyOrders} orders (Revenue: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()})\n• **Products**: ${context.inStockProducts.length} items cataloged.\n\nHow can I help you today?`;
+    return `Hi! I'm **Harry**, your live AI Assistant at **${context.storeName}**.\n\nHere is our live business telemetry snapshot (${context.lastUpdated}):\n\n• **30-Day Orders**: ${context.monthlyStats.totalMonthlyOrders} orders\n• **30-Day Revenue**: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()}\n• **Catalog**: ${context.inStockProducts.length} real products tracked (Wardrobes, Mosquito Nets, Cooking Pots, Carpets, Shoe Racks).\n\nHow can I help you today?`;
   }
 }
+
