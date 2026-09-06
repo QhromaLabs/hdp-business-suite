@@ -141,6 +141,8 @@ function AppRoutes() {
   );
 }
 
+import { ClientAiChatbotWidget } from "@/components/chat/ClientAiChatbotWidget";
+
 const App = () => (
   <PersistQueryClientProvider
     client={queryClient}
@@ -154,6 +156,7 @@ const App = () => (
             <Sonner position="top-center" />
             <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
               <AppRoutes />
+              <ClientAiChatbotWidget />
             </BrowserRouter>
           </TooltipProvider>
         </AuthProvider>
