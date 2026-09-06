@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, MessageSquare, X, Send, Key, Check, ShoppingBag, Truck, Phone } from 'lucide-react';
+import { Bot, MessageSquare, X, Send, Key, Check, ShoppingBag, Truck, Phone, RefreshCw, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AiChatbotService, ChatMessage } from '@/services/aiChatbotService';
+import { AiChatbotService, ChatMessage, LiveBusinessContext } from '@/services/aiChatbotService';
 
 export const ClientAiChatbotWidget: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -13,6 +13,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [contextInfo, setContextInfo] = useState<LiveBusinessContext | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -24,12 +25,21 @@ export const ClientAiChatbotWidget: React.FC = () => {
         {
           id: '1',
           role: 'assistant',
-          content: 'Hello! 👋 I am your **Live AI Assistant**. I have real-time access to store inventory and order tracking. How can I help you today?',
+          content: 'Hi! 👋 I am **Harry**, your live AI Assistant. I just synced our latest 30-day monthly orders, stock changes, and live pricing. How can I help you today?',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
     }
   }, []);
+
+  // Lazy update context whenever the client opens the chat widget
+  useEffect(() => {
+    if (isOpen) {
+      AiChatbotService.getLiveContext(true).then(ctx => {
+        setContextInfo(ctx);
+      });
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -45,7 +55,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
       {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `✅ **OpenRouter API Key saved!** The AI Assistant is now connected to live OpenRouter LLM models.`,
+        content: `✅ **OpenRouter Key Saved!** Harry is now using your custom key for free reasoning models.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ]);
@@ -81,7 +91,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: 'Sorry, I ran into an issue processing that query. Please try again!',
+          content: 'Sorry, I ran into an error generating that response. Please try again!',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -98,7 +108,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
       return (
         <div 
           key={idx} 
-          className={line.startsWith('•') ? 'ml-3 my-1 font-medium' : 'my-1'}
+          className={line.startsWith('•') || line.startsWith('-') ? 'ml-3 my-1 font-medium' : 'my-1'}
           dangerouslySetInnerHTML={{ __html: formatted }} 
         />
       );
@@ -108,21 +118,22 @@ export const ClientAiChatbotWidget: React.FC = () => {
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
       {isOpen && (
-        <Card className="w-[380px] sm:w-[420px] h-[540px] shadow-2xl border-primary/20 bg-background/95 backdrop-blur-md flex flex-col mb-4 rounded-2xl overflow-hidden transition-all duration-300 animate-in fade-in slide-in-from-bottom-5">
+        <Card className="w-[380px] sm:w-[420px] h-[560px] shadow-2xl border-primary/20 bg-background/95 backdrop-blur-md flex flex-col mb-4 rounded-2xl overflow-hidden transition-all duration-300 animate-in fade-in slide-in-from-bottom-5">
           {/* Header */}
-          <CardHeader className="bg-gradient-to-r from-primary/90 to-primary text-primary-foreground p-4 flex flex-row items-center justify-between space-y-0">
+          <CardHeader className="bg-gradient-to-r from-primary/90 via-primary to-primary/80 text-primary-foreground p-4 flex flex-row items-center justify-between space-y-0">
             <div className="flex items-center space-x-3">
-              <div className="p-2 bg-primary-foreground/10 rounded-xl backdrop-blur-sm">
+              <div className="p-2 bg-primary-foreground/15 rounded-xl backdrop-blur-sm relative">
                 <Bot className="h-6 w-6 text-primary-foreground" />
+                <Sparkles className="h-3 w-3 text-amber-300 absolute -top-1 -right-1" />
               </div>
               <div>
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  Live AI Assistant
+                <CardTitle className="text-base font-bold flex items-center gap-2">
+                  Harry AI Assistant
                   <Badge variant="secondary" className="text-[10px] bg-emerald-500/20 text-emerald-300 border-none px-1.5 py-0.5">
-                    ● Live DB
+                    ● Live Telemetry
                   </Badge>
                 </CardTitle>
-                <p className="text-xs text-primary-foreground/80">Real-time inventory & order support</p>
+                <p className="text-xs text-primary-foreground/80">Monthly Orders & Inventory Telemetry</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -131,7 +142,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
                 size="icon"
                 className="text-primary-foreground hover:bg-primary-foreground/20 rounded-full h-8 w-8"
                 onClick={() => setShowKeyInput(!showKeyInput)}
-                title="Configure OpenRouter API Key"
+                title="Configure OpenRouter Key"
               >
                 <Key className="h-4 w-4" />
               </Button>
@@ -150,7 +161,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
           {showKeyInput && (
             <div className="p-3 bg-muted border-b flex flex-col gap-2 animate-in fade-in">
               <span className="text-xs font-medium text-foreground">
-                Enter your <strong>OpenRouter API Key</strong> (or OpenAI key):
+                <strong>OpenRouter API Key</strong> (Free Reasoning Models):
               </span>
               <div className="flex gap-2">
                 <Input
@@ -161,25 +172,33 @@ export const ClientAiChatbotWidget: React.FC = () => {
                   className="text-xs h-8 bg-background"
                 />
                 <Button size="sm" className="h-8 text-xs px-3" onClick={handleSaveKey}>
-                  <Check className="h-3.5 w-3.5 mr-1" /> Save Key
+                  <Check className="h-3.5 w-3.5 mr-1" /> Save
                 </Button>
               </div>
             </div>
           )}
 
-          {/* Quick Actions */}
+          {/* Context Telemetry Bar */}
+          {contextInfo && (
+            <div className="bg-primary/5 px-3 py-1.5 border-b text-[11px] text-muted-foreground flex justify-between items-center">
+              <span>📊 30-Day Orders: <strong>{contextInfo.monthlyStats.totalMonthlyOrders}</strong> | Stock: <strong>{contextInfo.inStockProducts.length} items</strong></span>
+              <span className="text-[10px] text-primary/70">Updated {contextInfo.lastUpdated}</span>
+            </div>
+          )}
+
+          {/* Quick Action Suggestion Pills */}
           <div className="bg-muted/40 p-2 border-b flex gap-1.5 overflow-x-auto text-xs no-scrollbar">
             <button
-              onClick={() => handleSendMessage('Check my order status')}
+              onClick={() => handleSendMessage('Summarize our 30-day monthly orders')}
               className="flex items-center gap-1 px-2.5 py-1 bg-background hover:bg-accent border rounded-full text-muted-foreground hover:text-foreground whitespace-nowrap transition-colors"
             >
-              <Truck className="h-3 w-3 text-blue-500" /> Track Order
+              <Truck className="h-3 w-3 text-blue-500" /> Monthly Orders
             </button>
             <button
-              onClick={() => handleSendMessage('List in-stock products')}
+              onClick={() => handleSendMessage('What products are currently in stock?')}
               className="flex items-center gap-1 px-2.5 py-1 bg-background hover:bg-accent border rounded-full text-muted-foreground hover:text-foreground whitespace-nowrap transition-colors"
             >
-              <ShoppingBag className="h-3 w-3 text-emerald-500" /> In-Stock Items
+              <ShoppingBag className="h-3 w-3 text-emerald-500" /> Stock & Prices
             </button>
             <button
               onClick={() => handleSendMessage('Store contact details')}
@@ -189,7 +208,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
             </button>
           </div>
 
-          {/* Messages */}
+          {/* Messages Area */}
           <CardContent className="flex-1 p-4 overflow-y-auto space-y-3" ref={scrollRef}>
             {messages.map(msg => (
               <div
@@ -213,7 +232,8 @@ export const ClientAiChatbotWidget: React.FC = () => {
 
             {isLoading && (
               <div className="flex items-center space-x-2 text-muted-foreground text-xs p-2">
-                <span className="animate-pulse">AI is reading live database & generating response...</span>
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span>Harry is reasoning over monthly telemetry & generating response...</span>
               </div>
             )}
           </CardContent>
@@ -221,7 +241,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
           {/* Input Footer */}
           <CardFooter className="p-3 border-t bg-background flex gap-2">
             <Input
-              placeholder="Ask about products, stock, or orders..."
+              placeholder="Ask Harry about orders, stock, or revenue..."
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
@@ -240,17 +260,17 @@ export const ClientAiChatbotWidget: React.FC = () => {
         </Card>
       )}
 
-      {/* Toggle Button */}
+      {/* Floating Toggle Button */}
       <Button
         size="lg"
         onClick={() => setIsOpen(!isOpen)}
-        className="rounded-full h-14 w-14 shadow-xl bg-gradient-to-r from-primary to-primary/80 hover:scale-105 transition-all duration-300 p-0 flex items-center justify-center relative border border-primary-foreground/20"
+        className="rounded-full h-14 w-14 shadow-xl bg-gradient-to-r from-primary via-primary to-primary/80 hover:scale-105 transition-all duration-300 p-0 flex items-center justify-center relative border border-primary-foreground/20"
       >
         {isOpen ? (
           <X className="h-6 w-6 text-primary-foreground" />
         ) : (
           <>
-            <MessageSquare className="h-6 w-6 text-primary-foreground" />
+            <Bot className="h-6 w-6 text-primary-foreground" />
             <span className="absolute -top-1 -right-1 flex h-4 w-4">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500 border-2 border-background"></span>
