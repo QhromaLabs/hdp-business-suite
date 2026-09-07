@@ -15,4 +15,24 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    outDir: "client_deliverable_package/web_dist",
+    emptyOutDir: true,
+    sourcemap: false,
+    minify: "esbuild",
+    cssMinify: true,
+    target: "es2020",
+    rollupOptions: {
+      output: {
+        manualChunks: undefined, // Single heavily obfuscated bundle per chunk type
+      },
+    },
+  },
+  esbuild: {
+    drop: mode === "production" ? ["console", "debugger"] : [],
+    legalComments: "none",
+    minifyIdentifiers: true,
+    minifySyntax: true,
+    minifyWhitespace: true,
+  },
 }));
