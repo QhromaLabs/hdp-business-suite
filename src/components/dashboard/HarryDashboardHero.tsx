@@ -263,6 +263,12 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
       {/* 🌟 LOVABLE-STYLE HERO PRESENTATION (WHEN STILL / NO CHAT) */}
       {!isChatActive ? (
         <div className="flex flex-col items-center text-center py-8 md:py-14 animate-in fade-in zoom-in-95 duration-500">
+          {/* Qhroma Labs Agent Brand Badge */}
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-500/10 dark:bg-orange-500/20 border border-orange-500/30 text-orange-600 dark:text-orange-400 text-xs font-bold tracking-wide uppercase mb-4 backdrop-blur-md shadow-xs">
+            <Sparkles className="h-3.5 w-3.5 text-orange-500" />
+            <span>Qhroma Labs AI Agent • Custom Trained for Justin</span>
+          </div>
+
           {/* Bold Centered Headline */}
           <h1 className="text-4xl md:text-6xl font-black tracking-tight text-foreground max-w-4xl leading-tight">
             {getGreeting()}

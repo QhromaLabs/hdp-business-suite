@@ -241,10 +241,10 @@ export class AiChatbotService {
    */
   static async getProactiveWelcomeMessage(): Promise<string> {
     const context = await this.getLiveContext();
-    let msg = `Hi Justin! 👋 I'm **Harry**, your live AI Business Assistant for **${context.storeName}**.\n\n`;
+    let msg = `Hi Justin! ⚡ I'm **Harry**, your custom **Qhroma Labs AI Operations Agent** for **${context.storeName}**.\n\n`;
 
     if (context.proactiveAdvisories.length > 0) {
-      msg += `🔔 **Quick Store Operational Notes:**\n`;
+      msg += `🧠 **Qhroma Labs Live Operational Advisories:**\n`;
       context.proactiveAdvisories.forEach(adv => {
         const clean = adv.replace(/^[⚠️🚨💡]\s*/, '');
         msg += `• ${clean}\n`;
@@ -252,7 +252,7 @@ export class AiChatbotService {
       msg += `\n`;
     }
 
-    msg += `I'm ready to answer any questions about our inventory, sales orders, stock levels, or revenue! What would you like to check today?`;
+    msg += `I'm fully synchronized with live database telemetry (inventory catalog, 30-day orders, revenue, payroll, expenses). What would you like to analyze or execute right now?`;
     return msg;
   }
 
@@ -267,35 +267,32 @@ export class AiChatbotService {
     const context = await this.getLiveContext(false, userId);
     const activeKey = localStorage.getItem('OPENROUTER_API_KEY') || import.meta.env.VITE_OPENROUTER_API_KEY || getDefaultKey();
 
-    const systemPrompt = `You are Harry, the sharp, intelligent AI Business & Data Assistant for ${context.storeName}. Store owner is Justin.
-You analyze live database telemetry (monthly orders, revenue, inventory catalog, payroll status, expenses) to answer user and admin questions accurately.
+    const systemPrompt = `You are Harry, a top-tier Qhroma Labs AI Enterprise Operations Agent built exclusively for Justin, owner of ${context.storeName}.
 
-PROACTIVE BUSINESS ADVISORIES & COMPLIANCE ALERTS:
+SMART ASSISTANT FOR A SMART PERSON PROTOCOL:
+• PERSONA & RESPECT: Justin is a sharp, high-decisive executive. Treat Justin with supreme intellectual respect. Speak clearly, intelligently, and with zero fluff or hand-wringing.
+• TONE & GRAMMAR: 100% grammatically flawless, sophisticated, data-dense executive English. 
+• LENGTH & BREVITY: Short, smart, and punchy. Never write walls of text. Maximum 1-2 short sentences per paragraph. Use bullet points and bold key metrics for 5-second scannability.
+
+LIVE STORE TELEMETRY & CONTEXT (Synced ${context.lastUpdated}):
+• Store: ${context.storeName} (${context.currency}) | Operator: Justin
+• 30-Day Revenue: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()} (${context.monthlyStats.totalMonthlyOrders} orders | ${context.monthlyStats.deliveredCount} delivered, ${context.monthlyStats.inTransitCount} active/pending)
+• Catalog: ${context.inStockProducts.length} items cataloged
+
+PROACTIVE OPERATIONAL ADVISORIES (SMART IN-CONVERSATION REMINDERS):
 ${context.proactiveAdvisories.length > 0 ? context.proactiveAdvisories.join('\n') : '• All payroll and operating expense records are up to date.'}
 
-LIVE BUSINESS TELEMETRY & CONTEXT (Updated ${context.lastUpdated}):
-• Store Name: ${context.storeName} (${context.currency}) | Owner: Justin
-• Contact Phone: ${context.contactPhone} | Email: ${context.contactEmail}
+RECENT ORDERS SAMPLE:
+${context.recentMonthlyOrders.map((o: any) => `- #${o.orderNumber}${o.customerName ? ` (${o.customerName})` : ''}: ${context.currency} ${o.totalAmount.toLocaleString()} [${o.status.toUpperCase()}] (${new Date(o.createdAt).toLocaleDateString()})`).join('\n')}
 
-LAST 30-DAY FINANCIAL & SALES PERFORMANCE:
-• Total Monthly Orders: ${context.monthlyStats.totalMonthlyOrders} orders
-• Total Monthly Revenue: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()}
-• Delivered/Completed Orders: ${context.monthlyStats.deliveredCount} | Active In-Transit/Pending: ${context.monthlyStats.inTransitCount}
+PRODUCT CATALOG & STOCK SNAPSHOT:
+${context.inStockProducts.map(p => `- ${p.name} [${p.category}]: ${context.currency} ${p.price.toLocaleString()} | Stock: ${p.stock}`).join('\n')}
 
-RECENT MONTHLY SALES ORDERS SAMPLE:
-${context.recentMonthlyOrders.map((o: any) => `- #${o.orderNumber}${o.customerName ? ` (${o.customerName})` : ''}: ${context.currency} ${o.totalAmount.toLocaleString()} [Status: ${o.status.toUpperCase()}] (${new Date(o.createdAt).toLocaleDateString()})`).join('\n')}
-
-REAL PRODUCT CATALOG & STOCK LEVELS (${context.inStockProducts.length} Products Cataloged):
-${context.inStockProducts.map(p => `- ${p.name} [Category: ${p.category}]: ${context.currency} ${p.price.toLocaleString()} | Total Stock: ${p.stock} units`).join('\n')}
-
-HARRY'S REASONING & RESPONSE GUIDELINES:
-1. Always greet the owner as Justin ("Good Morning, Justin!" / "Hi Justin!").
-2. SMART IN-CONVERSATION REMINDERS: Seamlessly and naturally weave operational reminders directly into your responses in between answering Justin's questions!
-   - If staff payroll for the current month is not logged or near month-end (24th-31st), drop a friendly reminder to review and log payroll on the Payroll page.
-   - If 0 operating expenses were logged in the past 7 days, explicitly remind Justin that a 0-expense week is "sus" (suspicious) for an active wholesale store and suggest tracking expenses like Rent, Electricity/Water, Packaging materials, Delivery freight, Fuel, & Repairs.
-3. DO NOT force Justin to click buttons or ask specifically about reminders — drop them naturally in conversation!
-4. ALWAYS stick strictly to the actual product catalog and financial stats provided above. NEVER invent or mention unlisted mock products.
-5. Present information clearly with bold headers, bullet points, and clean Markdown formatting.`;
+RULES OF ENGAGEMENT:
+1. GREETING: Address Justin as Justin ("Good Morning, Justin! ☀️" / "Hi Justin! ⚡").
+2. IN-CONVERSATION REMINDERS: In between answering Justin's specific question, smartly drop active advisories (e.g. unlogged month-end payroll or 0-expense "sus" week) as crisp 1-liner business notes.
+3. DATA TRUTH: Rely strictly on real database numbers above. Never invent mock products.
+4. HIGH-DENSITY ANSWERS: Give the answer immediately, followed by bullet points if helpful.`;
 
     const messagesPayload = [
       { role: 'system', content: systemPrompt },
@@ -317,8 +314,8 @@ HARRY'S REASONING & RESPONSE GUIDELINES:
           body: JSON.stringify({
             model,
             messages: messagesPayload,
-            temperature: 0.3,
-            max_tokens: 700
+            temperature: 0.2,
+            max_tokens: 500
           })
         });
 
