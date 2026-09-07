@@ -265,7 +265,7 @@ function AppCard({ config, link, onLinkChange }: AppCardProps) {
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Link2 className="w-4 h-4 text-primary" />
-            Supabase / Drive APK Download Link
+            App Download Link
           </div>
 
           {editing ? (
@@ -279,7 +279,7 @@ function AppCard({ config, link, onLinkChange }: AppCardProps) {
                   if (e.key === 'Enter') handleSave();
                   if (e.key === 'Escape') handleCancel();
                 }}
-                placeholder="https://sxgsnnpwnhuvpxllwcbs.supabase.co/storage/v1/object/public/mobile-apps/..."
+                placeholder="https://..."
                 className="input-field text-sm"
               />
               <div className="flex gap-2">
@@ -300,53 +300,39 @@ function AppCard({ config, link, onLinkChange }: AppCardProps) {
               </div>
             </div>
           ) : (
-            <div className="space-y-2">
-              {hasLink ? (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/40 border border-border group/link">
-                  <Link2 className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span className="flex-1 text-xs text-foreground font-mono truncate">{link}</span>
-                  <a
-                    href={link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:text-primary/80 transition-colors"
-                    title="Open in new tab"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                </div>
-              ) : (
+            <div className="space-y-3">
+              {!hasLink && (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/20 border border-dashed border-border text-muted-foreground text-xs">
                   <Info className="w-4 h-4 shrink-0" />
-                  No Google Drive link set yet. Click Edit to add one.
+                  No download link set yet. Click Set Link to add one.
                 </div>
               )}
 
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => {
-                    setDraft(link);
-                    setEditing(true);
-                  }}
-                  className="inline-flex items-center justify-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg transition-all duration-200 bg-secondary text-secondary-foreground border border-border hover:bg-secondary/80"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  {hasLink ? 'Edit Link' : 'Set Link'}
-                </button>
-                <CopyButton text={link} />
-                <ShareButton url={link} appName={config.name} />
                 {hasLink && (
                   <a
                     href={link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg transition-all duration-200 bg-primary text-primary-foreground hover:bg-primary/90"
+                    className="inline-flex items-center justify-center gap-1.5 h-9 px-4 text-xs font-semibold rounded-lg transition-all duration-200 bg-primary text-primary-foreground hover:bg-primary/90 shadow-md hover:shadow-primary/20"
                   >
-                    <Download className="w-3.5 h-3.5" />
+                    <Download className="w-4 h-4" />
                     Download APK
                   </a>
                 )}
+                <button
+                  onClick={() => {
+                    setDraft(link);
+                    setEditing(true);
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 h-9 px-3 text-xs font-medium rounded-lg transition-all duration-200 bg-secondary text-secondary-foreground border border-border hover:bg-secondary/80"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  {hasLink ? 'Edit Link' : 'Set Link'}
+                </button>
+                {hasLink && <CopyButton text={link} size="md" />}
+                {hasLink && <ShareButton url={link} appName={config.name} />}
               </div>
             </div>
           )}
@@ -363,7 +349,7 @@ function InstallGuide() {
     {
       step: '1',
       title: 'Share the link',
-      description: 'Copy or share the Google Drive download link with the agent.',
+      description: 'Copy or share the app download link with the agent.',
     },
     {
       step: '2',
@@ -373,7 +359,7 @@ function InstallGuide() {
     {
       step: '3',
       title: 'Open the link',
-      description: 'Open the Drive link in a browser on the Android device and tap "Download".',
+      description: 'Open the download link in a browser on the Android device and tap "Download".',
     },
     {
       step: '4',
@@ -452,8 +438,7 @@ function VersionCard({ links }: { links: AppLinks }) {
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        Upload the latest APKs to Google Drive and paste the shareable links above. Always use the
-        &quot;Anyone with the link can download&quot; permission on Drive.
+        Upload the latest APKs to Database storage and paste the direct download links above.
       </p>
     </div>
   );
@@ -551,7 +536,7 @@ export default function MobileApps() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">Mobile Apps</h2>
           <p className="text-muted-foreground mt-0.5">
-            Manage Supabase Storage and Drive download links for the Flutter mobile applications
+            Manage Database download links for the Flutter mobile applications
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 border border-border rounded-lg px-3 py-2">
