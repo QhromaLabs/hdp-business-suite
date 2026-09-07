@@ -17,6 +17,7 @@ import { useMyAttendanceToday } from '@/hooks/useEmployees';
 import { cn } from '@/lib/utils';
 import { DashboardSkeleton } from '@/components/loading/PageSkeletons';
 import { ClockInModal } from '@/components/attendance/ClockInModal';
+import { HarryDashboardHero } from '@/components/dashboard/HarryDashboardHero';
 import {
     AreaChart,
     Area,
@@ -415,23 +416,8 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            {/* Welcome Banner */}
-            <div className="bg-gradient-to-r from-sidebar via-sidebar to-sidebar/90 rounded-2xl p-6 text-sidebar-foreground">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-2xl font-bold">
-                            Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'}, {profile?.full_name?.split(' ')[0] || 'User'}!
-                        </h2>
-                        <p className="text-sidebar-muted mt-1">
-                            Here's what's happening with your business today.
-                        </p>
-                    </div>
-                    <div className="hidden md:block text-right">
-                        <p className="text-3xl font-bold text-primary">{formatCurrency(dashboardStats?.todaySales || 0)}</p>
-                        <p className="text-sidebar-muted text-sm">Today's Revenue</p>
-                    </div>
-                </div>
-            </div>
+            {/* Harry AI Conversational Hero */}
+            <HarryDashboardHero todaySales={dashboardStats?.todaySales || 0} />
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
