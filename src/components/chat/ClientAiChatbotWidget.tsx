@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Bot, MessageSquare, X, Send, Key, Check, ShoppingBag, Truck, Phone, RefreshCw, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +8,9 @@ import { Badge } from '@/components/ui/badge';
 import { AiChatbotService, ChatMessage, LiveBusinessContext } from '@/services/aiChatbotService';
 
 export const ClientAiChatbotWidget: React.FC = () => {
+  const location = useLocation();
+  const isDashboardPage = location.pathname === '/' || location.pathname === '/dashboard';
+
   const [isOpen, setIsOpen] = useState(false);
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [apiKey, setApiKey] = useState('');
@@ -46,6 +50,11 @@ export const ClientAiChatbotWidget: React.FC = () => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
+
+  // If on Dashboard page, Harry AI is integrated into the hero area, so hide the floating widget
+  if (isDashboardPage) {
+    return null;
+  }
 
   const handleSaveKey = () => {
     localStorage.setItem('OPENROUTER_API_KEY', apiKey.trim());
