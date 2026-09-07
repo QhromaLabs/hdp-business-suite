@@ -218,7 +218,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
           </div>
 
           {/* Messages Area */}
-          <CardContent className="flex-1 p-4 overflow-y-auto space-y-3" ref={scrollRef}>
+          <CardContent className="flex-1 p-4 overflow-y-auto custom-minimal-scrollbar space-y-3" ref={scrollRef}>
             {messages.map(msg => (
               <div
                 key={msg.id}

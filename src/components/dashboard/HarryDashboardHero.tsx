@@ -241,7 +241,7 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
               <X className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto no-scrollbar">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto custom-minimal-scrollbar">
             {savedSessions.length > 0 ? (
               savedSessions.map(session => (
                 <button
@@ -342,8 +342,8 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
 
           {/* Glowing Glassmorphism Gradient Chat Card */}
           <div className="relative w-full flex flex-col h-[440px] md:h-[520px] bg-gradient-to-b from-card/95 via-background/90 to-card/95 border border-orange-500/40 rounded-3xl overflow-hidden backdrop-blur-2xl shadow-[0_0_50px_-10px_rgba(249,115,22,0.35)] animate-in fade-in slide-in-from-bottom-3 duration-300">
-            {/* Conversation Scroll Container (NO HEAVY SCROLLBAR) */}
-            <div className="flex-1 p-5 overflow-y-auto no-scrollbar space-y-4" ref={scrollRef}>
+            {/* Conversation Scroll Container (MINIMAL MINIMAL SCROLLBAR LIKE SIDEBAR) */}
+            <div className="flex-1 p-5 overflow-y-auto custom-minimal-scrollbar space-y-4" ref={scrollRef}>
               {messages.map(msg => (
                 <div
                   key={msg.id}
