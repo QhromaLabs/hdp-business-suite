@@ -193,8 +193,11 @@ export class AiChatbotService {
         proactiveAdvisories.push(`💡 EXPENSE TRACKING RECOMMENDATIONS: Remind Justin to keep logging key expenses: Rent, Electricity/Water, Packaging Materials, Delivery Freight/Courier, Fuel, Casual Labor, and Store Repairs.`);
       }
 
+      const rawStoreName = storeData?.store_name;
+      const storeName = (rawStoreName && rawStoreName !== 'Main Store') ? rawStoreName : 'HDPK Enterprise';
+
       this.cachedContext = {
-        storeName: storeData?.store_name || 'HDPK Wholesale store',
+        storeName,
         contactEmail: storeData?.contact_email || 'support@pro2036.xyz',
         contactPhone: storeData?.contact_phone || '+254 700 000 000',
         currency: storeData?.currency || 'KES',
@@ -222,7 +225,7 @@ export class AiChatbotService {
     } catch (err) {
       console.error('Error updating Harry context:', err);
       return this.cachedContext || {
-        storeName: 'HDPK Wholesale store',
+        storeName: 'HDPK Enterprise',
         contactEmail: 'support@pro2036.xyz',
         contactPhone: '+254 700 000 000',
         currency: 'KES',
@@ -252,7 +255,7 @@ export class AiChatbotService {
       msg += `\n`;
     }
 
-    msg += `I'm fully synchronized with live database telemetry (inventory catalog, 30-day orders, revenue, payroll, expenses). What would you like to analyze or execute right now?`;
+    msg += `I'm fully synchronized with live store metrics (inventory catalog, 30-day orders, revenue, payroll, expenses). What would you like to analyze or execute right now?`;
     return msg;
   }
 
@@ -274,7 +277,7 @@ SMART ASSISTANT FOR A SMART PERSON PROTOCOL:
 • TONE & GRAMMAR: 100% grammatically flawless, sophisticated, data-dense executive English. 
 • LENGTH & BREVITY: Short, smart, and punchy. Never write walls of text. Maximum 1-2 short sentences per paragraph. Use bullet points and bold key metrics for 5-second scannability.
 
-LIVE STORE TELEMETRY & CONTEXT (Synced ${context.lastUpdated}):
+LIVE STORE METRICS & DATABASE CONTEXT (Synced ${context.lastUpdated}):
 • Store: ${context.storeName} (${context.currency}) | Operator: Justin
 • 30-Day Revenue: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()} (${context.monthlyStats.totalMonthlyOrders} orders | ${context.monthlyStats.deliveredCount} delivered, ${context.monthlyStats.inTransitCount} active/pending)
 • Catalog: ${context.inStockProducts.length} items cataloged
@@ -292,7 +295,9 @@ RULES OF ENGAGEMENT:
 1. GREETING: Address Justin as Justin ("Good Morning, Justin! ☀️" / "Hi Justin! ⚡").
 2. IN-CONVERSATION REMINDERS: In between answering Justin's specific question, smartly drop active advisories (e.g. unlogged month-end payroll or 0-expense "sus" week) as crisp 1-liner business notes.
 3. DATA TRUTH: Rely strictly on real database numbers above. Never invent mock products.
-4. HIGH-DENSITY ANSWERS: Give the answer immediately, followed by bullet points if helpful.`;
+4. HIGH-DENSITY ANSWERS: Give the answer immediately, followed by bullet points if helpful.
+5. NO UNNATURAL WORDS: NEVER use the word "telemetry". Use natural business terms like "live store data", "real-time metrics", "database insights", or "sales figures".
+6. STORE NAME: The store name is ALWAYS ${context.storeName}. Never refer to it as "Main Store".`;
 
     const messagesPayload = [
       { role: 'system', content: systemPrompt },
@@ -337,7 +342,7 @@ RULES OF ENGAGEMENT:
     }
 
     // Fallback response if all network calls fail
-    return `Hi! I'm **Harry**, your live AI Assistant at **${context.storeName}**.\n\nHere is our live business telemetry snapshot (${context.lastUpdated}):\n\n• **30-Day Orders**: ${context.monthlyStats.totalMonthlyOrders} orders\n• **30-Day Revenue**: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()}\n• **Catalog**: ${context.inStockProducts.length} real products tracked (Wardrobes, Mosquito Nets, Cooking Pots, Carpets, Shoe Racks).\n\nHow can I help you today?`;
+    return `Hi! I'm **Harry**, your live AI Assistant at **${context.storeName}**.\n\nHere is our live business metrics snapshot (${context.lastUpdated}):\n\n• **30-Day Orders**: ${context.monthlyStats.totalMonthlyOrders} orders\n• **30-Day Revenue**: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()}\n• **Catalog**: ${context.inStockProducts.length} real products tracked (Wardrobes, Mosquito Nets, Cooking Pots, Carpets, Shoe Racks).\n\nHow can I help you today?`;
   }
 }
 

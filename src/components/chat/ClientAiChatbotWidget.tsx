@@ -139,10 +139,10 @@ export const ClientAiChatbotWidget: React.FC = () => {
                 <CardTitle className="text-base font-bold flex items-center gap-2">
                   Harry AI Assistant
                   <Badge variant="secondary" className="text-[10px] bg-emerald-500/20 text-emerald-300 border-none px-1.5 py-0.5">
-                    ● Live Telemetry
+                    ● Live Store Data
                   </Badge>
                 </CardTitle>
-                <p className="text-xs text-primary-foreground/80">Monthly Orders & Inventory Telemetry</p>
+                <p className="text-xs text-primary-foreground/80">Monthly Orders & Inventory Insights</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -242,7 +242,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
             {isLoading && (
               <div className="flex items-center space-x-2 text-muted-foreground text-xs p-2">
                 <RefreshCw className="h-3.5 w-3.5 animate-spin text-primary" />
-                <span>Harry is reasoning over monthly telemetry & generating response...</span>
+                <span>Harry is analyzing live store data & generating response...</span>
               </div>
             )}
           </CardContent>
