@@ -12,6 +12,13 @@ export interface LiveBusinessContext {
   contactEmail: string;
   contactPhone: string;
   currency: string;
+  currentDateFormatted: string;
+  dayOfMonth: number;
+  currentMonthName: string;
+  mtdStats: {
+    totalMtdOrders: number;
+    totalMtdRevenue: number;
+  };
   monthlyStats: {
     totalMonthlyOrders: number;
     totalMonthlyRevenue: number;
@@ -77,8 +84,22 @@ export class AiChatbotService {
     try {
       console.log('🔄 [Harry AI] Refreshing live database context on chat activation...');
       const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const currentDateFormatted = nowObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      const currentMonthName = nowObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const dayOfMonth = nowObj.getDate();
+      const currentMonthStart = new Date(nowObj.getFullYear(), nowObj.getMonth(), 1).toISOString();
 
-      // 1. Monthly Orders Data (Last 30 Days)
+      // 1. Fetch Month-to-Date (MTD) Orders (Day 1 to Today)
+      const { data: mtdOrdersData } = await supabase
+        .from('sales_orders')
+        .select('order_number, total_amount, created_at')
+        .gte('created_at', currentMonthStart);
+
+      const mtdOrders = mtdOrdersData || [];
+      const totalMtdRevenue = mtdOrders.reduce((sum, o: any) => sum + (Number(o.total_amount) || 0), 0);
+      const totalMtdOrders = mtdOrders.length;
+
+      // 2. Monthly Orders Data (Last 30 Days)
       const { data: monthlyOrders } = await supabase
         .from('sales_orders')
         .select('order_number, status, total_amount, created_at, customers (name)')
@@ -90,7 +111,7 @@ export class AiChatbotService {
       const deliveredCount = orders.filter((o: any) => o.status === 'delivered' || o.status === 'completed').length;
       const inTransitCount = orders.filter((o: any) => o.status === 'in_transit' || o.status === 'approved' || o.status === 'dispatched' || o.status === 'pending').length;
 
-      // 2. Stock Changes (Recent Inventory Transactions)
+      // 3. Stock Changes (Recent Inventory Transactions)
       const { data: rawTx } = await supabase
         .from('inventory_transactions')
         .select('transaction_type, quantity_change, created_at')
@@ -103,7 +124,7 @@ export class AiChatbotService {
         createdAt: t.created_at
       }));
 
-      // 3. Products Catalog & Stock Levels (Joined via product_variants and inventory)
+      // 4. Products Catalog & Stock Levels (Joined via product_variants and inventory)
       const { data: productsData, error: prodErr } = await supabase
         .from('products')
         .select(`
@@ -147,17 +168,14 @@ export class AiChatbotService {
         };
       });
 
-      // 4. Store Info
+      // 5. Store Info
       const { data: storeData } = await supabase
         .from('store_settings')
         .select('*')
         .limit(1)
         .single();
 
-      // 5. Payroll & Operating Expense Proactive Telemetry
-      const currentMonthName = nowObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-      const currentMonthStart = new Date(nowObj.getFullYear(), nowObj.getMonth(), 1).toISOString();
-      const dayOfMonth = nowObj.getDate();
+      // 6. Payroll & Operating Expense Advisories
       const isEndOfMonth = dayOfMonth >= 24; // End of month period (24th or later)
 
       // Query Payroll
@@ -188,7 +206,7 @@ export class AiChatbotService {
       }
 
       if (totalWeekExpenseEntries === 0) {
-        proactiveAdvisories.push(`🚨 SUS ZERO-EXPENSE WEEK ALERT: Exactly 0 operational expenses have been recorded in the past 7 days! This is suspicious ("sus") for an active wholesale store like ${storeData?.store_name || 'HDPK Wholesale store'}. Remind Justin that untracked operational costs (Rent, Electricity, Packaging, Delivery freight, Fuel, Casual labor, Repairs) will artificially inflate reported net profit.`);
+        proactiveAdvisories.push(`🚨 SUS ZERO-EXPENSE WEEK ALERT: Exactly 0 operational expenses have been recorded in the past 7 days! This is suspicious ("sus") for an active wholesale store like ${storeData?.store_name || 'HDPK Enterprise'}. Remind Justin that untracked operational costs (Rent, Electricity, Packaging, Delivery freight, Fuel, Casual labor, Repairs) will artificially inflate reported net profit.`);
       } else {
         proactiveAdvisories.push(`💡 EXPENSE TRACKING RECOMMENDATIONS: Remind Justin to keep logging key expenses: Rent, Electricity/Water, Packaging Materials, Delivery Freight/Courier, Fuel, Casual Labor, and Store Repairs.`);
       }
@@ -201,6 +219,13 @@ export class AiChatbotService {
         contactEmail: storeData?.contact_email || 'support@pro2036.xyz',
         contactPhone: storeData?.contact_phone || '+254 700 000 000',
         currency: storeData?.currency || 'KES',
+        currentDateFormatted,
+        dayOfMonth,
+        currentMonthName,
+        mtdStats: {
+          totalMtdOrders,
+          totalMtdRevenue
+        },
         monthlyStats: {
           totalMonthlyOrders: orders.length,
           totalMonthlyRevenue,
@@ -224,11 +249,16 @@ export class AiChatbotService {
       return this.cachedContext;
     } catch (err) {
       console.error('Error updating Harry context:', err);
+      const nowObj = new Date();
       return this.cachedContext || {
         storeName: 'HDPK Enterprise',
         contactEmail: 'support@pro2036.xyz',
         contactPhone: '+254 700 000 000',
         currency: 'KES',
+        currentDateFormatted: nowObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+        dayOfMonth: nowObj.getDate(),
+        currentMonthName: nowObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        mtdStats: { totalMtdOrders: 0, totalMtdRevenue: 0 },
         monthlyStats: { totalMonthlyOrders: 0, totalMonthlyRevenue: 0, deliveredCount: 0, inTransitCount: 0 },
         recentMonthlyOrders: [],
         stockChanges: [],
@@ -255,7 +285,7 @@ export class AiChatbotService {
       msg += `\n`;
     }
 
-    msg += `I'm fully synchronized with live store metrics (inventory catalog, 30-day orders, revenue, payroll, expenses). What would you like to analyze or execute right now?`;
+    msg += `Today is **${context.currentDateFormatted}** (Day ${context.dayOfMonth} of ${context.currentMonthName}). Month-to-Date sales so far are **${context.currency} ${context.mtdStats.totalMtdRevenue.toLocaleString()}**.\n\nWhat would you like to analyze or execute right now?`;
     return msg;
   }
 
@@ -275,11 +305,13 @@ export class AiChatbotService {
 SMART ASSISTANT FOR A SMART PERSON PROTOCOL:
 • PERSONA & RESPECT: Justin is a sharp, high-decisive executive. Treat Justin with supreme intellectual respect. Speak clearly, intelligently, and with zero fluff or hand-wringing.
 • TONE & GRAMMAR: 100% grammatically flawless, sophisticated, data-dense executive English. 
-• LENGTH & BREVITY: Short, smart, and punchy. Never write walls of text. Maximum 1-2 short sentences per paragraph. Use bullet points and bold key metrics for 5-second scannability.
+• LENGTH & BREVITY: Short, smart, and punchy. Never write unrequested long text dumps or multi-paragraph essays. Keep answers direct (1-2 sentences + key metrics max).
 
 LIVE STORE METRICS & DATABASE CONTEXT (Synced ${context.lastUpdated}):
+• Current Date: ${context.currentDateFormatted} (Day ${context.dayOfMonth} of ${context.currentMonthName})
 • Store: ${context.storeName} (${context.currency}) | Operator: Justin
-• 30-Day Revenue: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()} (${context.monthlyStats.totalMonthlyOrders} orders | ${context.monthlyStats.deliveredCount} delivered, ${context.monthlyStats.inTransitCount} active/pending)
+• Month-to-Date (MTD) Sales So Far (Day 1 to Day ${context.dayOfMonth} of ${context.currentMonthName}): ${context.currency} ${context.mtdStats.totalMtdRevenue.toLocaleString()} (${context.mtdStats.totalMtdOrders} orders)
+• Rolling 30-Day Sales Total: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()} (${context.monthlyStats.totalMonthlyOrders} orders | ${context.monthlyStats.deliveredCount} delivered, ${context.monthlyStats.inTransitCount} active/pending)
 • Catalog: ${context.inStockProducts.length} items cataloged
 
 PROACTIVE OPERATIONAL ADVISORIES (SMART IN-CONVERSATION REMINDERS):
@@ -293,11 +325,17 @@ ${context.inStockProducts.map(p => `- ${p.name} [${p.category}]: ${context.curre
 
 RULES OF ENGAGEMENT:
 1. GREETING: Address Justin as Justin ("Good Morning, Justin! ☀️" / "Hi Justin! ⚡").
-2. IN-CONVERSATION REMINDERS: In between answering Justin's specific question, smartly drop active advisories (e.g. unlogged month-end payroll or 0-expense "sus" week) as crisp 1-liner business notes.
-3. DATA TRUTH: Rely strictly on real database numbers above. Never invent mock products.
-4. HIGH-DENSITY ANSWERS: Give the answer immediately, followed by bullet points if helpful.
-5. NO UNNATURAL WORDS: NEVER use the word "telemetry". Use natural business terms like "live store data", "real-time metrics", "database insights", or "sales figures".
-6. STORE NAME: The store name is ALWAYS ${context.storeName}. Never refer to it as "Main Store".`;
+2. INTERACTIVE CLARIFICATION PROTOCOL (CRITICAL - DO NOT SPIT OUT WALLS OF TEXT):
+   - Never dump long unrequested lists, massive text blocks, or repetitive data dumps.
+   - Keep answers crisp, highly direct, and concise (1-2 short sentences + 2-3 key metrics max).
+   - When Justin asks a question or makes a query, answer the immediate question concisely AND ALWAYS ask 1-2 sharp, targeted clarifying questions to guide the conversation interactively (e.g. "Would you like me to drill into sales by product category, or check outstanding customer balances?").
+3. DATE & SALES ACCURACY:
+   - Today is ${context.currentDateFormatted} (Day ${context.dayOfMonth} of ${context.currentMonthName}).
+   - When asked about sales so far or current month performance, state the Month-to-Date (MTD) revenue so far (${context.currency} ${context.mtdStats.totalMtdRevenue.toLocaleString()}) for Day 1 to Day ${context.dayOfMonth}, and clearly distinguish it from rolling 30-day sales (${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()}).
+4. IN-CONVERSATION REMINDERS: In between answering Justin's specific question, naturally weave in active advisories (e.g. unlogged month-end payroll or 0-expense "sus" week) as a quick 1-line operational reminder note.
+5. DATA TRUTH: Rely strictly on real database numbers above. Never invent mock products.
+6. NO UNNATURAL WORDS: NEVER use the word "telemetry". Use natural business terms like "live store data", "real-time metrics", "database insights", or "sales figures".
+7. STORE NAME: The store name is ALWAYS ${context.storeName}. Never refer to it as "Main Store".`;
 
     const messagesPayload = [
       { role: 'system', content: systemPrompt },
