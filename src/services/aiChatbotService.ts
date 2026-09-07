@@ -341,8 +341,8 @@ RULES OF ENGAGEMENT:
       }
     }
 
-    // Fallback response if all network calls fail
-    return `Hi! I'm **Harry**, your live AI Assistant at **${context.storeName}**.\n\nHere is our live business metrics snapshot (${context.lastUpdated}):\n\n• **30-Day Orders**: ${context.monthlyStats.totalMonthlyOrders} orders\n• **30-Day Revenue**: ${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()}\n• **Catalog**: ${context.inStockProducts.length} real products tracked (Wardrobes, Mosquito Nets, Cooking Pots, Carpets, Shoe Racks).\n\nHow can I help you today?`;
+    // Fallback response if AI reasoning processing fails
+    return `Sorry sir, I couldn't process that. Kindly check with Qhroma Labs AI team [here](https://qhroma.co.ke/labs/ai-agent/) where you can submit agent crash reports sent directly to qhromalabs@gmail.com.`;
   }
 }
 

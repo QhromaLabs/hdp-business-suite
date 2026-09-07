@@ -100,7 +100,7 @@ export const ClientAiChatbotWidget: React.FC = () => {
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: 'Sorry, I ran into an error generating that response. Please try again!',
+          content: "Sorry sir, I couldn't process that. Kindly check with Qhroma Labs AI team [here](https://qhroma.co.ke/labs/ai-agent/) to submit a crash report to qhromalabs@gmail.com.",
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -114,6 +114,10 @@ export const ClientAiChatbotWidget: React.FC = () => {
     return lines.map((line, idx) => {
       let formatted = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      // Format markdown links [Text](URL)
+      formatted = formatted.replace(/\[(.*?)\]\((https?:\/\/.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline text-orange-400 hover:text-orange-300 font-semibold">$1</a>');
+      // Format raw URLs
+      formatted = formatted.replace(/(?<!href=")(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="underline text-orange-400 hover:text-orange-300 font-semibold">$1</a>');
       return (
         <div 
           key={idx} 

@@ -86,6 +86,8 @@ function RoleRoute({ children, allowed }: { children: React.ReactNode; allowed: 
   return <>{children}</>;
 }
 
+import LabsAiAgentReport from "./pages/LabsAiAgentReport";
+
 function AppRoutes() {
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -106,6 +108,8 @@ function AppRoutes() {
       <Route path="/device-id" element={<DeviceId />} />
       <Route path="/my-ip" element={<MyIp />} />
       <Route path="/changelog06/02/26" element={<Changelog />} />
+      <Route path="/labs/ai-agent" element={<LabsAiAgentReport />} />
+      <Route path="/labs/ai-agent/*" element={<LabsAiAgentReport />} />
       <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
       <Route
         path="/"
