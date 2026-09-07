@@ -10,11 +10,12 @@ import {
   TrendingUp,
   ShoppingBag,
   Truck,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  Mic
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { AiChatbotService, ChatMessage } from '@/services/aiChatbotService';
 
@@ -181,36 +182,29 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
   ];
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-orange-500/20 bg-gradient-to-b from-card via-background to-card p-6 md:p-8 shadow-2xl transition-all duration-500">
-      {/* 🌟 Ambient Animated Orange Glow Backgrounds (Top & Bottom) */}
-      <div className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full bg-gradient-to-br from-orange-500/25 via-amber-500/15 to-transparent blur-3xl animate-pulse" />
-      <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-gradient-to-tl from-orange-600/20 via-amber-500/10 to-transparent blur-3xl animate-pulse" style={{ animationDuration: '4s' }} />
+    <div className="relative overflow-hidden rounded-3xl p-6 md:p-10 transition-all duration-700">
+      {/* 🌈 Vibrant Lovable-Style Mesh Gradient Aura (Darkmode & Lightmode adapted) */}
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl">
+        {/* Soft Background Mesh Blobs */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-gradient-to-br from-orange-500/20 via-amber-500/15 via-purple-500/15 to-blue-500/20 dark:from-orange-600/30 dark:via-amber-600/20 dark:via-purple-600/25 dark:to-blue-600/20 blur-3xl opacity-90 animate-pulse" style={{ animationDuration: '6s' }} />
+        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-l from-orange-500/30 via-pink-500/20 to-transparent blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-gradient-to-r from-blue-500/25 via-purple-500/20 to-transparent blur-3xl" />
+      </div>
 
-      {/* Top Header Bar: Dynamic Greeting & Casual Today's Revenue */}
-      <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-border/40">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-gradient-to-br from-orange-500/20 to-amber-500/20 border border-orange-500/30 rounded-2xl shadow-inner relative">
-            <Bot className="h-7 w-7 text-orange-500 animate-bounce" style={{ animationDuration: '3s' }} />
-            <Sparkles className="h-4 w-4 text-amber-400 absolute -top-1 -right-1 animate-spin" style={{ animationDuration: '6s' }} />
-          </div>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-2">
-              {getGreeting()}
-            </h1>
-            <p className="text-xs md:text-sm text-muted-foreground mt-0.5 flex items-center gap-1.5">
-              <span>Here's your live business intelligence hub.</span>
-              <Badge variant="outline" className="border-orange-500/30 bg-orange-500/10 text-orange-400 text-[10px] px-2 py-0">
-                ● Harry AI Active
-              </Badge>
-            </p>
-          </div>
+      {/* Top Controls Bar: Casual Revenue & Buttons */}
+      <div className="flex items-center justify-between gap-4 pb-6">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-background/60 dark:bg-card/80 border border-orange-500/20 text-orange-500 dark:text-orange-400 text-xs font-semibold backdrop-blur-md shadow-xs">
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>Harry AI Assistant</span>
+          </span>
         </div>
 
-        {/* Casual Right Side Revenue Display & Controls */}
-        <div className="flex items-center gap-4 self-end md:self-auto">
-          <div className="text-right bg-muted/30 border border-border/50 px-4 py-2 rounded-2xl backdrop-blur-xs">
-            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Today's Revenue</p>
-            <p className="text-xl md:text-2xl font-black text-orange-500 font-mono">{formatCurrency(todaySales)}</p>
+        <div className="flex items-center gap-3">
+          {/* Casual Today's Revenue Counter */}
+          <div className="text-right px-3.5 py-1.5 rounded-2xl bg-background/50 dark:bg-card/60 border border-border/40 backdrop-blur-md">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block">Today's Revenue</span>
+            <span className="text-sm md:text-base font-black text-orange-500 font-mono">{formatCurrency(todaySales)}</span>
           </div>
 
           {/* History Button */}
@@ -218,9 +212,9 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
             variant="outline"
             size="sm"
             onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-            className="rounded-xl gap-1.5 border-orange-500/20 hover:bg-orange-500/10 hover:text-orange-400 text-xs font-semibold"
+            className="rounded-2xl gap-1.5 bg-background/60 dark:bg-card/80 border-border/60 hover:bg-orange-500/10 hover:border-orange-500/30 text-xs font-semibold backdrop-blur-md"
           >
-            <History className="h-4 w-4 text-orange-400" />
+            <History className="h-4 w-4 text-orange-500" />
             <span className="hidden sm:inline">History</span>
           </Button>
 
@@ -229,7 +223,7 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
             <Button
               size="sm"
               onClick={handleStartNewChat}
-              className="rounded-xl gap-1.5 bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs shadow-md shadow-orange-500/20"
+              className="rounded-2xl gap-1.5 bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs shadow-md shadow-orange-500/20"
             >
               <Plus className="h-4 w-4" />
               <span>New Chat</span>
@@ -240,7 +234,7 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
 
       {/* 📜 Chat History Slide-Over Drawer */}
       {isHistoryOpen && (
-        <div className="relative z-20 mt-4 p-4 bg-muted/60 border border-orange-500/20 rounded-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2">
+        <div className="mb-6 p-4 bg-background/80 dark:bg-card/90 border border-orange-500/20 rounded-2xl backdrop-blur-xl shadow-xl animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center justify-between pb-3 border-b border-border/50">
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
               <History className="h-3.5 w-3.5 text-orange-500" /> Previous Conversations
@@ -268,114 +262,133 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
         </div>
       )}
 
-      {/* 💬 Central Conversational Hero Input & Conversation Area */}
-      <div className="relative z-10 mt-6 flex flex-col items-center">
-        {/* Still / Initial Centered Presentation */}
-        {!isChatActive ? (
-          <div className="w-full max-w-3xl flex flex-col items-center text-center my-4 animate-in fade-in zoom-in-95 duration-300">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs font-medium mb-3">
-              <Sparkles className="h-3.5 w-3.5 animate-pulse" />
-              <span>Ask Harry about stock, revenue, or orders</span>
-            </div>
+      {/* 🌟 LOVABLE-STYLE HERO PRESENTATION (WHEN STILL / NO CHAT) */}
+      {!isChatActive ? (
+        <div className="flex flex-col items-center text-center py-8 md:py-12 animate-in fade-in zoom-in-95 duration-500">
+          {/* Bold Centered Headline */}
+          <h1 className="text-4xl md:text-6xl font-black tracking-tight text-foreground max-w-3xl leading-tight">
+            {getGreeting()}
+          </h1>
+          <p className="text-base md:text-lg text-muted-foreground mt-3 font-medium max-w-xl">
+            Ask Harry to analyze inventory, track revenue, or query orders.
+          </p>
 
-            {/* Central Glowing Interactive Search/Chat Bar */}
-            <div className="w-full relative group">
-              <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 opacity-25 group-hover:opacity-40 blur transition duration-300" />
-              <div className="relative flex items-center bg-background border border-orange-500/30 rounded-2xl shadow-xl overflow-hidden p-1.5 focus-within:ring-2 focus-within:ring-orange-500/50">
-                <div className="pl-3 text-orange-500">
-                  <Bot className="h-5 w-5" />
-                </div>
-                <Input
-                  type="text"
-                  placeholder="Hello, I am Harry, Your Assistant, ask me anything!"
-                  value={inputValue}
-                  onChange={e => setInputValue(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
-                  className="border-0 bg-transparent text-sm md:text-base focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/70 py-3"
-                />
+          {/* 🪩 LOVABLE-STYLE FLOATING PILL CHAT BAR */}
+          <div className="w-full max-w-2xl mt-8 relative group">
+            {/* Ambient Glow behind Pill */}
+            <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-orange-500 via-amber-500 via-purple-500 to-blue-500 opacity-35 group-hover:opacity-60 blur-lg transition duration-500" />
+
+            {/* Floating Glassmorphism Pill Container */}
+            <div className="relative flex items-center bg-background/90 dark:bg-card/95 border border-white/40 dark:border-white/10 rounded-full shadow-2xl backdrop-blur-2xl p-2 transition-all duration-300 focus-within:ring-2 focus-within:ring-orange-500/50">
+              {/* Left Plus Icon Button */}
+              <button
+                type="button"
+                onClick={() => setInputValue(prev => prev ? prev : 'Summarize store stock')}
+                className="p-2.5 rounded-full bg-muted/60 hover:bg-orange-500/20 text-muted-foreground hover:text-orange-500 transition-colors ml-1"
+                title="Add shortcut query"
+              >
+                <Plus className="h-5 w-5" />
+              </button>
+
+              {/* Central Input */}
+              <Input
+                type="text"
+                placeholder="Ask Harry about stock, revenue, or orders..."
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+                className="border-0 bg-transparent text-sm md:text-base focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60 px-4 py-3"
+              />
+
+              {/* Right Mode Selector & Send Pill */}
+              <div className="flex items-center gap-1.5 pr-1">
+                <span className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground px-3 py-1.5 rounded-full bg-muted/40 border border-border/30">
+                  Ask Harry <ChevronDown className="h-3 w-3" />
+                </span>
+
                 <Button
                   size="icon"
                   onClick={() => handleSendMessage()}
                   disabled={!inputValue.trim()}
-                  className="rounded-xl bg-orange-500 hover:bg-orange-600 text-white shrink-0 h-10 w-10 shadow-md shadow-orange-500/20"
+                  className="rounded-full bg-orange-500 hover:bg-orange-600 text-white shrink-0 h-10 w-10 shadow-md shadow-orange-500/25"
                 >
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
             </div>
-
-            {/* Dynamic Suggestive Prompts */}
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {suggestivePrompts.map((p, idx) => {
-                const Icon = p.icon;
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => handleSendMessage(p.query)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/60 hover:bg-orange-500/10 border border-border/60 hover:border-orange-500/30 text-xs font-medium text-muted-foreground hover:text-foreground transition-all duration-200 shadow-xs"
-                  >
-                    <Icon className="h-3.5 w-3.5 text-orange-400" />
-                    <span>{p.label}</span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
-        ) : (
-          /* Active Chat Conversation Expanded View */
-          <div className="w-full flex flex-col h-[400px] md:h-[460px] bg-background/60 border border-orange-500/20 rounded-2xl overflow-hidden backdrop-blur-md shadow-inner animate-in fade-in slide-in-from-bottom-3 duration-300">
-            {/* Conversation Scroll Container */}
-            <div className="flex-1 p-4 overflow-y-auto space-y-3" ref={scrollRef}>
-              {messages.map(msg => (
-                <div
-                  key={msg.id}
-                  className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+
+          {/* Suggestive Chips Under Pill */}
+          <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-2xl">
+            {suggestivePrompts.map((p, idx) => {
+              const Icon = p.icon;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => handleSendMessage(p.query)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-background/60 dark:bg-card/70 hover:bg-orange-500/15 border border-border/50 hover:border-orange-500/30 text-xs font-semibold text-muted-foreground hover:text-foreground transition-all duration-200 shadow-xs backdrop-blur-md"
                 >
-                  <div
-                    className={`max-w-[88%] p-3.5 rounded-2xl text-sm ${
-                      msg.role === 'user'
-                        ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white rounded-br-xs shadow-md'
-                        : 'bg-card border border-border text-foreground rounded-bl-xs shadow-sm'
-                    }`}
-                  >
-                    {renderFormattedText(msg.content)}
-                  </div>
-                  <span className="text-[10px] text-muted-foreground mt-1 px-1.5">
-                    {msg.timestamp}
-                  </span>
-                </div>
-              ))}
-
-              {isLoading && (
-                <div className="flex items-center space-x-2 text-muted-foreground text-xs p-3 bg-muted/30 rounded-xl w-fit">
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-orange-500" />
-                  <span>Harry is analyzing telemetry & reasoning...</span>
-                </div>
-              )}
-            </div>
-
-            {/* Active Bottom Chat Bar */}
-            <div className="p-3 border-t border-border/50 bg-background/80 flex gap-2 items-center">
-              <Input
-                placeholder="Ask Harry follow-up questions..."
-                value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
-                className="text-sm rounded-xl bg-card border-border"
-                disabled={isLoading}
-              />
-              <Button
-                size="icon"
-                onClick={() => handleSendMessage()}
-                disabled={!inputValue.trim() || isLoading}
-                className="rounded-xl bg-orange-500 hover:bg-orange-600 text-white px-3 shrink-0"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
+                  <Icon className="h-3.5 w-3.5 text-orange-500" />
+                  <span>{p.label}</span>
+                </button>
+              );
+            })}
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        /* ACTIVE CHAT CONVERSATION VIEW */
+        <div className="w-full flex flex-col h-[420px] md:h-[480px] bg-background/80 dark:bg-card/90 border border-orange-500/20 rounded-3xl overflow-hidden backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-bottom-3 duration-300 mt-4">
+          {/* Conversation Scroll Container */}
+          <div className="flex-1 p-5 overflow-y-auto space-y-3.5" ref={scrollRef}>
+            {messages.map(msg => (
+              <div
+                key={msg.id}
+                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+              >
+                <div
+                  className={`max-w-[85%] p-4 rounded-2xl text-sm ${
+                    msg.role === 'user'
+                      ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white rounded-br-xs shadow-md'
+                      : 'bg-card dark:bg-slate-900/90 border border-border text-foreground rounded-bl-xs shadow-sm'
+                  }`}
+                >
+                  {renderFormattedText(msg.content)}
+                </div>
+                <span className="text-[10px] text-muted-foreground mt-1 px-1.5 font-medium">
+                  {msg.timestamp}
+                </span>
+              </div>
+            ))}
+
+            {isLoading && (
+              <div className="flex items-center space-x-2 text-muted-foreground text-xs p-3 bg-muted/40 rounded-xl w-fit">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                <span>Harry is analyzing live telemetry & reasoning...</span>
+              </div>
+            )}
+          </div>
+
+          {/* Active Bottom Chat Bar */}
+          <div className="p-3.5 border-t border-border/50 bg-background/90 dark:bg-slate-950/80 flex gap-2 items-center">
+            <Input
+              placeholder="Ask Harry follow-up questions..."
+              value={inputValue}
+              onChange={e => setInputValue(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+              className="text-sm rounded-2xl bg-card border-border px-4 py-2.5"
+              disabled={isLoading}
+            />
+            <Button
+              size="icon"
+              onClick={() => handleSendMessage()}
+              disabled={!inputValue.trim() || isLoading}
+              className="rounded-2xl bg-orange-500 hover:bg-orange-600 text-white px-4 shrink-0 h-10 w-10 shadow-md shadow-orange-500/20"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
