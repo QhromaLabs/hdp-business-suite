@@ -73,7 +73,13 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
   @override
   Widget build(BuildContext context) {
     final c = widget.customer;
-    final dist = c['distance'] as double?;
+    final double? rawLat = (c['latitude'] as num?)?.toDouble() ?? (c['last_lat'] as num?)?.toDouble();
+    final double? rawLng = (c['longitude'] as num?)?.toDouble() ?? (c['last_lng'] as num?)?.toDouble();
+    final bool hasValidCoords = rawLat != null && rawLng != null && rawLat != 0 && rawLng != 0;
+    final double? dist = hasValidCoords ? (c['distance'] as double?) : null;
+    final String? addressStr = (c['address'] != null && c['address'].toString().trim().isNotEmpty)
+        ? c['address'].toString().trim()
+        : null;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -107,14 +113,17 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
                         color: Colors.grey[100],
                         shape: BoxShape.circle,
                       ),
-                      child: Text(c['name'][0].toUpperCase(), style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey[700])),
+                      child: Text(
+                        (c['name'] != null && c['name'].toString().isNotEmpty) ? c['name'][0].toUpperCase() : 'C', 
+                        style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey[700])
+                      ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(c['name'], style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold)),
+                          Text(c['name'] ?? 'Unnamed Customer', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 4),
                           Text(c['phone'] ?? 'No Phone', style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 14)),
                           const SizedBox(height: 8),
@@ -125,6 +134,14 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
                                  const SizedBox(width: 4),
                                  Text('${(dist / 1000).toStringAsFixed(1)} km away', style: GoogleFonts.inter(color: const Color(0xFFFF6600), fontWeight: FontWeight.w600)),
                                ],
+                             )
+                          else
+                             Row(
+                               children: [
+                                 Icon(Icons.location_off_outlined, size: 16, color: Colors.grey[400]),
+                                 const SizedBox(width: 4),
+                                 Text('Location not set', style: GoogleFonts.inter(color: Colors.grey[500], fontSize: 13, fontWeight: FontWeight.w500)),
+                               ],
                              ),
                         ],
                       ),
@@ -132,28 +149,35 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
                   ],
                 ),
                 const SizedBox(height: 24),
-                 // Location Details
-                 if (c['address'] != null || c['last_lat'] != null)
-                   Container(
-                     padding: const EdgeInsets.all(12),
-                     decoration: BoxDecoration(
-                       color: Colors.blue[50], // Light blue for location context
-                       borderRadius: BorderRadius.circular(12),
-                       border: Border.all(color: Colors.blue.withOpacity(0.1)),
-                     ),
-                     child: Row(
-                       children: [
-                         Icon(Icons.map, color: Colors.blue[700]),
-                         const SizedBox(width: 12),
-                         Expanded(
-                           child: Text(
-                             c['address'] ?? 'Pinned Location available', 
-                             style: GoogleFonts.inter(color: Colors.blue[900], fontWeight: FontWeight.w500),
-                           ),
-                         ),
-                       ],
+                 // Location Details Card
+                 Container(
+                   padding: const EdgeInsets.all(12),
+                   decoration: BoxDecoration(
+                     color: (addressStr != null || hasValidCoords) ? Colors.blue[50] : Colors.grey[100],
+                     borderRadius: BorderRadius.circular(12),
+                     border: Border.all(
+                       color: (addressStr != null || hasValidCoords) ? Colors.blue.withOpacity(0.1) : Colors.grey[300]!,
                      ),
                    ),
+                   child: Row(
+                     children: [
+                       Icon(
+                         (addressStr != null || hasValidCoords) ? Icons.map : Icons.map_outlined, 
+                         color: (addressStr != null || hasValidCoords) ? Colors.blue[700] : Colors.grey[500],
+                       ),
+                       const SizedBox(width: 12),
+                       Expanded(
+                         child: Text(
+                           addressStr ?? (hasValidCoords ? 'Pinned Location available' : 'Location not set'), 
+                           style: GoogleFonts.inter(
+                             color: (addressStr != null || hasValidCoords) ? Colors.blue[900] : Colors.grey[600], 
+                             fontWeight: FontWeight.w500,
+                           ),
+                         ),
+                       ),
+                     ],
+                   ),
+                 ),
               ],
             ),
           ),
@@ -186,37 +210,61 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
                   ],
                 ),
           ),
-          
-          // Log Visit Button (Small, secondary)
-          Padding(
-             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-             child: OutlinedButton.icon(
-               onPressed: _showLogVisitModal,
-               icon: const Icon(Icons.edit_note, size: 18),
-               label: const Text("Log Visit / Note"),
-               style: OutlinedButton.styleFrom(
-                 foregroundColor: Colors.grey[800],
-                 side: BorderSide(color: Colors.grey[300]!),
-                 minimumSize: const Size(double.infinity, 45)
-               ),
-             ),
-          ),
         ],
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          if (widget.onNavigateToPOSWithCustomer != null) {
-            Navigator.pop(context); // Close detail page first
-            widget.onNavigateToPOSWithCustomer!(widget.customer);
-          } else {
-            widget.onTabChange?.call(1);
-          }
-        },
-        backgroundColor: const Color(0xFFFF6600),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-        icon: const Icon(Icons.point_of_sale, color: Colors.white, size: 20),
-        label: Text('New Sale', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 10,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _showLogVisitModal,
+                  icon: const Icon(Icons.edit_note, size: 20),
+                  label: Text('Log Visit', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.grey[800],
+                    side: BorderSide(color: Colors.grey[300]!),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    if (widget.onNavigateToPOSWithCustomer != null) {
+                      Navigator.pop(context); // Close detail page first
+                      widget.onNavigateToPOSWithCustomer!(widget.customer);
+                    } else {
+                      widget.onTabChange?.call(1);
+                    }
+                  },
+                  icon: const Icon(Icons.point_of_sale, color: Colors.white, size: 20),
+                  label: Text('New Sale', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6600),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -258,23 +306,30 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Order #${order['order_number'] ?? '---'}', 
-                    style: GoogleFonts.inter(fontWeight: FontWeight.bold)
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${DateFormat('MMM dd, yyyy').format(date)} • $status',
-                    style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
-                  ),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Order #${order['order_number'] ?? '---'}', 
+                      style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${DateFormat('MMM dd, yyyy').format(date)} • $status',
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 12),
               Text(
                 NumberFormat.currency(symbol: 'KES ').format(amount),
-                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16),
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15),
               ),
             ],
           ),
@@ -558,36 +613,54 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> with SingleTi
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
                 onPressed: isSubmitting ? null : () async {
-                  if (nameCtrl.text.isEmpty) return;
+                  final newName = nameCtrl.text.trim();
+                  final newPhone = phoneCtrl.text.trim();
+                  final newAddress = addressCtrl.text.trim();
+                  if (newName.isEmpty) return;
+
                   setModalState(() => isSubmitting = true);
                   try {
-                    final updates = {
-                      'name': nameCtrl.text,
-                      'phone': phoneCtrl.text,
-                      'address': addressCtrl.text,
-                      'latitude': lat,
-                      'longitude': lng,
+                    final updates = <String, dynamic>{
+                      'name': newName,
+                      'phone': newPhone,
+                      'address': newAddress,
                     };
-                    
-                    final res = await supabase.from('customers').update(updates).eq('id', widget.customer['id']).select().single();
-                    
-                    setState(() {
-                       // Update local state widget
-                       widget.customer['name'] = res['name'];
-                       widget.customer['phone'] = res['phone'];
-                       widget.customer['address'] = res['address'];
-                       widget.customer['latitude'] = res['latitude'];
-                       widget.customer['longitude'] = res['longitude'];
-                       
-                       // Recalculate distance if needed, but for now just visual update
-                    });
-                    
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Customer updated successfully')));
+                    if (lat != null) updates['latitude'] = lat;
+                    if (lng != null) updates['longitude'] = lng;
+
+                    await supabase
+                        .from('customers')
+                        .update(updates)
+                        .eq('id', widget.customer['id']);
+
+                    if (mounted) {
+                      setState(() {
+                        widget.customer['name'] = newName;
+                        widget.customer['phone'] = newPhone;
+                        widget.customer['address'] = newAddress;
+                        if (lat != null) widget.customer['latitude'] = lat;
+                        if (lng != null) widget.customer['longitude'] = lng;
+                      });
+
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Customer updated successfully'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
                   } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update: $e')));
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to update customer: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
                   } finally {
-                    setModalState(() => isSubmitting = false);
+                    if (mounted) setModalState(() => isSubmitting = false);
                   }
                 },
                 child: isSubmitting 

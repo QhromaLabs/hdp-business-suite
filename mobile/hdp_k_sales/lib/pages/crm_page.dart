@@ -92,17 +92,23 @@ class _CRMPageState extends State<CRMPage> {
         setState(() {
           customers = List<Map<String, dynamic>>.from(custRes).map((c) {
             final loc = lastLocations[c['id']];
+            final double? lat = (c['latitude'] as num?)?.toDouble() ?? loc?['lat'];
+            final double? lng = (c['longitude'] as num?)?.toDouble() ?? loc?['lng'];
+            final bool hasValidCoords = lat != null && lng != null && lat != 0 && lng != 0;
+
             double? distance;
-            if (loc != null && _currentPosition != null) {
+            if (hasValidCoords && _currentPosition != null) {
               distance = Geolocator.distanceBetween(
                 _currentPosition!.latitude,
                 _currentPosition!.longitude,
-                loc['lat']!,
-                loc['lng']!,
+                lat,
+                lng,
               );
             }
             return {
               ...c,
+              'latitude': hasValidCoords ? lat : null,
+              'longitude': hasValidCoords ? lng : null,
               'last_lat': loc?['lat'],
               'last_lng': loc?['lng'],
               'distance': distance,
@@ -286,8 +292,8 @@ class _CRMPageState extends State<CRMPage> {
                               side: BorderSide(color: Colors.grey[200]!),
                             ),
                             child: InkWell(
-                              onTap: () {
-                                Navigator.push(
+                              onTap: () async {
+                                await Navigator.push(
                                   context, 
                                   MaterialPageRoute(builder: (_) => CustomerDetailsPage(
                                     customer: c,
@@ -295,6 +301,7 @@ class _CRMPageState extends State<CRMPage> {
                                     onNavigateToPOSWithCustomer: widget.onNavigateToPOSWithCustomer,
                                   ))
                                 );
+                                _fetchData();
                               },
                               borderRadius: BorderRadius.circular(16),
                               child: Padding(

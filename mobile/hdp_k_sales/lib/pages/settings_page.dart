@@ -172,22 +172,58 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       // 1. Update Auth metadata & optional password
       final UserAttributes attributes = UserAttributes(
-        data: {'full_name': newName},
+        data: {
+          'full_name': newName,
+          'name': newName,
+          'phone': newPhone,
+        },
         password: newPassword.isNotEmpty ? newPassword : null,
       );
       await supabase.auth.updateUser(attributes);
 
-      // 2. Update Profiles table
-      await supabase.from('profiles').update({
-        'full_name': newName,
-        'phone': newPhone.isNotEmpty ? newPhone : null,
-      }).eq('id', user.id);
+      // 2. Upsert into Profiles table
+      try {
+        final profileUpdates = <String, dynamic>{
+          'id': user.id,
+          'full_name': newName,
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+        if (newPhone.isNotEmpty) {
+          profileUpdates['phone'] = newPhone;
+        }
+        await supabase.from('profiles').upsert(profileUpdates);
+      } catch (pe) {
+        debugPrint('Profiles table upsert notice: $pe');
+      }
 
       // 3. Update Employees table if record exists
-      await supabase.from('employees').update({
-        'full_name': newName,
-        'phone': newPhone.isNotEmpty ? newPhone : null,
-      }).eq('user_id', user.id);
+      try {
+        final empUpdates = <String, dynamic>{
+          'full_name': newName,
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+        if (newPhone.isNotEmpty) {
+          empUpdates['phone'] = newPhone;
+        }
+
+        // Try updating by user_id first
+        final res = await supabase
+            .from('employees')
+            .update(empUpdates)
+            .eq('user_id', user.id)
+            .select();
+
+        // If no rows matched user_id, fallback to matching by email if available
+        if ((res as List).isEmpty && user.email != null) {
+          empUpdates['user_id'] = user.id;
+          await supabase
+              .from('employees')
+              .update(empUpdates)
+              .eq('email', user.email!);
+        }
+      } catch (ee) {
+        debugPrint('Employees table update notice: $ee');
+      }
 
       if (mounted) {
         Navigator.of(context).pop(); // Close bottom sheet
