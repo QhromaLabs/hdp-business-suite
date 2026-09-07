@@ -265,7 +265,7 @@ function AppCard({ config, link, onLinkChange }: AppCardProps) {
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Link2 className="w-4 h-4 text-primary" />
-            Google Drive Download Link
+            Supabase / Drive APK Download Link
           </div>
 
           {editing ? (
@@ -279,7 +279,7 @@ function AppCard({ config, link, onLinkChange }: AppCardProps) {
                   if (e.key === 'Enter') handleSave();
                   if (e.key === 'Escape') handleCancel();
                 }}
-                placeholder="https://drive.google.com/file/d/..."
+                placeholder="https://sxgsnnpwnhuvpxllwcbs.supabase.co/storage/v1/object/public/mobile-apps/..."
                 className="input-field text-sm"
               />
               <div className="flex gap-2">
@@ -551,7 +551,7 @@ export default function MobileApps() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">Mobile Apps</h2>
           <p className="text-muted-foreground mt-0.5">
-            Manage Google Drive download links for the Flutter mobile applications
+            Manage Supabase Storage and Drive download links for the Flutter mobile applications
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 border border-border rounded-lg px-3 py-2">
