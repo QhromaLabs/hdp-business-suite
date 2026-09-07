@@ -11,7 +11,8 @@ import {
   ShoppingBag,
   Truck,
   AlertTriangle,
-  Brain
+  Brain,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -162,6 +163,16 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
     setInputValue('');
   };
 
+  const handleClearAllHistory = () => {
+    localStorage.removeItem('HARRY_CHAT_HISTORY');
+    localStorage.removeItem('OPENROUTER_CHAT_HISTORY');
+    setSavedSessions([]);
+    setMessages([]);
+    setIsChatActive(false);
+    setIsHistoryOpen(false);
+    setInputValue('');
+  };
+
   const handleLoadSession = (session: SavedSession) => {
     setMessages(session.messages);
     setIsChatActive(true);
@@ -237,9 +248,22 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
               <History className="h-3.5 w-3.5 text-orange-500" /> Previous Conversations
             </h3>
-            <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" onClick={() => setIsHistoryOpen(false)}>
-              <X className="h-3.5 w-3.5" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {savedSessions.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearAllHistory}
+                  className="h-7 text-[11px] text-red-500 hover:text-red-600 hover:bg-red-500/10 px-2 rounded-xl"
+                  title="Clear all stored chat sessions"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear All
+                </Button>
+              )}
+              <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" onClick={() => setIsHistoryOpen(false)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto custom-minimal-scrollbar">
             {savedSessions.length > 0 ? (
