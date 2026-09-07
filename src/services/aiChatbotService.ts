@@ -37,6 +37,7 @@ export interface LiveBusinessContext {
     stock: number;
     description?: string;
   }>;
+  proactiveAdvisories: string[];
   lastUpdated: string;
 }
 
@@ -68,6 +69,7 @@ export class AiChatbotService {
    */
   static async getLiveContext(forceRefresh = false, userId?: string): Promise<LiveBusinessContext> {
     const now = Date.now();
+    const nowObj = new Date();
     if (!forceRefresh && this.cachedContext && (now - this.lastFetchTime < this.CACHE_TTL_MS)) {
       return this.cachedContext;
     }
@@ -152,8 +154,47 @@ export class AiChatbotService {
         .limit(1)
         .single();
 
+      // 5. Payroll & Operating Expense Proactive Telemetry
+      const currentMonthName = nowObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const currentMonthStart = new Date(nowObj.getFullYear(), nowObj.getMonth(), 1).toISOString();
+      const dayOfMonth = nowObj.getDate();
+      const isEndOfMonth = dayOfMonth >= 24; // End of month period (24th or later)
+
+      // Query Payroll
+      const { data: monthPayroll } = await supabase
+        .from('payroll')
+        .select('id, status, net_salary, paid_at')
+        .gte('created_at', currentMonthStart);
+
+      const isPayrollLoggedThisMonth = (monthPayroll?.length || 0) > 0;
+
+      // Query Recent Expenses from both `expenses` and `journal_entry_lines`
+      const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const [{ data: weekExpenses }, { data: weekJournalLines }] = await Promise.all([
+        supabase.from('expenses').select('id, amount, category, description').gte('created_at', sevenDaysAgo),
+        supabase.from('journal_entry_lines').select('id, debit, credit').gte('created_at', sevenDaysAgo)
+      ]);
+
+      const totalWeekExpenseEntries = (weekExpenses?.length || 0) + (weekJournalLines?.length || 0);
+
+      const proactiveAdvisories: string[] = [];
+
+      if (!isPayrollLoggedThisMonth) {
+        if (isEndOfMonth) {
+          proactiveAdvisories.push(`🚨 CRITICAL MONTH-END PAYROLL ALERT: We are at the end of ${currentMonthName} (Day ${dayOfMonth}), but staff payroll has NOT been logged or processed yet! Remind Justin urgently to review, calculate, and log employee salaries on the Payroll page.`);
+        } else {
+          proactiveAdvisories.push(`⚠️ PAYROLL ADVISORY: Staff Payroll for ${currentMonthName} has not been logged yet. Remind Justin to prepare and log staff payroll before the end of the month.`);
+        }
+      }
+
+      if (totalWeekExpenseEntries === 0) {
+        proactiveAdvisories.push(`🚨 SUS ZERO-EXPENSE WEEK ALERT: Exactly 0 operational expenses have been recorded in the past 7 days! This is suspicious ("sus") for an active wholesale store like ${storeData?.store_name || 'HDPK Wholesale store'}. Remind Justin that untracked operational costs (Rent, Electricity, Packaging, Delivery freight, Fuel, Casual labor, Repairs) will artificially inflate reported net profit.`);
+      } else {
+        proactiveAdvisories.push(`💡 EXPENSE TRACKING RECOMMENDATIONS: Remind Justin to keep logging key expenses: Rent, Electricity/Water, Packaging Materials, Delivery Freight/Courier, Fuel, Casual Labor, and Store Repairs.`);
+      }
+
       this.cachedContext = {
-        storeName: storeData?.store_name || 'Main Store',
+        storeName: storeData?.store_name || 'HDPK Wholesale store',
         contactEmail: storeData?.contact_email || 'support@pro2036.xyz',
         contactPhone: storeData?.contact_phone || '+254 700 000 000',
         currency: storeData?.currency || 'KES',
@@ -172,6 +213,7 @@ export class AiChatbotService {
         })),
         stockChanges,
         inStockProducts,
+        proactiveAdvisories,
         lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
@@ -180,7 +222,7 @@ export class AiChatbotService {
     } catch (err) {
       console.error('Error updating Harry context:', err);
       return this.cachedContext || {
-        storeName: 'Main Store',
+        storeName: 'HDPK Wholesale store',
         contactEmail: 'support@pro2036.xyz',
         contactPhone: '+254 700 000 000',
         currency: 'KES',
@@ -188,9 +230,30 @@ export class AiChatbotService {
         recentMonthlyOrders: [],
         stockChanges: [],
         inStockProducts: [],
+        proactiveAdvisories: ['⚠️ PAYROLL ADVISORY: Staff Payroll for current month has NOT been logged yet.', '🚨 SUS ZERO-EXPENSE WEEK ALERT: 0 operating expenses logged for recent week.'],
         lastUpdated: new Date().toLocaleTimeString()
       };
     }
+  }
+
+  /**
+   * Generates a smart proactive welcome message when starting a conversation
+   */
+  static async getProactiveWelcomeMessage(): Promise<string> {
+    const context = await this.getLiveContext();
+    let msg = `Hi Justin! 👋 I'm **Harry**, your live AI Business Assistant for **${context.storeName}**.\n\n`;
+
+    if (context.proactiveAdvisories.length > 0) {
+      msg += `🔔 **Quick Store Operational Notes:**\n`;
+      context.proactiveAdvisories.forEach(adv => {
+        const clean = adv.replace(/^[⚠️🚨💡]\s*/, '');
+        msg += `• ${clean}\n`;
+      });
+      msg += `\n`;
+    }
+
+    msg += `I'm ready to answer any questions about our inventory, sales orders, stock levels, or revenue! What would you like to check today?`;
+    return msg;
   }
 
   /**
@@ -204,11 +267,14 @@ export class AiChatbotService {
     const context = await this.getLiveContext(false, userId);
     const activeKey = localStorage.getItem('OPENROUTER_API_KEY') || import.meta.env.VITE_OPENROUTER_API_KEY || getDefaultKey();
 
-    const systemPrompt = `You are Harry, the sharp, intelligent AI Business & Data Assistant for ${context.storeName}.
-You analyze live database telemetry (monthly orders, revenue, inventory catalog, stock movements) to answer user and admin questions accurately.
+    const systemPrompt = `You are Harry, the sharp, intelligent AI Business & Data Assistant for ${context.storeName}. Store owner is Justin.
+You analyze live database telemetry (monthly orders, revenue, inventory catalog, payroll status, expenses) to answer user and admin questions accurately.
+
+PROACTIVE BUSINESS ADVISORIES & COMPLIANCE ALERTS:
+${context.proactiveAdvisories.length > 0 ? context.proactiveAdvisories.join('\n') : '• All payroll and operating expense records are up to date.'}
 
 LIVE BUSINESS TELEMETRY & CONTEXT (Updated ${context.lastUpdated}):
-• Store Name: ${context.storeName} (${context.currency})
+• Store Name: ${context.storeName} (${context.currency}) | Owner: Justin
 • Contact Phone: ${context.contactPhone} | Email: ${context.contactEmail}
 
 LAST 30-DAY FINANCIAL & SALES PERFORMANCE:
@@ -222,16 +288,14 @@ ${context.recentMonthlyOrders.map((o: any) => `- #${o.orderNumber}${o.customerNa
 REAL PRODUCT CATALOG & STOCK LEVELS (${context.inStockProducts.length} Products Cataloged):
 ${context.inStockProducts.map(p => `- ${p.name} [Category: ${p.category}]: ${context.currency} ${p.price.toLocaleString()} | Total Stock: ${p.stock} units`).join('\n')}
 
-RECENT STOCK MOVEMENTS:
-${context.stockChanges.map(s => `- ${s.type.toUpperCase()}: ${s.change > 0 ? '+' : ''}${s.change} units on ${new Date(s.createdAt).toLocaleDateString()}`).join('\n')}
-
 HARRY'S REASONING & RESPONSE GUIDELINES:
-1. Always introduce yourself as Harry when greeted or asked.
-2. ALWAYS stick strictly to the actual product catalog and financial stats provided above. NEVER invent or mention unlisted mock products (such as "Desktop", "Laptop", "Router", "Headphones").
-3. Search through the real product catalog using case-insensitive matching. For instance, if the user asks for "nets" or "mosquito net", look for items containing "NET", "MOSQUITO NET", "RAILS", "STAND", etc. (e.g. R100 MOSQUITO NET, R120 MOSQUITO NET, 4 STAND 4*6, 4 STAND 5*6, 4 STAND 6*6).
-4. If a product is requested that is NOT in the real catalog, clearly state that it is not currently carried in the store catalog, and suggest similar items from the ACTUAL listed products (e.g. Wardrobes, Cooking Pots, Carpets, Duvets, Mosquito Nets, Shoe Racks).
-5. For financial and order inquiries, summarize total revenue (${context.currency} ${context.monthlyStats.totalMonthlyRevenue.toLocaleString()}), order count (${context.monthlyStats.totalMonthlyOrders}), and recent sample orders.
-6. Present information clearly with bold headers, bullet points, and clean Markdown formatting.`;
+1. Always greet the owner as Justin ("Good Morning, Justin!" / "Hi Justin!").
+2. SMART IN-CONVERSATION REMINDERS: Seamlessly and naturally weave operational reminders directly into your responses in between answering Justin's questions!
+   - If staff payroll for the current month is not logged or near month-end (24th-31st), drop a friendly reminder to review and log payroll on the Payroll page.
+   - If 0 operating expenses were logged in the past 7 days, explicitly remind Justin that a 0-expense week is "sus" (suspicious) for an active wholesale store and suggest tracking expenses like Rent, Electricity/Water, Packaging materials, Delivery freight, Fuel, & Repairs.
+3. DO NOT force Justin to click buttons or ask specifically about reminders — drop them naturally in conversation!
+4. ALWAYS stick strictly to the actual product catalog and financial stats provided above. NEVER invent or mention unlisted mock products.
+5. Present information clearly with bold headers, bullet points, and clean Markdown formatting.`;
 
     const messagesPayload = [
       { role: 'system', content: systemPrompt },

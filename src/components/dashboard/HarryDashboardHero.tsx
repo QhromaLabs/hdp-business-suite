@@ -10,7 +10,8 @@ import {
   TrendingUp,
   ShoppingBag,
   Truck,
-  AlertTriangle
+  AlertTriangle,
+  Brain
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,12 +39,16 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Time-aware greeting
+  const [advisories, setAdvisories] = useState<string[]>([]);
+
+  // Time-aware greeting for Justin / HDPK Wholesale store owner
   const getGreeting = () => {
     const hour = new Date().getHours();
-    const name = profile?.full_name?.split(' ')[0];
+    const rawName = profile?.full_name?.split(' ')[0];
+    // Map Justine to Justin if specified, or fallback to Justin
+    const name = (rawName && rawName.toLowerCase() === 'justine') ? 'Justin' : (rawName || 'Justin');
     const prefix = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
-    return name ? `${prefix}, ${name}!` : `${prefix}, Sir?`;
+    return `${prefix}, ${name}!`;
   };
 
   const formatCurrency = (amount: number) => {
@@ -55,7 +60,7 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
     }).format(amount);
   };
 
-  // Load chat history from localStorage on mount
+  // Load live advisories & chat history on mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem('HARRY_CHAT_HISTORY');
@@ -65,6 +70,12 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
     } catch (e) {
       console.error('Failed to parse saved sessions:', e);
     }
+
+    AiChatbotService.getLiveContext().then(ctx => {
+      if (ctx && ctx.proactiveAdvisories) {
+        setAdvisories(ctx.proactiveAdvisories);
+      }
+    });
   }, []);
 
   // Scroll to bottom when messages update
@@ -173,19 +184,17 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
   };
 
   const suggestivePrompts = [
-    { label: '📦 Low stock warning items', icon: AlertTriangle, query: 'Which items are low on stock?' },
     { label: '💰 Summarize today\'s sales', icon: TrendingUp, query: 'Summarize today\'s sales and revenue breakdown' },
+    { label: '📦 Low stock warning items', icon: AlertTriangle, query: 'Which items are low on stock?' },
     { label: '🚚 In-transit orders status', icon: Truck, query: 'How many orders are currently in transit or pending dispatch?' },
-    { label: '🔎 Search Mosquito Nets', icon: ShoppingBag, query: 'Check stock and pricing for mosquito nets' },
+    { label: '🔎 Search product catalog', icon: ShoppingBag, query: 'Check stock levels and pricing across our catalog' },
   ];
 
   return (
     <div className="relative overflow-hidden rounded-3xl p-4 md:p-8 transition-all duration-700">
-      {/* 🌈 Persistent Mesh Gradient Glow Aura */}
+      {/* 🌟 Subtle Ambient Background Glow */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[125%] h-[125%] bg-gradient-to-br from-orange-500/25 via-amber-500/20 via-purple-500/20 to-blue-500/25 dark:from-orange-600/35 dark:via-amber-600/25 dark:via-purple-600/30 dark:to-blue-600/25 blur-3xl opacity-90 animate-pulse" style={{ animationDuration: '6s' }} />
-        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-l from-orange-500/35 via-pink-500/25 to-transparent blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-gradient-to-r from-blue-500/30 via-purple-500/25 to-transparent blur-3xl" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[60%] bg-orange-500/10 dark:bg-orange-500/15 blur-3xl rounded-full opacity-50" />
       </div>
 
       {/* Top Controls Bar: Today's Revenue on LEFT & Action Buttons on RIGHT */}
@@ -264,8 +273,8 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
 
           {/* 🪩 VERY BIG FLOATING CHAT PILL INPUT */}
           <div className="w-full max-w-3xl md:max-w-4xl mt-8 md:mt-10 relative group">
-            {/* Ambient Glow behind Pill */}
-            <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-orange-500 via-amber-500 via-purple-500 to-blue-500 opacity-45 group-hover:opacity-75 blur-xl transition duration-500" />
+            {/* Vibrant Gradient Glow behind Pill */}
+            <div className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-orange-500 via-amber-500 via-purple-500 to-blue-500 opacity-55 group-hover:opacity-85 blur-xl transition duration-500 animate-pulse" style={{ animationDuration: '4s' }} />
 
             {/* Floating Glassmorphism Pill Container (VERY BIG) */}
             <div className="relative flex items-center bg-background/90 dark:bg-card/95 border border-white/40 dark:border-white/10 rounded-full shadow-2xl backdrop-blur-2xl p-2.5 md:p-3.5 transition-all duration-300 focus-within:ring-2 focus-within:ring-orange-500/50">
@@ -321,13 +330,13 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
           </div>
         </div>
       ) : (
-        /* 💬 ACTIVE CHAT CONVERSATION VIEW (WITH SUBTLE/HIDDEN SCROLLBAR & GLOWING CONTAINER) */
+        /* 💬 ACTIVE CHAT CONVERSATION VIEW (WITH VIBRANT GRADIENT GLOW) */
         <div className="w-full relative group mt-2">
-          {/* Ambient Glow behind Chat Card */}
-          <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-orange-500/30 via-amber-500/20 to-purple-500/30 blur-xl opacity-60 transition duration-500" />
+          {/* Vibrant Gradient Glow behind Chat Card */}
+          <div className="absolute -inset-1.5 rounded-3xl bg-gradient-to-r from-orange-500/40 via-amber-500/30 via-purple-500/30 to-blue-500/40 blur-2xl opacity-75 transition duration-500 animate-pulse" style={{ animationDuration: '5s' }} />
 
           {/* Glowing Glassmorphism Gradient Chat Card */}
-          <div className="relative w-full flex flex-col h-[440px] md:h-[520px] bg-gradient-to-b from-card/95 via-background/90 to-card/95 border border-orange-500/30 rounded-3xl overflow-hidden backdrop-blur-2xl shadow-[0_0_40px_-10px_rgba(249,115,22,0.25)] animate-in fade-in slide-in-from-bottom-3 duration-300">
+          <div className="relative w-full flex flex-col h-[440px] md:h-[520px] bg-gradient-to-b from-card/95 via-background/90 to-card/95 border border-orange-500/40 rounded-3xl overflow-hidden backdrop-blur-2xl shadow-[0_0_50px_-10px_rgba(249,115,22,0.35)] animate-in fade-in slide-in-from-bottom-3 duration-300">
             {/* Conversation Scroll Container (NO HEAVY SCROLLBAR) */}
             <div className="flex-1 p-5 overflow-y-auto no-scrollbar space-y-4" ref={scrollRef}>
               {messages.map(msg => (
@@ -352,7 +361,7 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
 
               {isLoading && (
                 <div className="flex items-center space-x-2 text-muted-foreground text-xs p-3 bg-orange-500/10 border border-orange-500/20 rounded-2xl w-fit animate-pulse">
-                  <Sparkles className="h-4 w-4 animate-spin text-orange-500" />
+                  <Brain className="h-4 w-4 text-orange-500 animate-pulse" />
                   <span className="font-semibold text-orange-400">Harry is thinking...</span>
                 </div>
               )}
