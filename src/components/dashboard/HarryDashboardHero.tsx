@@ -192,14 +192,7 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
       </div>
 
       {/* Top Controls Bar: Casual Revenue & Buttons */}
-      <div className="flex items-center justify-between gap-4 pb-6">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-background/60 dark:bg-card/80 border border-orange-500/20 text-orange-500 dark:text-orange-400 text-xs font-semibold backdrop-blur-md shadow-xs">
-            <Sparkles className="h-3.5 w-3.5" />
-            <span>Harry AI Assistant</span>
-          </span>
-        </div>
-
+      <div className="flex items-center justify-end gap-4 pb-6">
         <div className="flex items-center gap-3">
           {/* Casual Today's Revenue Counter */}
           <div className="text-right px-3.5 py-1.5 rounded-2xl bg-background/50 dark:bg-card/60 border border-border/40 backdrop-blur-md">
@@ -300,12 +293,8 @@ export const HarryDashboardHero: React.FC<HarryDashboardHeroProps> = ({ todaySal
                 className="border-0 bg-transparent text-sm md:text-base focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60 px-4 py-3"
               />
 
-              {/* Right Mode Selector & Send Pill */}
-              <div className="flex items-center gap-1.5 pr-1">
-                <span className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground px-3 py-1.5 rounded-full bg-muted/40 border border-border/30">
-                  Ask Harry <ChevronDown className="h-3 w-3" />
-                </span>
-
+              {/* Right Send Button Pill */}
+              <div className="flex items-center pr-1">
                 <Button
                   size="icon"
                   onClick={() => handleSendMessage()}
