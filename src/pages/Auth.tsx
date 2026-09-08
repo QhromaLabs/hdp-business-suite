@@ -374,6 +374,10 @@ export default function Auth() {
             <br />
             Contact an admin to request elevated permissions.
           </p>
+
+          <p className="text-center text-xs text-muted-foreground/70 pt-2 font-mono">
+            v1.0.1
+          </p>
         </div>
       </div>
     </div>

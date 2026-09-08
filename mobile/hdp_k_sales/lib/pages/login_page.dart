@@ -92,6 +92,12 @@ class _LoginPageState extends State<LoginPage> {
                 onPressed: () => Navigator.of(context).pushNamed('/signup'),
                 child: const Text('Don\'t have an account? Create one'),
               ),
+              const SizedBox(height: 24),
+              const Text(
+                'v1.0.1',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
             ],
           ),
         ),
