@@ -749,7 +749,7 @@ class POSPageState extends State<POSPage> {
         'created_by': user.id,
         'sales_agent_id': _employeeId,
         'customer_id': _selectedCustomer?['id'],
-        'status': 'completed',
+        'status': 'pending',
         'payment_method': _paymentMethod,
         'is_credit_sale': _paymentMethod == 'credit',
         'delivery_format': 'POS',
