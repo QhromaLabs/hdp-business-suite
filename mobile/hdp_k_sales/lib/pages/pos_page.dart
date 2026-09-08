@@ -739,13 +739,7 @@ class POSPageState extends State<POSPage> {
         }
       }
 
-      final nowStr = DateTime.now();
-      final dateStr = "${nowStr.year}${nowStr.month.toString().padLeft(2, '0')}${nowStr.day.toString().padLeft(2, '0')}";
-      final randStr = (nowStr.millisecondsSinceEpoch % 100000).toString().padLeft(5, '0');
-      final fallbackOrderNumber = "ORD-$dateStr-$randStr";
-
       final orderRes = await supabase.from('sales_orders').insert({
-        'order_number': fallbackOrderNumber,
         'created_by': user.id,
         'sales_agent_id': _employeeId,
         'customer_id': _selectedCustomer?['id'],
