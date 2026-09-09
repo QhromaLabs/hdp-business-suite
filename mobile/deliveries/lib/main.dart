@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hdp_deliveries/services/supabase_service.dart';
 import 'package:hdp_deliveries/pages/login_page.dart';
-import 'package:hdp_deliveries/pages/dashboard_page.dart';
 import 'package:hdp_deliveries/pages/main_screen.dart';
-import 'package:google_fonts/google_fonts.dart';
-
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {

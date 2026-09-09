@@ -49,8 +49,9 @@ class _DashboardPageState extends State<DashboardPage> {
           if (data != null && data['id'] != null) {
             userId = data['id'].toString();
             await prefs.setString('agent_user_id', userId);
-            if (data['name'] != null) {
-              name = data['name'];
+            final agentName = data['full_name'] ?? data['name'];
+            if (agentName != null) {
+              name = agentName;
               await prefs.setString('agent_name', name!);
             }
           }

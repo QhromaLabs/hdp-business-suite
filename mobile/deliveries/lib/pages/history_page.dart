@@ -41,8 +41,6 @@ class _HistoryPageState extends State<HistoryPage> {
              final bDate = b['delivery_completed_at'] ?? b['updated_at'] ?? b['created_at'];
              return (bDate ?? '').compareTo(aDate ?? '');
           });
-          // descending
-          _historyOrders = _historyOrders.reversed.toList();
         });
       }
     } catch (e) {

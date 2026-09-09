@@ -95,7 +95,7 @@ class _LoginPageState extends State<LoginPage> {
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('agent_phone', phone);
-      await prefs.setString('agent_name', agentData['name'] ?? '');
+      await prefs.setString('agent_name', agentData['full_name'] ?? agentData['name'] ?? '');
       await prefs.setString('agent_user_id', agentData['id']?.toString() ?? '');
       
       if (mounted) {
