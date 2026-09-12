@@ -108,7 +108,6 @@ export default function Purchases() {
         try {
             // 1. Revert Inventory (if received)
             if (order.received_at) {
-                // Fetch items to know quantities/variants
                 const { data: items } = await supabase
                     .from('purchase_order_items')
                     .select('*')
@@ -116,59 +115,62 @@ export default function Purchases() {
 
                 if (items) {
                     for (const item of items) {
-                        // Deduct from inventory (check current qty first)
-                        // A simple "transaction" log revert is harder, but we can just insert a negative transaction or reduce stock.
-                        // Ideally: Insert 'adjustment' transaction or 'return'.
-                        // For now: Simple update.
-                        const { data: inv } = await supabase.from('inventory').select('quantity').eq('variant_id', item.variant_id).single();
+                        const { data: inv } = await supabase
+                            .from('inventory')
+                            .select('quantity')
+                            .eq('variant_id', item.variant_id)
+                            .maybeSingle();
+
                         if (inv) {
-                            await supabase.from('inventory').update({ quantity: (inv.quantity || 0) - item.quantity }).eq('variant_id', item.variant_id);
+                            await supabase
+                                .from('inventory')
+                                .update({ quantity: (inv.quantity || 0) - item.quantity })
+                                .eq('variant_id', item.variant_id);
                         }
                     }
                 }
             }
 
             // 2. Revert Creditor Balance
-            // Find all transactions (bills/payments) related to this PO.
-            // Actually, simpler: The PO tracks Total Amount and Paid Amount.
-            // We need to reverse the specific ledger entries.
-            // Deleting the PO might cascade delete items/payments if FK is set to cascade.
-            // But Creditor Balance needs manual update.
             const billAmount = order.total_amount || 0;
             const paidAmount = order.paid_amount || 0;
 
-            // Fetch current balance
-            const { data: creditor } = await supabase.from('creditors').select('outstanding_balance').eq('id', order.creditor_id).single();
-            if (creditor) {
-                // Logic: 
-                // We added Bill (+ debt)
-                // We deducted Payment (- debt)
-                // To revert: - Bill + Payment
+            if (order.creditor_id) {
+                const { data: creditor } = await supabase
+                    .from('creditors')
+                    .select('outstanding_balance')
+                    .eq('id', order.creditor_id)
+                    .maybeSingle();
 
-                // Wait, logic check:
-                // Balance = OLD + Bill - Payment.
-                // Revert = Balance - Bill + Payment.
-                const newBalance = (creditor.outstanding_balance || 0) - billAmount + paidAmount;
-                await supabase.from('creditors').update({ outstanding_balance: newBalance }).eq('id', order.creditor_id);
+                if (creditor) {
+                    const newBalance = (creditor.outstanding_balance || 0) - billAmount + paidAmount;
+                    await supabase
+                        .from('creditors')
+                        .update({ outstanding_balance: newBalance })
+                        .eq('id', order.creditor_id);
+                }
             }
 
-            // 3. Delete Creditor Transactions (Cascade usually not set for loose refs, reference numbers link them)
-            // Delete Bill
-            await supabase.from('creditor_transactions').delete().eq('reference_number', order.order_number);
-            // Delete Payments (Ref: PAY-ORDER-NUM)
-            await supabase.from('creditor_transactions').delete().ilike('reference_number', `PAY-${order.order_number}%`);
+            // 3. Delete Creditor Transactions
+            if (order.order_number) {
+                await supabase.from('creditor_transactions').delete().eq('reference_number', order.order_number);
+                await supabase.from('creditor_transactions').delete().ilike('reference_number', `PAY-${order.order_number}%`);
+            }
 
+            // 4. Delete Purchase Order Payments
+            await supabase.from('purchase_order_payments').delete().eq('purchase_order_id', order.id);
 
-            // 4. Delete PO (Cascade should handle Items and PO Payments if configured, else query them)
-            // Safest to query explicitly if unsure of DB schema cascade.
-            // Assuming simplified cascade for now or explicit deletes.
+            // 5. Delete Purchase Order Items
+            await supabase.from('purchase_order_items').delete().eq('purchase_order_id', order.id);
+
+            // 6. Delete PO
             const { error } = await supabase.from('purchase_orders').delete().eq('id', order.id);
             if (error) throw error;
 
             toast.success('Order deleted and financials reverted');
-            setOrders(prev => prev.filter(o => o.id !== order.id)); // Optimistic update
+            setOrders(prev => prev.filter(o => o.id !== order.id));
             fetchOrders();
-            fetchSuppliers(); // Update balances
+            fetchSuppliers();
 
         } catch (error: any) {
             console.error('Delete error:', error);

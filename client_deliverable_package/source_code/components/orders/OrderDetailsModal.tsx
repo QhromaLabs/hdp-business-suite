@@ -1,0 +1,558 @@
+import { useState } from 'react';
+import { useOrderItems, SalesOrder } from '@/hooks/useSalesOrders';
+import { useDeliveryAgents } from '@/hooks/useDeliveryAgents';
+import { useUpdateSalesOrderStatus } from '@/hooks/useSalesOrders';
+import { useSettings } from '@/contexts/SettingsContext';
+import { calculateTotals } from '@/lib/tax';
+import { formatCurrency } from '@/lib/format';
+import { format } from 'date-fns';
+import { toast } from 'sonner';
+import {
+    Package,
+    X,
+    Clock,
+    PackageCheck,
+    Truck,
+    CheckCircle,
+    Navigation,
+    Loader2,
+    Receipt,
+    FileText,
+    Printer,
+    User,
+    MapPin,
+    Activity,
+    Globe,
+    ShoppingBag,
+    TrendingUp
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { DispatchOrderModal } from './DispatchOrderModal';
+import { LocationPicker } from '../deliveries/LocationPicker';
+import { ReceiptContent } from '../printing/Receipt';
+import { createRoot } from 'react-dom/client';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { useAuth } from '@/contexts/AuthContext';
+
+interface OrderDetailsModalProps {
+    order: SalesOrder;
+    onClose: () => void;
+}
+
+export function OrderDetailsModal({ order, onClose }: OrderDetailsModalProps) {
+    const { data: items = [], isLoading } = useOrderItems(order.id);
+    const { data: agents = [] } = useDeliveryAgents();
+    const updateStatus = useUpdateSalesOrderStatus();
+    const [isDispatching, setIsDispatching] = useState(false);
+    const [dispatchingOrder, setDispatchingOrder] = useState<SalesOrder | null>(null);
+    const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+    const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+    const [location, setLocation] = useState<{ latitude: number, longitude: number, address: string }>({
+        latitude: Number(order.latitude || order.customer?.latitude) || -1.286389,
+        longitude: Number(order.longitude || order.customer?.longitude) || 36.817223,
+        address: order.address_name || order.customer?.address_name || ''
+    });
+
+    const handleApprove = () => updateStatus.mutate({ id: order.id, status: 'approved' });
+    const handleDispatch = () => {
+        if (!selectedAgentId) {
+            toast.error('Please select a delivery agent');
+            return;
+        }
+
+        // Generate 4-digit code
+        const code = Math.floor(1000 + Math.random() * 9000).toString();
+
+        updateStatus.mutate({
+            id: order.id,
+            status: 'dispatched',
+            delivery_agent_id: selectedAgentId,
+            latitude: location.latitude,
+            longitude: location.longitude,
+            address_name: location.address,
+            delivery_code: code
+        }, {
+            onSuccess: () => {
+                setGeneratedCode(code);
+                setIsDispatching(false);
+            }
+        });
+    };
+    const handleCancel = () => updateStatus.mutate({ id: order.id, status: 'cancelled' });
+
+    const { userRole } = useAuth();
+    const { taxEnabled, taxRate } = useSettings();
+    const subtotalAmount = Number(order.subtotal) || 0;
+    const discountAmount = Number(order.discount_amount) || 0;
+    const totals = calculateTotals(subtotalAmount, discountAmount, taxEnabled);
+    const displayedTax = taxEnabled ? Number(order.tax_amount) || totals.tax : totals.tax;
+    const displayedTotal = taxEnabled ? Number(order.total_amount) || totals.total : totals.total;
+
+    const orderProfit = items.reduce((sum, item) => {
+        const itemPrice = Number(item.total_price) || 0;
+        const landedCost = Number(item.landed_cost_at_sale || item.variant?.cost_price || 0);
+        const itemCost = (item.quantity || 0) * landedCost;
+        return sum + (itemPrice - itemCost);
+    }, 0);
+
+    const handleThermalPrint = () => {
+        const printWindow = window.open('', '', 'width=400,height=600');
+        if (!printWindow) return;
+
+        const container = printWindow.document.createElement('div');
+        printWindow.document.body.appendChild(container);
+
+        const root = createRoot(container);
+        root.render(
+            <ReceiptContent
+                order={order}
+                items={items}
+                settings={{
+                    storeName: 'HDPK K LTD',
+                    storeAddress: 'P.O BOX 45678-00200 NAIROBI',
+                    storePhone: '00111111111',
+                    taxRate: taxRate,
+                    taxEnabled: taxEnabled,
+                }}
+            />
+        );
+
+        setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+        }, 500);
+    };
+
+    const generateDeliveryNote = (isDoublePrint = false) => {
+        try {
+            const doc = new jsPDF();
+            const ORANGE = '#F97316';
+            const PURPLE = '#8B5CF6';
+
+            const renderNote = (yOffset: number, titleSuffix: string) => {
+                // Add Logo (Small & Centered)
+                const logoWidth = 25;
+                const logoHeight = 12.5;
+                const pageWidth = 210;
+                doc.addImage('/brand/logo.png', 'PNG', (pageWidth - logoWidth) / 2, yOffset + 5, logoWidth, logoHeight);
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(14);
+                doc.setTextColor(PURPLE);
+                doc.text('HDP(K) LTD', pageWidth / 2, yOffset + 24, { align: 'center' });
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(60, 60, 60);
+                doc.text('P.O BOX 45678-00200 NAIROBI', pageWidth / 2, yOffset + 29, { align: 'center' });
+                doc.text('LOCATED AT SASIO ROAD, PETM GODOWNS, GODOWN NO 13, OFF LUNGA LUNGA ROAD', pageWidth / 2, yOffset + 33, { align: 'center' });
+                doc.text('TEL NO: 00111111111', pageWidth / 2, yOffset + 37, { align: 'center' });
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(16);
+                doc.setTextColor(ORANGE);
+                doc.text(`DELIVERY NOTE ${titleSuffix}`, pageWidth / 2, yOffset + 48, { align: 'center' });
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                doc.setTextColor(0, 0, 0);
+                doc.text(`Order Number: ${order.order_number}`, 20, yOffset + 58);
+                doc.text(`Date: ${format(new Date(order.created_at), 'dd/MM/yyyy HH:mm')}`, 20, yOffset + 63);
+                doc.text(`Customer: ${order.customer?.name || 'Walk-in Guest'}`, 20, yOffset + 68);
+                doc.text(`Phone: ${order.customer?.phone || 'N/A'}`, 20, yOffset + 73);
+
+                const tableBody = items.map((item: any, index: number) => {
+                    const unitWeight = Number(item.unit_price) || 0;
+                    const totalWeight = Number(item.total_price) || 0;
+                    return [
+                        index + 1,
+                        `${item.variant?.product?.name} (${item.variant?.variant_name})`,
+                        item.quantity,
+                        `${unitWeight.toLocaleString()} g`,
+                        `${totalWeight.toLocaleString()} g`,
+                        'Pcs'
+                    ];
+                });
+
+                const totalOrderWeight = items.reduce((sum: number, item: any) => sum + (Number(item.total_price) || 0), 0);
+
+                autoTable(doc, {
+                    startY: yOffset + 78,
+                    head: [['#', 'Item Description', 'Qty', 'Weight (g)', 'Gross Weight (g)', 'Unit']],
+                    body: tableBody,
+                    theme: 'grid',
+                    headStyles: { fillColor: [220, 220, 220], textColor: 20, fontStyle: 'bold', halign: 'center' },
+                    styles: { fontSize: 9, cellPadding: 3, valign: 'middle', halign: 'center' },
+                    columnStyles: { 1: { halign: 'left' } }
+                });
+
+                const weightY = (doc as any).lastAutoTable.finalY + 5;
+                if (totalOrderWeight > 0) {
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(`Total Gross Weight: ${totalOrderWeight.toLocaleString()} g`, 190, weightY + 5, { align: 'right' });
+                }
+
+                const signatureY = (doc as any).lastAutoTable.finalY + 15;
+                doc.setDrawColor(0);
+                doc.text('---------------------------', 20, signatureY + 10);
+                doc.text('Issued By', 20, signatureY + 15);
+                doc.text('---------------------------', 140, signatureY + 10);
+                doc.text('Received By/Stamp', 140, signatureY + 15);
+
+                if (!isDoublePrint) {
+                    doc.setFontSize(8);
+                    doc.setTextColor(100);
+                    doc.text('Thank you for your business!', 105, signatureY + 30, { align: 'center' });
+                }
+            };
+
+            if (isDoublePrint) {
+                renderNote(0, '(ORIGINAL)');
+
+                if (items.length > 3) {
+                    doc.addPage();
+                    renderNote(0, '(COPY)');
+                } else {
+                    doc.setDrawColor(200);
+                    doc.setLineDashPattern([2, 1], 0);
+                    doc.line(10, 148, 200, 148);
+                    doc.setDrawColor(0);
+                    doc.setLineDashPattern([], 0);
+                    renderNote(148, '(COPY)');
+                }
+            } else {
+                renderNote(0, '');
+            }
+
+            const pdfBlob = doc.output('blob');
+            const url = URL.createObjectURL(pdfBlob);
+            window.open(url, '_blank');
+        } catch (error: any) {
+            console.error('PDF Generation Error:', error);
+            toast.error('Failed to generate PDF: ' + error.message);
+        }
+    };
+
+    if (generatedCode) {
+        return (
+            <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                <div className="bg-card w-full max-w-sm rounded-[2.5rem] border border-border/50 shadow-2xl p-8 text-center space-y-6 animate-scale-in">
+                    <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                        <Navigation className="w-8 h-8 text-green-600" />
+                    </div>
+
+                    <div className="space-y-2">
+                        <h3 className="text-2xl font-black tracking-tight">Order Dispatched!</h3>
+                        <p className="text-sm text-muted-foreground font-medium px-4">
+                            Share this verification code with the customer. The agent will need it to complete delivery.
+                        </p>
+                    </div>
+
+                    <div
+                        onClick={() => {
+                            navigator.clipboard.writeText(generatedCode);
+                            toast.success("Code copied!");
+                        }}
+                        className="p-8 bg-muted/30 rounded-3xl border-2 border-dashed border-primary/20 hover:border-primary/50 transition-all cursor-pointer group"
+                    >
+                        <span className="text-5xl font-black tracking-[0.4em] text-primary block pl-4 group-hover:scale-105 transition-transform">
+                            {generatedCode}
+                        </span>
+                        <span className="text-[10px] uppercase font-black text-muted-foreground mt-4 block tracking-widest">Click to Copy</span>
+                    </div>
+
+                    <button
+                        onClick={onClose}
+                        className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                    >
+                        Done
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-card w-full max-w-2xl rounded-3xl border border-border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-scale-in">
+                <div className="p-6 border-b border-border/50 flex items-center justify-between bg-accent/5">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                            <Package className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black tracking-tight">Order #{order.order_number}</h3>
+                            <p className="text-xs text-muted-foreground font-medium">Placed on {format(new Date(order.created_at), 'MMMM dd, yyyy')}</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-muted flex items-center justify-center transition-colors">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="p-6 flex-1 overflow-y-auto scrollbar-hide space-y-8">
+                    <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col md:flex-row items-center justify-between gap-4 animate-slide-up">
+                        <div className="flex items-center gap-4">
+                            <div className={cn(
+                                "w-12 h-12 rounded-2xl flex items-center justify-center border",
+                                order.status === 'pending' ? 'bg-warning/10 text-warning border-warning/20' :
+                                    order.status === 'approved' ? 'bg-primary/10 text-primary border-primary/20' :
+                                        order.status === 'in_transit' ? 'bg-green-500/10 text-green-600 border-green-500/20' :
+                                            'bg-success/10 text-success border-success/20'
+                            )}>
+                                {order.status === 'pending' ? <Clock className="w-6 h-6" /> :
+                                    order.status === 'approved' ? <PackageCheck className="w-6 h-6" /> :
+                                        order.status === 'in_transit' ? <Truck className="w-6 h-6 animate-pulse" /> :
+                                            <CheckCircle className="w-6 h-6" />}
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest leading-none mb-1">Current Fulfillment State</p>
+                                <div className="flex items-center gap-2">
+                                    <h4 className="text-lg font-black uppercase tracking-tight text-foreground">{order.status.replace('_', ' ')}</h4>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-primary/40" />
+                                    <p className="text-xs text-muted-foreground font-medium">Updated just now</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full md:w-auto">
+                            {order.status === 'pending' && (
+                                <>
+                                    <button onClick={handleApprove} className="flex-1 md:flex-none px-6 py-3 bg-primary text-primary-foreground rounded-xl font-bold text-sm shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                                        {updateStatus.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                        Release Order
+                                    </button>
+                                    <button onClick={handleCancel} className="flex-1 md:flex-none px-6 py-3 bg-destructive/10 text-destructive rounded-xl font-bold text-sm hover:bg-destructive hover:text-white transition-all flex items-center justify-center gap-2">
+                                        Cancel
+                                    </button>
+                                </>
+                            )}
+                            {order.status === 'approved' && (
+                                <button onClick={() => setDispatchingOrder(order)} className="w-full md:w-auto px-8 py-3 bg-info/10 text-info border border-info/20 rounded-xl font-bold text-sm hover:bg-info hover:text-white transition-all flex items-center justify-center gap-2">
+                                    <Navigation className="w-4 h-4" />
+                                    Prepare Dispatch
+                                </button>
+                            )}
+                            {(order.status === 'in_transit' || order.status === 'ready_for_pickup') && (order.third_party_provider_id || order.is_self_pickup) && (
+                                <button
+                                    onClick={() => {
+                                        if (window.confirm('Mark this order as delivered?')) {
+                                            updateStatus.mutate({
+                                                id: order.id,
+                                                status: 'delivered'
+                                            });
+                                        }
+                                    }}
+                                    className="w-full md:w-auto px-8 py-3 bg-green-600 text-white rounded-xl font-bold text-sm shadow-lg hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
+                                >
+                                    <CheckCircle className="w-4 h-4" />
+                                    {order.is_self_pickup ? 'Confirm Pickup' : 'Mark as Delivered'}
+                                </button>
+                            )}
+                            {order.status === 'in_transit' && !order.third_party_provider_id && !order.is_self_pickup && (
+                                <a
+                                    href={`/deliveries?orderId=${order.id}`}
+                                    className="w-full md:w-auto px-8 py-3 bg-green-600 text-white rounded-xl font-bold text-sm shadow-lg hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
+                                >
+                                    <Activity className="w-4 h-4" />
+                                    View Live Progress
+                                </a>
+                            )}
+                            {order.status === 'delivered' && (
+                                <div className="px-4 py-2 rounded-lg bg-success/10 text-success text-[10px] font-black uppercase tracking-widest border border-success/20">
+                                    Fulfillment Complete
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {(order.third_party_provider_id || order.is_self_pickup) && (
+                        <div className="p-6 rounded-2xl bg-muted/30 border border-border/50 flex flex-col md:flex-row items-center gap-6">
+                            <div className="w-16 h-16 rounded-2xl bg-white border border-border/10 flex items-center justify-center p-3">
+                                {order.is_self_pickup ? (
+                                    <ShoppingBag className="w-10 h-10 text-primary" />
+                                ) : (
+                                    <Globe className="w-10 h-10 text-blue-500" />
+                                )}
+                            </div>
+                            <div className="flex-1 text-center md:text-left">
+                                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-1">Logistics Information</p>
+                                <h4 className="text-xl font-black text-foreground">
+                                    {order.is_self_pickup ? 'Self Pickup Order' : 'Third Party Delivery'}
+                                </h4>
+                                <p className="text-sm text-muted-foreground font-medium mt-1">
+                                    {order.is_self_pickup
+                                        ? 'Customer will collect the order from the store.'
+                                        : `Order is being delivered via external provider.`}
+                                </p>
+                            </div>
+                            {order.delivery_code && (
+                                <div className="px-6 py-3 bg-primary/10 rounded-2xl border border-primary/20 text-center">
+                                    <p className="text-[10px] font-bold uppercase text-primary tracking-widest mb-1">Verification Code</p>
+                                    <span className="text-2xl font-black text-primary tracking-widest">{order.delivery_code}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 rounded-2xl bg-muted/30 border border-border/50">
+                            <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-3">Customer Information</p>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                                    <User className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-bold">{order.customer?.name || 'Walk-in Guest'}</p>
+                                    <p className="text-xs text-muted-foreground">{order.customer?.phone || 'No phone provided'}</p>
+                                    {order.latitude && order.longitude && (
+                                        <a
+                                            href={`https://www.google.com/maps/search/?api=1&query=${order.latitude},${order.longitude}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-[10px] text-info flex items-center gap-1 mt-1.5 hover:underline font-bold tracking-tight"
+                                        >
+                                            <MapPin className="w-3 h-3" />
+                                            View Sale Location
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-muted/30 border border-border/50">
+                            <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-3">Payment Details</p>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center text-success">
+                                    <Receipt className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-bold uppercase">{order.payment_method || 'Cash'}</p>
+                                    <p className="text-xs text-muted-foreground">{order.is_credit_sale ? 'Credit Sale' : 'Direct Payment'}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {order.notes && (
+                        <div className="p-4 rounded-2xl bg-orange-50/50 border border-orange-100">
+                            <p className="text-[10px] font-black uppercase text-orange-600 tracking-widest mb-2 flex items-center gap-2">
+                                <FileText className="w-3 h-3" />
+                                Instructions / Notes
+                            </p>
+                            <p className="text-sm font-medium text-foreground italic">"{order.notes}"</p>
+                        </div>
+                    )}
+
+                    <div>
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-4">Items Summary</p>
+                        <div className="rounded-2xl border border-border/50 overflow-hidden bg-muted/10">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-muted/50 text-[10px] font-black uppercase text-muted-foreground tracking-widest border-b border-border/50">
+                                        <th className="px-4 py-3">Product</th>
+                                        <th className="px-4 py-3 text-center">Qty</th>
+                                        <th className="px-4 py-3 text-right">Price</th>
+                                        <th className="px-4 py-3 text-right">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/30 text-sm font-medium">
+                                    {isLoading ? (
+                                        Array.from({ length: 2 }).map((_, i) => (
+                                            <tr key={i} className="animate-pulse h-12 bg-muted/5"></tr>
+                                        ))
+                                    ) : items.map((item: any) => (
+                                        <tr key={item.id}>
+                                            <td className="px-4 py-3">
+                                                <p className="font-bold">{item.variant?.product?.name}</p>
+                                                <p className="text-[10px] text-muted-foreground">{item.variant?.variant_name} - {item.variant?.sku}</p>
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-muted-foreground">x{item.quantity}</td>
+                                            <td className="px-4 py-3 text-right">{formatCurrency(Number(item.unit_price))}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-primary">{formatCurrency(Number(item.total_price))}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-2 pt-4">
+                        <div className="w-full max-w-[240px] space-y-2">
+                            <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                                <span>Subtotal</span>
+                                <span>{formatCurrency(subtotalAmount)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                                <span>Discount</span>
+                                <span className="text-destructive">-{formatCurrency(discountAmount)}</span>
+                            </div>
+                            {taxEnabled && (
+                                <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                                    <span>VAT ({Math.round(taxRate * 100)}%)</span>
+                                    <span>{formatCurrency(displayedTax)}</span>
+                                </div>
+                            )}
+                            <div className="pt-2 border-t border-border mt-2 flex justify-between items-center text-lg">
+                                <span className="font-black text-foreground tracking-tight">Grand Total</span>
+                                <span className="font-black text-primary">{formatCurrency(displayedTotal)}</span>
+                            </div>
+                        </div>
+                        {userRole === 'admin' && (
+                            <div className="w-full max-w-[240px] mt-4 p-3.5 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-800/30 rounded-2xl text-xs space-y-2 text-emerald-800 dark:text-emerald-400">
+                                <div className="font-bold flex items-center gap-1.5 text-emerald-900 dark:text-emerald-300">
+                                    <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500" />
+                                    Profit Analysis (Admin)
+                                </div>
+                                <div className="space-y-1 font-mono pt-1">
+                                    <div className="flex justify-between">
+                                        <span>Revenue:</span>
+                                        <span>{formatCurrency(displayedTotal)}</span>
+                                    </div>
+                                    <div className="flex flex-col text-destructive/80 dark:text-red-400/80">
+                                        <div className="flex justify-between">
+                                            <span>Landed Cost:</span>
+                                            <span>-{formatCurrency(items.reduce((sum, item) => sum + (item.quantity * Number(item.landed_cost_at_sale || item.variant?.cost_price || 0)), 0))}</span>
+                                        </div>
+                                        <div className="text-[10px] text-right opacity-80 mt-0.5 font-sans">
+                                            [{items.map(item => `${item.quantity} × ${formatCurrency(Number(item.landed_cost_at_sale || item.variant?.cost_price || 0))}`).join(' + ')}]
+                                        </div>
+                                    </div>
+                                    <div className="pt-1.5 border-t border-emerald-200/40 dark:border-emerald-800/20 flex justify-between font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                                        <span>Net Profit:</span>
+                                        <span>{formatCurrency(orderProfit)}</span>
+                                    </div>
+                                </div>
+                                <div className="text-[10px] text-emerald-700/70 dark:text-emerald-400/60 italic leading-relaxed pt-1">
+                                    Formula: Revenue - Landed Cost (Buying Price + Freight/Tax)
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-border/50 bg-muted/10 flex gap-3">
+                    <button onClick={handleThermalPrint} className="flex-1 py-3 bg-zinc-800 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-700 transition-all shadow-sm">
+                        <Receipt className="w-4 h-4" />
+                        Thermal Receipt
+                    </button>
+                    <button onClick={() => generateDeliveryNote(true)} className="flex-1 py-3 bg-secondary text-secondary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-secondary/80 transition-all shadow-sm">
+                        <FileText className="w-4 h-4" />
+                        A4 Note
+                    </button>
+                    <button onClick={() => generateDeliveryNote(false)} className="flex-1 py-3 bg-primary text-primary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:scale-[1.01] transition-all shadow-lg">
+                        <Printer className="w-4 h-4" />
+                        Print Note
+                    </button>
+                </div>
+            </div>
+
+            <DispatchOrderModal
+                isOpen={!!dispatchingOrder}
+                onClose={() => setDispatchingOrder(null)}
+                order={dispatchingOrder}
+            />
+        </div>
+    );
+}

@@ -1,0 +1,761 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+
+export interface Employee {
+  id: string;
+  user_id: string | null;
+  employee_number: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  department: string | null;
+  position: string | null;
+  role: 'admin' | 'manager' | 'clerk' | 'sales_rep' | 'delivery_agent' | null;
+  basic_salary: number;
+  hire_date: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface Attendance {
+  id: string;
+  employee_id: string;
+  date: string;
+  check_in: string | null;
+  check_out: string | null;
+  status: string;
+  notes: string | null;
+  employee?: Employee;
+}
+
+export interface Payroll {
+  id: string;
+  employee_id: string;
+  pay_period_start: string;
+  pay_period_end: string;
+  basic_salary: number;
+  allowances: number;
+  deductions: number;
+  net_salary: number;
+  status: string;
+  paid_at: string | null;
+  created_at: string;
+  employee?: Employee;
+}
+
+export function useEmployees(includeInactive = false) {
+  return useQuery({
+    queryKey: ['employees', includeInactive],
+    queryFn: async () => {
+      let query = supabase
+        .from('employees')
+        .select('*');
+
+      if (!includeInactive) {
+        query = query.eq('is_active', true);
+      }
+
+      const { data, error } = await query.order('full_name');
+
+      if (error) throw error;
+      return data as Employee[];
+    },
+  });
+}
+export function useAttendanceToday() {
+  // Use local date (YYYY-MM-DD) to match mobile app behavior
+  const today = new Date().toLocaleDateString('en-CA');
+
+  return useQuery({
+    queryKey: ['attendance', today],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select(`
+          *,
+          employee:employees(*)
+        `)
+        .eq('date', today);
+
+      if (error) throw error;
+      return data as unknown as Attendance[];
+    },
+    refetchInterval: 30000, // Refresh every 30s to pick up duty status changes
+  });
+}
+
+export function useEmployeeAttendance(employeeId: string | undefined) {
+  return useQuery({
+    queryKey: ['attendance', 'history', employeeId],
+    enabled: !!employeeId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employee_id', employeeId!)
+        .order('date', { ascending: false })
+        .limit(30);
+
+      if (error) throw error;
+      return data as Attendance[];
+    },
+  });
+}
+
+export interface AttendanceLog {
+  id: string;
+  employee_id: string;
+  action: 'clock_in' | 'clock_out' | 'auto_clock_out';
+  timestamp: string;
+}
+
+export function useEmployeeAttendanceLogs(employeeId: string | undefined) {
+  return useQuery({
+    queryKey: ['attendance_logs', employeeId],
+    enabled: !!employeeId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attendance_logs')
+        .select('*')
+        .eq('employee_id', employeeId!)
+        .order('timestamp', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      return data as AttendanceLog[];
+    },
+  });
+}
+
+export function useCurrentEmployee() {
+  return useQuery({
+    queryKey: ['current_employee'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data as Employee | null;
+    },
+  });
+}
+
+export function useMyAttendanceToday() {
+  const { data: employee } = useCurrentEmployee();
+  const today = new Date().toLocaleDateString('en-CA');
+
+  return useQuery({
+    queryKey: ['my_attendance', today, employee?.id],
+    enabled: !!employee?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employee_id', employee!.id)
+        .eq('date', today)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data as Attendance | null;
+    },
+  });
+}
+
+export function useClockIn() {
+  const queryClient = useQueryClient();
+  const { data: employee } = useCurrentEmployee();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!employee) throw new Error('Employee record not found');
+
+      // Use local date (en-CA = YYYY-MM-DD) to match the query in useMyAttendanceToday
+      const today = new Date().toLocaleDateString('en-CA');
+      const now = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('attendance')
+        .upsert({
+          employee_id: employee.id,
+          date: today,
+          check_in: now,
+          status: 'present',
+        }, { onConflict: 'employee_id,date' });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      // Broad prefix invalidation catches the key regardless of employee id
+      queryClient.invalidateQueries({ queryKey: ['my_attendance'] });
+      toast.success('Successfully clocked in');
+    },
+    onError: (error) => {
+      toast.error('Failed to clock in: ' + error.message);
+    },
+  });
+}
+
+export function useClockOut() {
+  const queryClient = useQueryClient();
+  const { data: employee } = useCurrentEmployee();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!employee) throw new Error('Employee record not found');
+
+      const today = new Date().toLocaleDateString('en-CA');
+      const now = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('attendance')
+        .update({
+          check_out: now,
+        })
+        .eq('employee_id', employee.id)
+        .eq('date', today);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my_attendance'] });
+      toast.success('Successfully clocked out');
+    },
+    onError: (error) => {
+      toast.error('Failed to clock out: ' + error.message);
+    },
+  });
+}
+
+export function usePayrollSummary() {
+  return useQuery({
+    queryKey: ['payroll_summary'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payroll')
+        .select('*')
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      const summary = {
+        totalSalaries: data.reduce((sum, p) => sum + Number(p.basic_salary), 0),
+        allowances: data.reduce((sum, p) => sum + Number(p.allowances), 0),
+        deductions: data.reduce((sum, p) => sum + Number(p.deductions), 0),
+        netPayroll: data.reduce((sum, p) => sum + Number(p.net_salary), 0),
+      };
+
+      return summary;
+    },
+  });
+}
+
+export interface DateRange {
+  from: Date;
+  to: Date;
+}
+
+export function usePayrollEntries(dateRange?: DateRange) {
+  return useQuery({
+    queryKey: ['payroll', dateRange],
+    queryFn: async () => {
+      let query = supabase
+        .from('payroll')
+        .select('*, employee:employees(*)');
+
+      if (dateRange) {
+        const fromDate = dateRange.from.toISOString();
+        const toDate = dateRange.to.toISOString();
+        query = query.gte('pay_period_end', fromDate).lte('pay_period_end', toDate);
+      }
+
+      const { data, error } = await query.order('pay_period_end', { ascending: false });
+
+      if (error) throw error;
+      return data as unknown as Payroll[];
+    },
+  });
+}
+
+export function useCreatePayrollEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ employee_id, basic_salary }: { employee_id: string; basic_salary: number }) => {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const startDate = start.toISOString().split('T')[0];
+      const endDate = end.toISOString().split('T')[0];
+
+      const { data: existing, error: existingError } = await supabase
+        .from('payroll')
+        .select('id')
+        .eq('employee_id', employee_id)
+        .eq('pay_period_start', startDate)
+        .eq('pay_period_end', endDate);
+
+      if (existingError) throw existingError;
+      if (existing && existing.length > 0) {
+        throw new Error('Payroll already recorded for this period');
+      }
+
+      const entry = {
+        employee_id,
+        pay_period_start: startDate,
+        pay_period_end: endDate,
+        basic_salary,
+        allowances: 0,
+        deductions: 0,
+        net_salary: basic_salary,
+        status: 'pending',
+      };
+
+      const { error } = await supabase
+        .from('payroll')
+        .insert(entry);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll_summary'] });
+      toast.success('Payroll recorded for this employee');
+    },
+    onError: (error) => {
+      toast.error('Failed to record payroll: ' + error.message);
+    },
+  });
+}
+
+export function useCreateEmployee() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (employee: Omit<Employee, 'id' | 'created_at'>) => {
+      const { data, error } = await supabase
+        .from('employees')
+        .insert(employee)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast.success('Employee created successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to create employee: ' + error.message);
+    },
+  });
+}
+
+export function useTerminateEmployee() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ employee_id }: { employee_id: string }) => {
+      const { error } = await supabase
+        .from('employees')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq('id', employee_id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast.success('Employee terminated');
+    },
+    onError: (error) => {
+      toast.error('Failed to terminate: ' + error.message);
+    },
+  });
+}
+
+export function useRestoreEmployee() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ employee_id }: { employee_id: string }) => {
+      // 1. Get employee data to check email and current linking status
+      const { data: employee, error: fetchError } = await supabase
+        .from('employees')
+        .select('email, user_id')
+        .eq('id', employee_id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const updates: any = { is_active: true, updated_at: new Date().toISOString() };
+
+      // 2. If not linked, try to link by email
+      if (!employee.user_id && employee.email) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', employee.email)
+          .maybeSingle();
+
+        if (profile) {
+          updates.user_id = profile.id;
+        }
+      }
+
+      const { error } = await supabase
+        .from('employees')
+        .update(updates)
+        .eq('id', employee_id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast.success('Employee record restored and system link checked');
+    },
+    onError: (error) => {
+      toast.error('Failed to restore employee: ' + error.message);
+    },
+  });
+}
+
+export function useDeleteEmployeeHard() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // 1. Get employee to check for linked user and email
+      const { data: employee } = await supabase
+        .from('employees')
+        .select('user_id, email')
+        .eq('id', id)
+        .single();
+
+      // 2. Clear login/auth record (including ghost accounts by email)
+      if (employee) {
+        const { error: authError } = await supabase.functions.invoke('delete-user', {
+          body: {
+            user_id: employee.user_id,
+            email: employee.email
+          },
+        });
+
+        if (authError) {
+          console.error("Auth deletion failed during hard delete:", authError);
+        }
+      }
+
+      // 3. Call the RPC to handle deep deletion of business records
+      const { error } = await supabase.rpc('hard_delete_employee', {
+        target_employee_id: id,
+      });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast.success('Employee and all related records permanently deleted');
+    },
+    onError: (error) => {
+      toast.error('Failed to permanently delete: ' + error.message);
+    },
+  });
+}
+
+export function useUpdateUserPassword() {
+  return useMutation({
+    mutationFn: async ({ userId, password }: { userId: string; password: string }) => {
+      const { data, error } = await supabase.functions.invoke('update-user-auth', {
+        body: { user_id: userId, password },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast.success('User password updated successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to update password: ' + error.message);
+    },
+  });
+}
+
+export function useUpdateEmployee() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (employee: Partial<Employee> & { id: string }) => {
+      const { id, user_id, role, ...updates } = employee;
+
+      // 1. Update Employee Record
+      const { error } = await supabase
+        .from('employees') // @ts-ignore
+        .update({ ...updates, role: role, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // 2. Sync Role to User Roles (if user exists)
+      if (user_id && role) {
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .upsert({
+            user_id: user_id,
+            role: role
+          }, { onConflict: 'user_id' });
+
+        if (roleError) {
+          console.error("Failed to sync role:", roleError);
+          toast.error("Employee updated, but failed to sync system role.");
+        }
+      }
+
+      return employee;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast.success('Employee updated');
+    },
+    onError: (error) => {
+      toast.error('Failed to update employee: ' + error.message);
+    },
+  });
+}
+
+export function useRunPayroll() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const startDate = start.toISOString().split('T')[0];
+      const endDate = end.toISOString().split('T')[0];
+
+      const { data: employees, error: employeesError } = await supabase
+        .from('employees')
+        .select('id, basic_salary, full_name')
+        .eq('is_active', true);
+
+      if (employeesError) throw employeesError;
+
+      const { data: existing, error: existingError } = await supabase
+        .from('payroll')
+        .select('employee_id')
+        .eq('pay_period_start', startDate)
+        .eq('pay_period_end', endDate);
+
+      if (existingError) throw existingError;
+
+      const existingIds = new Set((existing || []).map(e => e.employee_id));
+      const inserts = (employees || [])
+        .filter(e => !existingIds.has(e.id))
+        .map(emp => ({
+          employee_id: emp.id,
+          pay_period_start: startDate,
+          pay_period_end: endDate,
+          basic_salary: emp.basic_salary,
+          allowances: 0,
+          deductions: 0,
+          net_salary: emp.basic_salary,
+          status: 'pending',
+        }));
+
+      if (inserts.length === 0) {
+        return { inserted: 0 };
+      }
+
+      const { error: insertError } = await supabase
+        .from('payroll')
+        .insert(inserts);
+
+      if (insertError) throw insertError;
+
+      return { inserted: inserts.length };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['payroll_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
+      toast.success(result.inserted > 0 ? `Payroll generated for ${result.inserted} employees` : 'Payroll already up to date');
+    },
+    onError: (error) => {
+      toast.error('Failed to run payroll: ' + error.message);
+    },
+  });
+}
+
+export function usePayPayrollEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, amount, accountId, employeeName }: { id: string; amount: number; accountId?: string; employeeName?: string }) => {
+      // 1. Update Payroll Record
+      const { error } = await supabase
+        .from('payroll')
+        .update({
+          status: 'paid',
+          net_salary: amount,
+          paid_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // 2. Deduct from Bank Account if selected
+      if (accountId) {
+        // Fetch current balance first
+        const { data: account, error: accError } = await supabase
+          .from('bank_accounts')
+          .select('current_balance, account_name')
+          .eq('id', accountId)
+          .single();
+
+        if (accError) throw accError;
+
+        // Update Balance
+        const { error: updateError } = await supabase
+          .from('bank_accounts')
+          .update({
+            current_balance: Number(account.current_balance) - amount
+          })
+          .eq('id', accountId);
+
+        if (updateError) throw updateError;
+
+        // Insert Transaction Log
+        const { error: txnError } = await supabase
+          .from('bank_transactions')
+          .insert({
+            bank_account_id: accountId,
+            transaction_type: 'Payroll Payout',
+            amount: amount,
+            transaction_date: new Date().toISOString(),
+            description: `Salary Payout - ${employeeName || 'Employee'}`
+          });
+
+        if (txnError) throw txnError;
+      }
+
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['bank_accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['bank_transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['financial_summary_v2'] });
+      toast.success('Payroll entry marked as paid');
+    },
+    onError: (error) => {
+      toast.error('Failed to mark as paid: ' + error.message);
+    },
+  });
+}
+
+export function useMarkLeaveAndRole(defaultRole: 'clerk' | 'admin' | 'manager' | 'sales_rep' | 'delivery_agent' = 'clerk') {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ employee_id, user_id, role, reason, status }: { employee_id: string; user_id?: string | null; role?: 'clerk' | 'admin' | 'manager' | 'sales_rep' | 'delivery_agent'; reason?: string; status?: string }) => {
+      const today = new Date().toISOString().split('T')[0];
+
+      const { error: attendanceError } = await supabase
+        .from('attendance')
+        .upsert({
+          employee_id,
+          date: today,
+          status: status || 'leave',
+          notes: reason || 'Marked from HR page',
+        }, { onConflict: 'employee_id,date' });
+
+      if (attendanceError) throw attendanceError;
+
+      if (user_id) {
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .upsert({
+            user_id,
+            role: role || defaultRole,
+          }, { onConflict: 'user_id' });
+
+        if (roleError) throw roleError;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      queryClient.invalidateQueries({ queryKey: ['attendance', new Date().toISOString().split('T')[0]] });
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast.success('Status and role updated');
+    },
+    onError: (error) => {
+      toast.error('Failed to update status: ' + error.message);
+    },
+  });
+}
+export function useUpdateAttendanceStatus() {
+  const queryClient = useQueryClient();
+  const { data: employee } = useCurrentEmployee();
+
+  return useMutation({
+    mutationFn: async ({ status, notes }: { status: string; notes?: string }) => {
+      if (!employee) throw new Error('Employee record not found');
+
+      const today = new Date().toISOString().split('T')[0];
+
+      const { error } = await supabase
+        .from('attendance')
+        .upsert({
+          employee_id: employee.id,
+          date: today,
+          status,
+          notes: notes || `Status updated to ${status}`,
+        }, { onConflict: 'employee_id,date' });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      const today = new Date().toISOString().split('T')[0];
+      queryClient.invalidateQueries({ queryKey: ['my_attendance', today] });
+      queryClient.invalidateQueries({ queryKey: ['attendance', today] });
+      toast.success('Attendance status updated');
+    },
+    onError: (error) => {
+      toast.error('Failed to update status: ' + error.message);
+    },
+  });
+}
+
+export function useDeletePayrollEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('payroll')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['financial_summary'] });
+      toast.success('Payroll entry deleted completely');
+    },
+    onError: (error) => {
+      toast.error('Failed to delete payroll entry: ' + error.message);
+    },
+  });
+}
