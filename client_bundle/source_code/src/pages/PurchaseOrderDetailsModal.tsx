@@ -149,6 +149,7 @@ export default function PurchaseOrderDetailsModal({ open, order, onClose, onUpda
             const { error: poPayError } = await supabase
                 .from('purchase_order_payments')
                 .insert([{
+                    id: crypto.randomUUID(),
                     purchase_order_id: order.id,
                     amount: amount,
                     payment_date: new Date().toISOString(),

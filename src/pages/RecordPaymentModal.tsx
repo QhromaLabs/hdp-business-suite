@@ -72,6 +72,7 @@ export default function RecordPaymentModal({ order, onClose, onSuccess }: Record
             const { error: payError } = await supabase
                 .from('purchase_order_payments')
                 .insert([{
+                    id: crypto.randomUUID(),
                     purchase_order_id: order.id,
                     amount: paymentAmount,
                     payment_date: new Date(paymentDate).toISOString(),
